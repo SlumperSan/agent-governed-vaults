@@ -6,6 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  MAX_BAND_RATIO as VERIFIER_MAX_BAND_RATIO,
+  MAX_HEARTBEAT as VERIFIER_MAX_HEARTBEAT,
+  MIN_HEARTBEAT as VERIFIER_MIN_HEARTBEAT,
   SEQUENCER_EXEMPT_CHAIN_IDS,
   SEQUENCER_EXEMPT_REASONS,
   bandBoundsTwoDecimalDrift,
@@ -380,7 +383,30 @@ test('end to end: matching ids proceed into the sweep, which then judges the con
  * Run the verifier over one healthy feed, with `phaseId()` either answering or dropped.
  * Same CAST=node + NODE_OPTIONS=--require stub mechanism as `runVerifier` above.
  */
-function runVerifierOverFeed({ dropPhaseId }) {
+/**
+ * A constant read from ChainlinkOracle.sol. The end-to-end heartbeat tests below are driven by the
+ * CONTRACT's value, not by the verifier's mirror of it: if they used the mirror, inlining a stale
+ * number at the verifier's bound check would move both sides together and prove nothing.
+ */
+/**
+ * Every shipped file a reader would take a heartbeat bound or an owner-decision claim from. Named,
+ * not globbed, so a new config is a deliberate addition here rather than silently uncovered.
+ */
+const FILES = [
+  'contracts/config/arc-mainnet.json',
+  'contracts/config/base-mainnet.json',
+  'contracts/config/base-sepolia.json',
+  'docs/evidence/arc-mainnet-survey.json',
+];
+
+function oracleConstant(name) {
+  const src = fs.readFileSync(path.join(REPO, 'contracts', 'src', 'oracle', 'ChainlinkOracle.sol'), 'utf8');
+  const m = new RegExp(`constant\\s+${name}\\s*=\\s*([0-9_]+)`).exec(src);
+  assert.ok(m, `${name} is no longer declared as a numeric constant in ChainlinkOracle.sol`);
+  return Number(m[1].replace(/_/g, ''));
+}
+
+function runVerifierOverFeed({ dropPhaseId, heartbeatSeconds = 3600 }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aggregator-pin-'));
   const stub = path.join(dir, 'stub-cast.cjs');
   const FEED = '0x' + 'ab'.repeat(20);
@@ -433,7 +459,7 @@ function runVerifierOverFeed({ dropPhaseId }) {
             symbol: 'ETH',
             feed: FEED,
             feedDescriptionOnChain: 'ETH / USD',
-            heartbeatSeconds: 3600,
+            heartbeatSeconds,
             // Band sized so every band row passes against the stub's $3,000 answer: the live price
             // 3e21 WAD sits inside [1e20, 1e23], the ratio is exactly the 1000x ceiling, and a
             // +/-2-decimal drift (3e23 / 3e19) leaves it in both directions.
@@ -462,6 +488,31 @@ test('end to end: the control fixture is green — every row passes and --strict
   assert.doesNotMatch(r.stderr, /unexpected invocation/, `the stub was asked for a call it does not implement: ${r.stderr}`);
   assert.equal(r.status, 0, `expected exit 0 with both pin reads answering. stdout: ${r.stdout} stderr: ${r.stderr}`);
   assert.match(r.stdout, /unchanged since the pin/, 'two answered, matching reads are what may legitimately confirm the pin');
+});
+
+test('end to end: the verifier accepts the SHIPPED 90,000 s heartbeat, not just the 3,600 s fixture', () => {
+  // THE ROUND-2 RESIDUAL, closed. Every end-to-end fixture used 3,600 s, so the bound row never
+  // exercised the ceiling: inlining `86400n` in place of MAX_HEARTBEAT at the bound check survived
+  // the whole suite, and the mirrors being pinned to the Solidity source covered the DECLARATION
+  // rather than its USE. arc-mainnet.json ships 90,000 s, so a verifier that still believed the old
+  // ceiling would refuse the config it is meant to verify.
+  const r = runVerifierOverFeed({ dropPhaseId: false, heartbeatSeconds: oracleConstant('MAX_HEARTBEAT') });
+  assert.doesNotMatch(r.stdout, /^FAIL /m, `a row failed at the shipped heartbeat: ${r.stdout}`);
+  assert.match(r.stdout, /heartbeat within on-chain bounds/, 'the bound row must actually have been evaluated');
+  assert.equal(r.status, 0, `expected exit 0 at ${oracleConstant('MAX_HEARTBEAT')}s. stdout: ${r.stdout}`);
+});
+
+test('end to end: one second ABOVE the ceiling fails the bound row, so the ceiling is not decorative', () => {
+  // The other direction. Without this the test above passes with a bound check that accepts anything.
+  const r = runVerifierOverFeed({ dropPhaseId: false, heartbeatSeconds: oracleConstant('MAX_HEARTBEAT') + 1 });
+  assert.match(r.stdout, /FAIL .*heartbeat within on-chain bounds/, `expected the bound row to fail: ${r.stdout}`);
+  assert.notEqual(r.status, 0, 'a config the constructor would reject must not verify green');
+});
+
+test('end to end: one second BELOW the floor fails too — the floor freezes a healthy feed', () => {
+  const r = runVerifierOverFeed({ dropPhaseId: false, heartbeatSeconds: oracleConstant('MIN_HEARTBEAT') - 1 });
+  assert.match(r.stdout, /FAIL .*heartbeat within on-chain bounds/, `expected the bound row to fail: ${r.stdout}`);
+  assert.notEqual(r.status, 0);
 });
 
 test('end to end: dropping ONLY phaseId() must not exit 0 and must not claim the pin was confirmed', () => {
@@ -517,10 +568,87 @@ function extractFunctionSource(src, signature) {
   return null;
 }
 
-test('the sequencer-exempt set is exactly {31337, 84532, 4663}', () => {
+/**
+ * Both cites in an exemption reason must land inside `priceWad` AND on the line that actually
+ * performs the guard they name.
+ *
+ * SHARED RATHER THAN COPIED, and that is the finding it came from. The 5042 reason's cites were
+ * range-checked only — inside the function, any line — so pointing its heartbeat cite at
+ * `if (answer <= 0)` passed while the identical mutation killed 4663's. The newest entry was held to
+ * a weaker bar than the one beside it. One checker means the sixth entry cannot be either.
+ *
+ * Inside `priceWad` specifically, because the band is enforced in the constructor too and only the
+ * read-time copy survives an outage: a cite that drifted onto the constructor check would be the
+ * right claim spelled wrong.
+ */
+function assertGuardCites(chainId, heartbeatCite, bandCite) {
+  const src = fs.readFileSync(path.join(REPO, 'contracts', 'src', 'oracle', 'ChainlinkOracle.sol'), 'utf8');
+  const lines = src.split(/\r?\n/);
+  const fn = extractFunctionSource(src, 'function priceWad(address asset) external view returns (uint256)');
+  assert.ok(fn, 'priceWad(address) is no longer declared in ChainlinkOracle.sol with that signature');
+  const firstLine = src.slice(0, src.indexOf(fn)).split(/\r?\n/).length;
+  const lastLine = firstLine + fn.split(/\r?\n/).length - 1;
+
+  const at = (cite, label) => {
+    const n = Number(cite);
+    assert.ok(
+      n >= firstLine && n <= lastLine,
+      `chain ${chainId}: the ${label} cite ChainlinkOracle.sol:${n} is outside priceWad (lines ${firstLine}-${lastLine})`,
+    );
+    return lines[n - 1] ?? '';
+  };
+
+  const heartbeatLine = at(heartbeatCite, 'heartbeat');
+  assert.match(heartbeatLine, /updatedAt < minUpdated/, `chain ${chainId}: ChainlinkOracle.sol:${heartbeatCite} is not the staleness bound`);
+  assert.match(heartbeatLine, /revert StaleOracle/, `chain ${chainId}: ChainlinkOracle.sol:${heartbeatCite} no longer fails closed`);
+
+  const bandLine = at(bandCite, 'sane-price band');
+  assert.match(bandLine, /cfg\.maxPriceWad != 0/, `chain ${chainId}: ChainlinkOracle.sol:${bandCite} is not the sane-price band check`);
+  assert.match(bandLine, /cfg\.minPriceWad/, `chain ${chainId}: ChainlinkOracle.sol:${bandCite} no longer compares against the band floor`);
+}
+
+test('the revert string names EVERY exempt chain, so a fifth cannot be added silently', () => {
+  // THE DEFECT THAT PRODUCED THE STALE STRING IN THE FIRST PLACE. Six `expectRevert` sites pin the
+  // whole string, so a one-character change reds six of twelve — but a reviewer who added a fifth
+  // exempt chain the way anyone would (constant, wiring, reason map, EXEMPT_CONSTANTS, exact-set
+  // test) and left the string enumerating four kept every forge and node test green. The string is
+  // pinned; it was never COUPLED to the set it describes.
+  //
+  // The revert text is what an operator reads when a deploy refuses, so a chain missing from it reads
+  // as "this chain is not exempt" at exactly the moment they are checking whether it is.
+  const src = fs.readFileSync(path.join(REPO, 'contracts', 'script', 'DeployChainlinkOracle.s.sol'), 'utf8');
+  const revert = /"DeployChainlinkOracle: ORACLE_SEQUENCER[^"]*"/.exec(src);
+  assert.ok(revert, 'the ORACLE_SEQUENCER revert string is no longer a single literal in the deploy script');
+  const text = revert[0];
+  // SET equality on TOKENS, not substring containment. `text.includes('1337')` is true for a string
+  // that only says `31337`, so a sixth exempt chain of 1337 - the local chain id already in this very
+  // file, not a contrived value - passed the forward check unchanged. And the inverse matched
+  // `\b\d{4,7}\b`, so a string claiming `999` or `11155111` (Sepolia) passed the backward check too,
+  // both outside that width. One tokenisation, compared both ways, has neither failure mode.
+  //
+  // A chain id here is always a STANDALONE number, so the token rule is "a digit run not glued to a
+  // letter or digit". Bare `\d+` is wrong for a reason worth keeping: the message says "L2 sequencer
+  // uptime feed", and it took `2` as a claimed chain id. The lookarounds are the narrowest fix that
+  // still refuses any free-standing number which is not an exempt chain - which is the property.
+  const claimed = new Set([...text.matchAll(/(?<![A-Za-z0-9])\d+(?![0-9])/g)].map((m) => Number(m[0])));
+  const missing = [...SEQUENCER_EXEMPT_CHAIN_IDS].filter((id) => !claimed.has(id));
+  assert.deepEqual(
+    missing,
+    [],
+    `these exempt chain ids do not appear in the revert string an operator reads on refusal:\n  ${missing.join(', ')}\n  string: ${text}`,
+  );
+  const overclaimed = [...claimed].filter((id) => !SEQUENCER_EXEMPT_CHAIN_IDS.has(id));
+  assert.deepEqual(
+    overclaimed,
+    [],
+    `the revert string names numbers that are NOT exempt chain ids: ${overclaimed.join(', ')}\n  string: ${text}`,
+  );
+});
+
+test('the sequencer-exempt set is exactly {31337, 84532, 4663, 5042}', () => {
   assert.deepEqual(
     [...SEQUENCER_EXEMPT_CHAIN_IDS].sort((a, b) => a - b),
-    [4663, 31337, 84532].sort((a, b) => a - b),
+    [4663, 5042, 31337, 84532].sort((a, b) => a - b),
     'an id was added to or removed from the exempt set; the deploy-script allowlist must match',
   );
 });
@@ -542,6 +670,45 @@ test('the sequencer-exempt set is exactly {31337, 84532, 4663}', () => {
  * (ChainlinkOracle.sol:218-220) and once at read time, and only the read-time one survives an
  * outage, so a cite that drifted onto the constructor check would be the wrong claim spelled right.
  */
+/**
+ * THE SAME BAR FOR THE NEWEST MEMBER, because a set pinned exactly while its new entry's printed
+ * reason is unguarded is the shape this repository keeps finding: coverage of the container, none of
+ * the contents. `SEQUENCER_EXEMPT_REASONS.get(5042)` is interpolated into a PASSING pre-deploy row,
+ * so it is what an operator reads off a green run on the chain we are actually deploying to.
+ *
+ * It additionally has to say what 4663's does not: that Arc is an L1 and the guard therefore does not
+ * APPLY, rather than having been weakened. Those two entries look identical in the code and are
+ * different decisions, and an operator comparing them should be able to tell which is which.
+ */
+test('the 5042 exemption reason names both surviving guards, and says the guard does not APPLY', () => {
+  const reason = SEQUENCER_EXEMPT_REASONS.get(5042);
+  assert.ok(reason, '5042 is not in SEQUENCER_EXEMPT_REASONS; the printed row would have no reason to state');
+
+  const heartbeat = reason.match(/heartbeat[^()]*\(ChainlinkOracle\.sol:(\d+)\)/);
+  assert.ok(heartbeat, 'the 5042 reason no longer names the per-asset heartbeat/staleness bound with a line cite');
+  const band = reason.match(/sane-price band[^()]*\(ChainlinkOracle\.sol:(\d+)\)/);
+  assert.ok(band, 'the 5042 reason no longer names the sane-price band with a line cite');
+
+  // Same undercount ban as 4663's, by shape rather than by one phrasing.
+  assert.doesNotMatch(
+    reason,
+    /only guard|as the only|only remaining|heartbeat alone|sole guard/i,
+    'the 5042 reason claims a single surviving guard; two survive a zero uptime feed',
+  );
+
+  // The distinction from 4663, asserted rather than left to the comment: an L1 has no sequencer, so
+  // this is not an owner-approved WEAKENING of an applicable guard.
+  assert.match(reason, /\bL1\b/, 'the 5042 reason must say Arc is an L1 — that is WHY no feed exists');
+  assert.match(
+    reason,
+    /does not apply|no sequencer|not a rollup/i,
+    'the 5042 reason must say the guard does not apply, not merely that a feed is unavailable',
+  );
+
+  // Held to the SAME checker as 4663's, not a copy of it: see assertGuardCites.
+  assertGuardCites(5042, heartbeat[1], band[1]);
+});
+
 test('the 4663 exemption reason names BOTH surviving guards, and both cites land inside priceWad', () => {
   const reason = SEQUENCER_EXEMPT_REASONS.get(4663);
   assert.ok(reason, '4663 is no longer in SEQUENCER_EXEMPT_REASONS; the printed row has no reason to state');
@@ -559,34 +726,12 @@ test('the 4663 exemption reason names BOTH surviving guards, and both cites land
     'the 4663 reason is back to claiming a single surviving guard; two survive a zero uptime feed',
   );
 
-  const src = fs.readFileSync(path.join(REPO, 'contracts', 'src', 'oracle', 'ChainlinkOracle.sol'), 'utf8');
-  const lines = src.split(/\r?\n/);
-
-  // Read-time, not construction-time: the cites must sit inside priceWad's own braces.
-  const fn = extractFunctionSource(src, 'function priceWad(address asset) external view returns (uint256)');
-  assert.ok(fn, 'priceWad(address) is no longer declared in ChainlinkOracle.sol with that signature');
-  const firstLine = src.slice(0, src.indexOf(fn)).split(/\r?\n/).length;
-  const lastLine = firstLine + fn.split(/\r?\n/).length - 1;
-
-  const at = (cite, label) => {
-    const n = Number(cite);
-    assert.ok(
-      n >= firstLine && n <= lastLine,
-      `the ${label} cite ChainlinkOracle.sol:${n} is outside priceWad (lines ${firstLine}-${lastLine})`,
-    );
-    return lines[n - 1] ?? '';
-  };
-
-  const heartbeatLine = at(heartbeat[1], 'heartbeat');
-  assert.match(heartbeatLine, /updatedAt < minUpdated/, `ChainlinkOracle.sol:${heartbeat[1]} is not the staleness bound`);
-  assert.match(heartbeatLine, /revert StaleOracle/, `ChainlinkOracle.sol:${heartbeat[1]} no longer fails closed`);
-
-  const bandLine = at(band[1], 'sane-price band');
-  assert.match(bandLine, /cfg\.maxPriceWad != 0/, `ChainlinkOracle.sol:${band[1]} is not the sane-price band check`);
-  assert.match(bandLine, /cfg\.minPriceWad/, `ChainlinkOracle.sol:${band[1]} no longer compares against the band floor`);
+  // The same checker the 5042 case uses. ONE implementation, so neither entry can be held to a
+  // weaker bar than the other — which is exactly what happened while this was a copy.
+  assertGuardCites(4663, heartbeat[1], band[1]);
 });
 
-test('the deploy script exempts the same three ids, so the two lists cannot drift apart', () => {
+test('the deploy script exempts the same four ids, so the two lists cannot drift apart', () => {
   const src = fs.readFileSync(path.join(REPO, 'contracts', 'script', 'DeployChainlinkOracle.s.sol'), 'utf8');
   // NAMED constants, not every `*_CHAIN_ID` in the file. A sweep would also collect a constant that
   // has nothing to do with this guard -- `runWithSequencer`'s Base-mainnet band rule still compares
@@ -594,7 +739,7 @@ test('the deploy script exempts the same three ids, so the two lists cannot drif
   // correct refactor that touches nothing here. Under a sweep that refactor would go red saying the
   // exempt sets disagree, which would be false: a guard that fails with the wrong explanation costs
   // more than one that does not fire.
-  const EXEMPT_CONSTANTS = ['LOCAL_CHAIN_ID', 'BASE_SEPOLIA_CHAIN_ID', 'ROBINHOOD_CHAIN_ID'];
+  const EXEMPT_CONSTANTS = ['LOCAL_CHAIN_ID', 'BASE_SEPOLIA_CHAIN_ID', 'ROBINHOOD_CHAIN_ID', 'ARC_CHAIN_ID'];
   // Extracted BEFORE the loop, because the two assertions below need two different haystacks. The
   // constants are declared at contract scope, OUTSIDE this function, so the declaration check has to
   // read the whole file; the wiring check must read only the function body, or a constant named in a
@@ -641,4 +786,312 @@ test('the deploy script exempts the same three ids, so the two lists cannot drif
     EXEMPT_CONSTANTS.length,
     'requiresSequencerUptimeFeed exempts a different NUMBER of ids than EXEMPT_CONSTANTS names',
   );
+});
+
+// ---------------------------------------------------------------------------------------------
+// THE BOUNDS THIS SCRIPT MIRRORS MUST BE THE BOUNDS THE CONSTRUCTOR ENFORCES.
+//
+// `verify-chainlink-oracle.mjs` keeps its own MIN_HEARTBEAT / MAX_HEARTBEAT / MAX_BAND_RATIO, and the
+// duplication is deliberate: catching a bad config BEFORE `--broadcast` costs a read-only run, and
+// catching it after costs a redeploy of an immutable contract.
+//
+// NOTHING HELD THEM TO THE CONTRACT, AND ONE DRIFTED. #307 raised the contract's MAX_HEARTBEAT to
+// 90,000 s — because Arc's BTC/USD worst gap is 86,423 s and the old ceiling sat 23 s below a healthy
+// feed — and this script's copy stayed at 86,400 for a day. The consequence was not cosmetic: the
+// pre-deploy verifier would have REJECTED the Arc config's 90,000, a value the constructor accepts, so
+// gate 5 could not have gone green on the chain we are deploying to. A mirror that drifts fails toward
+// blocking a correct deploy, which is the safe direction and still wrong.
+// ---------------------------------------------------------------------------------------------
+
+test('the verifier bounds mirror ChainlinkOracle exactly, so the next raise cannot leave them behind', () => {
+  const oracle = fs.readFileSync(path.join(REPO, 'contracts', 'src', 'oracle', 'ChainlinkOracle.sol'), 'utf8');
+  /** A private constant's value from the contract source, with underscores stripped. */
+  const constant = (name) => {
+    const m = new RegExp(`constant\\s+${name}\\s*=\\s*([0-9_]+)`).exec(oracle);
+    assert.ok(m, `${name} is no longer declared as a numeric constant in ChainlinkOracle.sol`);
+    return BigInt(m[1].replace(/_/g, ''));
+  };
+  assert.equal(VERIFIER_MIN_HEARTBEAT, constant('MIN_HEARTBEAT'), 'MIN_HEARTBEAT drifted from the contract');
+  assert.equal(VERIFIER_MAX_HEARTBEAT, constant('MAX_HEARTBEAT'), 'MAX_HEARTBEAT drifted from the contract');
+  assert.equal(VERIFIER_MAX_BAND_RATIO, constant('MAX_BAND_RATIO'), 'MAX_BAND_RATIO drifted from the contract');
+});
+
+test('no shipped file restates the heartbeat bounds as literals that disagree with the contract', () => {
+  // THE DEFECT THIS EXISTS FOR, and it is the revert string's defect in a different costume: a
+  // sentence that DESCRIBES a shared on-chain constant, copied into several files, corrected in one.
+  // `heartbeatSeconds in [600, 86400]` was true until MAX_HEARTBEAT was raised to 90,000 on
+  // 2026-09-18, and it survived in base-mainnet.json and base-sepolia.json because the fix was
+  // scoped to the file being edited (arc-mainnet.json) rather than to the sentence's SHAPE. A third
+  // copy called 86,400 the ceiling in docs/evidence/arc-mainnet-survey.json, in the same file that
+  // records the raise. The bound belongs to ONE constructor, so its description is coupled to the
+  // Solidity source here rather than trusted to whoever edits a config next.
+  const oracle = fs.readFileSync(path.join(REPO, 'contracts', 'src', 'oracle', 'ChainlinkOracle.sol'), 'utf8');
+  const decl = (name) => {
+    const m = new RegExp(`constant\\s+${name}\\s*=\\s*([0-9_]+)`).exec(oracle);
+    assert.ok(m, `${name} is no longer declared in ChainlinkOracle.sol -- this check cannot be evaluated`);
+    return Number(m[1].replace(/_/g, ''));
+  };
+  const MIN = decl('MIN_HEARTBEAT');
+  const MAX = decl('MAX_HEARTBEAT');
+  assert.ok(MIN > 0 && MAX > MIN, `nonsense bounds read from source: [${MIN}, ${MAX}]`);
+
+  // `heartbeat...[a, b]`, digits with or without separators. The `heartbeat` requirement is what
+  // keeps base-mainnet's TWAP `[300, 86400] (MIN_WINDOW/MAX_WINDOW)` out of this: that is a DIFFERENT
+  // constant pair, and "correcting" it to the heartbeat ceiling would be a false correction.
+  // TWO forms, because this round REMOVED the one the first version coupled to. The bracket literal
+  // `[600, 86400]` is gone from every config -- replaced with `[MIN_HEARTBEAT, MAX_HEARTBEAT] ... (600 s
+  // and 90,000 s today; ...)`, which the bracket matcher does not see. So the real-file scan returned
+  // NOTHING and the suite would have redded on its own fixtures rather than on a config: the coupling
+  // was the point of the round and was coupled to text that no longer existed. Exactly the shape this
+  // guard exists to catch, in the guard.
+  //
+  // FORM A -- a literal pair: `heartbeat... [lo, hi]`. Kept for any file that still writes numbers.
+  // FORM B -- the named form: after `MIN_HEARTBEAT` and `MAX_HEARTBEAT` are named, the first two
+  //   numbers before the next `;` are the values being attributed to them. The `;` bound matters:
+  //   these notes legitimately go on to discuss 86,400 s as the feed's own cadence and as the OLD
+  //   ceiling, and a guard that redded on true historical prose would be deleted.
+  const num = (t) => Number(String(t).replace(/[,_\s]/g, ''));
+  const scan = (label, text) => {
+    const out = [];
+    for (const m of text.matchAll(/heartbeat\w*[^.\[\]]{0,80}\[\s*([\d,_]+)\s*,\s*([\d,_]+)\s*\]/gi)) {
+      const lo = num(m[1]);
+      const hi = num(m[2]);
+      if (lo !== MIN || hi !== MAX) out.push(`${label}: literal pair [${lo}, ${hi}] vs contract [${MIN}, ${MAX}] -- ${m[0].slice(0, 80)}`);
+    }
+    for (const m of text.matchAll(/MIN_HEARTBEAT[^;]{0,120}?MAX_HEARTBEAT([^;]{0,160})/g)) {
+      const nums = [...m[1].matchAll(/(\d[\d,_]*)\s*s\b/g)].map((x) => num(x[1]));
+      if (nums.length < 2) continue; // names given with no numbers attributed to them: nothing to check
+      const [lo, hi] = nums;
+      if (lo !== MIN || hi !== MAX) {
+        out.push(`${label}: names the constants then attributes (${lo}, ${hi}) to them vs contract (${MIN}, ${MAX})`);
+      }
+    }
+    return out;
+  };
+
+  // NON-VACUITY, and every fixture is DERIVED from the contract's own constants rather than writing
+  // 600 and 90,000 in. The first version hardcoded them, so raising MAX_HEARTBEAT redded the fixture
+  // that says "a correct literal must not be flagged" -- the guard reporting a failure in itself
+  // instead of in the configs, which is the same defect as coupling to text that no longer exists.
+  const stale = MAX + 1234; // any number the contract does not hold
+  assert.equal(scan('fx', `heartbeatSeconds in [${MIN}, ${stale}]; an enabled band...`).length, 1, 'form A: a stale literal must be seen');
+  assert.equal(scan('fx', `heartbeat bounds are [${MIN}, ${MAX}] today`).length, 0, 'form A: a correct literal must not be flagged');
+  assert.equal(scan('fx', `Bounds are [300, ${stale}] (MIN_WINDOW/MAX_WINDOW) for the TWAP window.`).length, 0, 'the TWAP window is a different constant pair');
+  assert.equal(
+    scan('fx', `heartbeatSeconds in [MIN_HEARTBEAT, MAX_HEARTBEAT] as declared (${MIN} s and ${stale} s today; the ceiling moved)`).length,
+    1,
+    'form B: stale numbers attributed to the named constants must be seen -- THIS is the form the tree now uses',
+  );
+  assert.equal(
+    scan('fx', `heartbeatSeconds in [MIN_HEARTBEAT, MAX_HEARTBEAT] as declared (${MIN} s and ${MAX} s today; raised from ${stale} s on 2026-09-18)`).length,
+    0,
+    'form B: correct numbers pass, and a historical figure after the `;` is not read as a claim',
+  );
+  assert.equal(scan('fx', 'bounded by MIN_HEARTBEAT and MAX_HEARTBEAT as the contract declares them').length, 0,
+    'naming the constants with no numbers attributed is the strongest form and must pass');
+
+  const offenders = [];
+  for (const rel of FILES) {
+    const abs = path.join(REPO, rel);
+    assert.ok(fs.existsSync(abs), `${rel} is gone -- update this list deliberately rather than letting it skip`);
+    offenders.push(...scan(rel, fs.readFileSync(abs, 'utf8')));
+  }
+
+  // The scan must actually SEE the tree's current form, or it is coupled to nothing again. Every
+  // *-mainnet/sepolia config states the bound; at least one must be reachable by form B.
+  const seen = FILES.filter((rel) => /MIN_HEARTBEAT[^;]{0,120}?MAX_HEARTBEAT[^;]{0,160}\d[\d,_]*\s*s\b/.test(fs.readFileSync(path.join(REPO, rel), 'utf8')));
+  assert.ok(
+    seen.length >= 3,
+    `only ${seen.length} of the listed files state the heartbeat bound in a form this scan can read. `
+      + 'The bracket form was removed from the configs once already and the coupling silently stopped '
+      + `covering anything: ${FILES.join(', ')}`,
+  );
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `these files restate the ChainlinkOracle heartbeat bounds as literals the contract does not hold:\n  ${offenders.join('\n  ')}\n`
+      + 'Name the constants (MIN_HEARTBEAT / MAX_HEARTBEAT) instead of the numbers, or update every copy.',
+  );
+});
+
+test('no config or evidence note asserts an owner decision and denies it in the same field', () => {
+  // THREE ROUNDS on `smoke.govNote`, then three defects in the guard written to stop it. All three are
+  // worth naming because each is a shape this repo keeps shipping.
+  //
+  // 1. THE MARKER EXEMPTED THE FIELD, NOT THE DENIAL. Any historical marker anywhere in the field
+  //    cleared it, so the live contradiction could be left exactly as it was and one unrelated
+  //    parenthetical -- "(An earlier revision used a different number.)" -- turned it green. The
+  //    three-round defect was reinsertable in one clause. The marker is now required in the SAME
+  //    SENTENCE as the denial, which is what "this denial is history" actually means.
+  // 2. NO FLOOR. The sibling heartbeat guard has `seen.length >= 3`; this had none, so narrowing the
+  //    file filter made it walk nothing at full green -- the identical defect that produced blocker 2
+  //    of this PR, inside the guard added to prevent recurrence.
+  // 3. THE CORPUS EXCLUDED THE FILE IT POLICES. `f.includes('config')` dropped
+  //    docs/evidence/arc-mainnet-survey.json, which is where four of this round's contradictions were.
+  const DENIES = /do not treat[^.]{0,120}as the owner having said so|has NOT said so|the owner has not decided|not yet chosen|is NOT established/i;
+  const HISTORICAL = /an earlier revision|used to say|previously said|it no longer does|superseded|was not updated|this entry was stale/i;
+  const ASSERTS = /IS (?:him|the owner) having said so|RE-DECIDED FOR|SET by owner decision|CHOSEN|RESOLVED/;
+
+  /**
+   * Sentences, so a marker cannot vouch for a denial it does not sit beside. Split on sentence-ending
+   * punctuation followed by whitespace; a parenthetical containing both stays one unit, which is the
+   * case the prescribed dated form actually uses.
+   */
+  const sentences = (text) => String(text).split(/(?<=[.!?])\s+/);
+
+  const classify = (text) => {
+    if (!ASSERTS.test(text)) {
+      // A denial with nothing asserted against it is a true statement about a value nobody has set.
+      return 'no-assertion';
+    }
+    const live = sentences(text).filter((one) => DENIES.test(one) && !HISTORICAL.test(one));
+    return live.length > 0 ? 'contradiction' : 'clean';
+  };
+
+  const offenders = [];
+  let fieldsWalked = 0;
+  for (const rel of FILES) {
+    const parsed = JSON.parse(fs.readFileSync(path.join(REPO, rel), 'utf8'));
+    (function walk(node, trail) {
+      if (typeof node === 'string') {
+        ++fieldsWalked;
+        if (classify(node) === 'contradiction') {
+          const live = sentences(node).filter((one) => DENIES.test(one) && !HISTORICAL.test(one));
+          offenders.push(`${rel} ${trail}: asserts a decision AND denies it live -- ${JSON.stringify(live[0].slice(0, 120))}`);
+        }
+        return;
+      }
+      if (node && typeof node === 'object') {
+        for (const [k, v] of Object.entries(node)) walk(v, trail ? `${trail}.${k}` : k);
+      }
+    })(parsed, '');
+  }
+  assert.deepEqual(offenders, [], `${offenders.length} field(s) carry a claim and a LIVE refutation:\n  ${offenders.join('\n  ')}`);
+
+  // FLOOR. Without it, narrowing the corpus makes this walk nothing and report green -- which is the
+  // defect it exists to stop, so it is the one thing this test must not be able to do.
+  assert.ok(
+    fieldsWalked >= 200,
+    `walked only ${fieldsWalked} string fields across ${FILES.length} files. These configs carry `
+      + 'hundreds of notes; a number this low means the corpus or the walk is broken, not that the '
+      + 'tree is clean.',
+  );
+  // And the file this round is fixing must be IN the corpus, not outside the guard policing it.
+  assert.ok(FILES.includes('docs/evidence/arc-mainnet-survey.json'), 'the survey must be policed too');
+
+  // NON-VACUITY across every quadrant, plus the smuggle the reviewer found.
+  assert.equal(
+    classify('timelockDuration 0 was RE-DECIDED FOR Arc, so its presence here IS him having said so. Do not treat its presence in this file as the owner having said so for Arc.'),
+    'contradiction',
+    'the shape that survived three rounds',
+  );
+  assert.equal(
+    classify('timelockDuration 0 was RE-DECIDED FOR Arc, so its presence here IS him having said so. Do not treat its presence in this file as the owner having said so for Arc. (An earlier revision of this note used a different number.)'),
+    'contradiction',
+    'THE SMUGGLE: an unrelated historical parenthetical must not vouch for a live denial elsewhere in the field',
+  );
+  assert.equal(
+    classify('timelockDuration 0 was RE-DECIDED FOR Arc. (An earlier revision of this note ended by saying the opposite: do not treat its presence in this file as the owner having said so.)'),
+    'clean',
+    'the prescribed dated form -- marker and denial in ONE sentence -- must not red, or the guard rewards deleting the history',
+  );
+  assert.equal(
+    classify('These six are carried from base-mainnet.json; do not treat their presence in this file as the owner having said so.'),
+    'no-assertion',
+    'a denial with nothing asserted against it is true',
+  );
+  assert.equal(classify('proposalThresholdBps 500 is SET by owner decision 2026-09-19.'), 'clean',
+    'an assertion on its own is not a contradiction');
+  assert.equal(
+    classify('The heartbeat is CHOSEN at 90,000 s. What is NOT established is the basket shape.'),
+    'contradiction',
+    'the fourth instance: a summary field that still counts a settled decision as open',
+  );
+});
+
+// --- #171 end to end: an RPC 429 must not read as a failed check --------------
+//
+// Before this fix, `castRetry` was a blind one-shot retry: any second failure -- a rate limit
+// exactly as much as a genuine revert -- surfaced as `null`, which every call site recorded as a
+// FAILED check ("do NOT deploy the oracle"). A verifier that cannot tell "I could not check" from
+// "the check failed" produces a false red, and a false red is how a real red gets ignored.
+//
+// Same CAST=node + NODE_OPTIONS=--require stub mechanism as `runVerifier` above, extended to answer
+// `code` (so the feed passes the code check) and to fail every `call … description()…` with 429
+// wording -- `classifyCallError`'s own measured HTTP-429 text -- on every attempt, so the retries in
+// `castRetry` are exhausted and `TransportError` is what reaches `runAssetChecks`.
+
+/** Run the verifier with `code` and `chain-id` stubbed, and every `description()` call 429ing. */
+function runVerifierWith429() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chainlink-429-'));
+  const stub = path.join(dir, 'stub-cast.cjs');
+  fs.writeFileSync(
+    stub,
+    [
+      `'use strict';`,
+      `const p = require('node:path');`,
+      `const sub = p.basename(String(process.argv[1] ?? ''));`,
+      `const rest = process.argv.slice(2);`,
+      `if (sub === 'chain-id') { console.log('4663'); process.exit(0); }`,
+      `if (sub === 'code') { console.log('0x6001'); process.exit(0); }`,
+      `if (sub === 'call' && String(rest[1] ?? '').startsWith('description()')) {`,
+      `  console.error('HTTP request failed. Request exceeds defined limit. status: 429');`,
+      `  process.exit(1);`,
+      `}`,
+      `if (!/[.](mjs|cjs|js)$/.test(sub)) {`,
+      `  console.error('stub-cast: unexpected invocation ' + [sub, ...rest].join(' '));`,
+      `  process.exit(3);`,
+      `}`,
+      '',
+    ].join('\n'),
+  );
+  const cfg = path.join(dir, 'cfg.json');
+  fs.writeFileSync(
+    cfg,
+    JSON.stringify({
+      chainId: 4663,
+      chainlinkOracle: {
+        sequencerUptimeFeed: '',
+        assets: [{ symbol: 'WETH', feed: '0x1111111111111111111111111111111111111111', feedDescriptionOnChain: 'ETH / USD' }],
+      },
+    }),
+  );
+  const env = { ...process.env, CONFIG: cfg, CAST: process.execPath };
+  delete env.BASE_MAINNET_RPC;
+  delete env.BASE_RPC;
+  const r = spawnSync(process.execPath, [VERIFIER], {
+    encoding: 'utf8',
+    env: { ...env, NODE_OPTIONS: `--require "${stub.split(path.sep).join('/')}"` },
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+  return r;
+}
+
+test('a persistent RPC 429 on one feed is reported as RPC-UNAVAILABLE, never as FAIL', () => {
+  const r = runVerifierWith429();
+  assert.match(r.stdout, /RPCUNAVAILABLE.*WETH: feed checks/, `expected an RPCUNAVAILABLE row. stdout: ${r.stdout}`);
+  assert.doesNotMatch(
+    r.stdout,
+    /FAIL .*WETH/,
+    'a transport failure must never be printed as a FAILED check -- that is the false red #171 exists to remove',
+  );
+});
+
+test('a persistent RPC 429 exits 3 (could not fully verify), never 1 (do not deploy) or 0 (clean)', () => {
+  const r = runVerifierWith429();
+  assert.equal(r.status, 3, `expected exit 3 for "not a confirmed defect, re-run". stdout: ${r.stdout} stderr: ${r.stderr}`);
+});
+
+test('the summary line names the RPC-unavailable count separately from FAILED and DRIFT', () => {
+  const r = runVerifierWith429();
+  assert.match(r.stdout, /1 RPC-UNAVAILABLE \(not a defect — re-run/);
+  assert.doesNotMatch(r.stdout, /FAILED/);
+});
+
+test('one feed 429ing does not stop the sweep from reaching the next check row', () => {
+  // The code check for this same feed runs BEFORE description() and must still be recorded --
+  // proof the whole run did not abort, only the rest of this one feed's checks.
+  const r = runVerifierWith429();
+  assert.match(r.stdout, /PASS  WETH: feed has code/);
 });

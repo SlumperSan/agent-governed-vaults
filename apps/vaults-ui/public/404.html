@@ -1,0 +1,28 @@
+<!doctype html>
+<!--
+  Cloudflare Pages' own documented fallback: with no 404.html in the served directory, an
+  unmatched path serves index.html at 200 — the "SPA fallback" meant for client-side routers.
+  This app has none (grepped src/ for a router, a `location.` read, and a `hash` listener — none
+  exist; App.tsx renders exactly one view). So every request that does not match a real file is a
+  missing asset, never a navigation this app needs to catch client-side, and the blanket fallback
+  was pure liability: verified against a real `wrangler pages dev` serving a directory with no
+  404.html, `/favicon.ico` came back 200 `text/html` — the SPA shell, for a request that named no
+  page. Adding this file is confirmed, against the same tool, to turn that into a real 404.
+
+  No inline styling and no style block here on purpose. public/_headers ships `style-src 'self'`
+  with no `unsafe-inline`, and this page cannot link the build's hashed, content-addressed
+  stylesheet (public/ is copied to dist/ verbatim, before Vite has hashed anything) — so this page
+  is deliberately unstyled rather than shipping a CSP violation nothing would report at build time.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Not found — RWAlly</title>
+  </head>
+  <body>
+    <p>Not found.</p>
+  </body>
+</html>

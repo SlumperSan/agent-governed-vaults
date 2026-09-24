@@ -75,11 +75,10 @@ target a v3-shaped router, not a v4 PoolManager singleton, so the confirmed Pool
 8 decimals, Circle FiatToken stack, $7.40M USDC against 73.38 BTC in a single pool, with AMM spot
 within 0.20% of the Chainlink feed.
 
-**There is no ETH representation on Arc with any depth** — scoped deliberately, because the
-blanket form is false: ETH-named tokens exist and are merely worthless, so one $452 squatter
-refutes "in any form". A complete `PoolCreated` scan of the real
-factory — 26,286 pools, 26,187 tokens, zero window errors — read all 52 ETH-or-BTC-family symbols
-and found 51 of them to be 18-decimal squatters worth under $452. Circle's whole Arc token set,
+**Of the 26,187 tokens that appear in a Uniswap v3 pool on Arc, 52 carry an ETH- or BTC-family
+symbol, and every one of the 51 that is not cirBTC holds under $452 of depth.** A complete
+`PoolCreated` scan of the real factory — 26,286 pools, 26,187 tokens, zero window errors — is where
+that count comes from; the 51 are 18-decimal squatters. Circle's whole Arc token set,
 enumerated from `MinterConfigured` and `MasterMinterChanged` across all history, is USDC, EURC,
 cirBTC, USYC, MXNB, TRYB and three unnamed contracts. There is no cirETH.
 

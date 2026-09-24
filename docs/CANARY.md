@@ -487,7 +487,7 @@ masking failure of single-key signals, and it is why per-leg keys are the house 
 proposal went (`commit phase of proposal 3 … is over; now in the reveal phase`, or `settled as
 Executed at block N`). A full lifecycle is therefore about eight lines spread over hours or days.
 Low volume by construction, and the bound is **CM-6**: `propose` requires the previous proposal to
-be settled (`Governance.sol:293`), so one vault cannot have two proposals running at once however
+be settled (`Governance.sol:315`), so one vault cannot have two proposals running at once however
 many proposers try. That, not the phase durations, is what bounds pages per vault per hour, and it
 is the answer to M-7's per-proposer cooldown sidestep. "Every phase is at least an hour" is **not**
 true: `_validateConfig` floors `commitDuration`, `revealDuration` and `executionWindow` at 1 hour
@@ -611,9 +611,10 @@ reader tags each failure `revert` or `transport` (`packages/canary/src/call-erro
 `revert` can produce a verdict, and a `transport` routes here, visible, re-asserted on a backoff,
 and explicitly not evidence of a fault.
 
-**`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** All four of its
-blind branches (`feed-identity.mjs:185, 211, 266, 308`) carry
-`minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:101`), so they escalate only on the third
+**`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** Every one of its
+blind branches carries `minConsecutive: UNREADABLE_SWEEPS` (3; the `UNREADABLE_SWEEPS` export in
+`feed-identity.mjs`): the vault-level probe in `checkFeedIdentity`, and every per-asset branch
+through the `blind` and `swapBlind` builders in `assetIdentity`. So they escalate only on the third
 consecutive sweep. The case that earned the damping is an `eth_call` coming back empty: one empty
 return is noise where three consecutive is the feed, but that is the case it was written for, not
 the only one it covers: each branch is reachable on a confirmed revert too, and on a transport

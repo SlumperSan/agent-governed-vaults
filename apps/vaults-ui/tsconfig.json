@@ -12,7 +12,14 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
-    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    // false everywhere except `.ts` extension imports of `sanctions.ts`/`sdn-addresses.ts` (card
+    // 213) — those two files must import each other in a way plain Node's ESM loader can resolve
+    // directly, with no extension inference, so `test/sanctions.test.mjs` can run them as a real
+    // unit test rather than a source guard. Legal per TypeScript's own rule for this flag: it
+    // requires `noEmit` or `emitDeclarationOnly`, and `noEmit` is already true below — this project
+    // never asks tsc to emit; Vite/esbuild does the real build.
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -20,7 +27,9 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
     "types": ["vite/client"],
     "paths": {
-      "@atlas/*": ["./src/lib/atlas-modules/*"]
+      "@atlas/*": ["./src/lib/atlas-modules/*"],
+      "@chain/*": ["./src/lib/atlas-modules/chain/*"],
+      "@rwally/terms": ["./src/lib/terms-modules/terms-text.d.ts"]
     }
   },
   "include": ["src"]

@@ -11,7 +11,14 @@
  * Read set, and why each one is load-bearing:
  *
  *   VaultCore.navPerShareWad()        drawdown policy, and the oracle liveness probe (below)
- *   VaultCore.exitFeeBpsOf(member)    join gate — the fee THIS agent would actually pay
+ *   VaultCore.exitFeeBpsOf(member)    join gate — the TENURE-DECAYED fee, which is NOT always the
+ *                                       fee this agent would pay. The sole-holder waiver is applied
+ *                                       at settlement (`_settleExit` zeroes it when the member holds
+ *                                       every share) and this view does not model it, as its own
+ *                                       NatSpec says: "before any sole-holder waiver applied at
+ *                                       settlement". A sole holder reading this view is told it owes
+ *                                       a fee it does not owe. Treat it as a ceiling on the join
+ *                                       decision, never as the amount
  *   VaultCore.pendingDeposit(member)  → (amount, availableAt): schedule activate at the REAL
  *                                       window end, not a guessed now+4h
  *   VaultCore.sharesOf/queuedExitShares/windowCleared/skipOptIn/capacityCapUsdc/totalAssets

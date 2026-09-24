@@ -13,10 +13,12 @@
 # THE HOSTNAME RULE NOW LIVES IN `functions/_middleware.js`, which can read `Host` because it is a
 # Function rather than a static rule table. It redirects every non-canonical hostname — including
 # `www.rwally.com` AND the `*.rwally.pages.dev` hostnames — to `rwally.com` with a 301. That is not
-# only a www->apex tidy-up: the sanctions geofence is a WAF rule on the `rwally.com` ZONE, and the
-# pages.dev hostnames are not in that zone, so before the middleware they were an unfiltered path
-# to the same content. Read that file before changing anything here. A zone-level Bulk Redirect in
-# the dashboard remains a valid alternative for the www leg, but it would not cover pages.dev.
+# only a www->apex tidy-up: the SAME FUNCTION also enforces the sanctions-jurisdiction geofence
+# (card 212) directly, in code, on every one of those hostnames — it is no longer solely a WAF rule
+# scoped to the `rwally.com` zone, which is what left the pages.dev hostnames as an unfiltered path
+# before this. Read that file before changing anything here. A zone-level Bulk Redirect in the
+# dashboard remains a valid alternative for the www leg, but it would not cover pages.dev, and it
+# would not carry the geofence either.
 #
 # NO CANONICALIZATION RULE IS NEEDED EITHER. Pages already redirects HTML pages to their
 # extension-less counterparts: `/faq.html` to `/faq`, and `/index.html` to `/`. Those are the
@@ -39,21 +41,30 @@
 
 /risks  /disclaimers  301
 
-# THE SEVEN RULES BELOW. The nine-page site collapsed on 2026-09-05 to one scroll page plus a
+# THE SIX RULES BELOW. The nine-page site collapsed on 2026-09-05 to one scroll page plus a
 # Disclaimers page. Every one of the retired URLs is still in sitemap.xml's git history, in the
 # repository at large, and in whatever anyone has bookmarked or linked from elsewhere, so each gets
-# a 301 rather than a 302: the collapse is permanent, and none of these pages is coming back.
+# a 301 rather than a 302: none of these pages is coming back.
 #
-# ONE OF THE SEVEN SPLITS FROM THE OTHER SIX. `/status` redirects to `/disclaimers`, not to `/`,
+# ONE OF THE SIX SPLITS FROM THE OTHER FIVE. `/status` redirects to `/disclaimers`, not to `/`,
 # because the status page carried the deployment record and the claims register, and that material
-# survived the collapse onto the Disclaimers page rather than onto the homepage. The other six,
-# how-it-works, agents, who-its-for, operators, faq and vision, were narrative pages explaining the
-# protocol, and that narrative now lives on the single scroll page at `/`, so all six redirect there.
+# survived the collapse onto the Disclaimers page rather than onto the homepage. The other five,
+# agents, who-its-for, operators, faq and vision, were narrative pages explaining the protocol, and
+# that narrative now lives on the homepage, so all five redirect there.
 #
 # Pages serves the extension-less form, the same as the `/risks` rule above, so `/operators.html`
 # redirects to `/operators` first and lands on these rules on the second hop.
+#
+# `/how-it-works` WAS THE SEVENTH RULE, AND IT CAME BACK AS A REAL PAGE. The site was rebuilt to five
+# pages after the collapse, and one of them is `how-it-works.html` again — in `src/pages.ts`, in the
+# nav, and behind the homepage's "How it works" button. The rule stayed, so Pages 301'd the page to
+# `/` before it could be served: the nav link bounced readers to the homepage and the page was
+# unreachable in production, while every build, test and gate stayed green, because none of them
+# serve through this file. Removed 2026-09-23.
+#
+# THE CHECK THAT WOULD HAVE CAUGHT IT: a redirect SOURCE that is also a live page in `src/pages.ts`
+# shadows that page completely. Before adding any rule here, make sure its source is not a PageId.
 
-/how-it-works   /              301
 /agents         /              301
 /who-its-for    /              301
 /operators      /              301

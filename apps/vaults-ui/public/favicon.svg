@@ -1,0 +1,18 @@
+<!-- THRESHOLD. Replaces the placeholder rounded gradient square per the owner's brand decision,
+     Agent-Governed Vaults/Decisions/the-mark-is-threshold-2026-09-18.md, rolled out repo-wide
+     2026-09-24. Everything below is copied verbatim from Design/brand-threshold/favicon.svg — do
+     not hand-edit the geometry; regenerate from that source file if it ever changes. This app ships
+     no favicon.ico (see index.html; only the SVG is linked), so there is nothing else to rebuild. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RWAlly">
+  <!-- FAVICON. The mark is a wide letterbox, so on its own it floats in a square tile with dead
+       space either side. Here it sits on the brand ground and is scaled to fill the tile, which
+       is what makes it resolve at 16px. The opening is the whole idea: if it closes up, the
+       icon has failed and the course heights are wrong, not the concept. -->
+  <rect width="64" height="64" rx="12" fill="#070b18"/>
+  <g fill="#2f6bff" transform="translate(32 32) scale(1.06) translate(-32 -32)">
+    <rect x="8" y="16" width="48" height="10" rx="2.5"/>
+    <rect x="8" y="29" width="14" height="10" rx="2.5"/>
+    <rect x="42" y="29" width="14" height="10" rx="2.5"/>
+    <rect x="8" y="42" width="48" height="10" rx="2.5"/>
+  </g>
+</svg>

@@ -12,11 +12,13 @@
 # Functions at all — which fails silently: the static assets still publish and the hostname
 # canonicalization in `functions/_middleware.js` stops running.
 #
-# `functions/_middleware.js` is the only Function here, and it is not cosmetic: it redirects every
-# non-canonical hostname, INCLUDING the *.rwally.pages.dev hostnames, back to the apex. The
-# sanctions geofence is a WAF rule on the rwally.com ZONE, and the pages.dev hostnames are not in
-# that zone, so without this they are an unfiltered path to the same content. Read that file before
-# changing anything here.
+# `functions/_middleware.js` is the only Function here, and it is not cosmetic: it enforces the
+# sanctions-jurisdiction geofence (card 212) in code, on every hostname Pages serves this site on,
+# and redirects every non-canonical hostname, INCLUDING the *.rwally.pages.dev hostnames, back to
+# the apex. The geofence is NOT a WAF rule scoped to the rwally.com zone as of card 212 — a zone WAF
+# rule, if one still exists, is redundant with the Function rather than load-bearing for it, because
+# a Pages Function runs before Pages even resolves which hostname the request arrived on. Read that
+# file before changing anything here.
 #
 # `compatibility_flags` is kept only in case a future Function needs it. The one Function present
 # uses no Node built-in, so check before relying on it.

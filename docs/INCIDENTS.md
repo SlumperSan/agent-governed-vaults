@@ -5,12 +5,16 @@ pressure.**
 
 ## 0. What cannot be done: the honest line, first
 
-This protocol is **immutable**: no proxies, no admin keys, no pause switch, no upgrade path, no
-parameter that anyone can change after deployment. That was a deliberate trade (THREAT-MODEL,
-accepted risks): members never have to trust an operator's key hygiene, because there is no key
-whose compromise can move their funds, and the price is that **no incident below has a "fix the
-contract" step.** There is nothing to pause, nobody to call who can freeze an attacker, and no
-hotfix to ship.
+This protocol is **immutable**: no proxies, no pause switch, no upgrade path, no parameter that
+anyone can change after deployment. **There is exactly one privileged key, and it is spent at
+wiring:** `OperatorRegistry.wire`, `SubVaultRegistry.wire` and `Governance.wireSubVaultRegistry` are
+each `onlyDeployer` and each revert once their slot is set (`AlreadyWired`,
+`AlreadyWiredSubRegistry`), four registry-pointer slots in total. That was a deliberate trade
+(THREAT-MODEL, accepted risks): members never have to trust an operator's key hygiene, because there
+is no key whose compromise can move their funds — a wired deployment has nothing left for that key
+to reach, and an unwired one has no members yet — and the price is that **no incident below has a
+"fix the contract" step.** There is nothing to pause, nobody to call who can freeze an attacker, and
+no hotfix to ship.
 
 Every incident response therefore reduces to some combination of exactly four levers:
 
@@ -41,40 +45,50 @@ reader can run. Never state a recovery time you cannot evidence.
 > the OPERATIONAL gates** (soak + canary, gates 3/6, which need a funded testnet key), not on
 > security ([LAUNCH-READINESS.md](LAUNCH-READINESS.md)).
 >
-> **THIS RUNBOOK NOW COVERS A LIVE DEPLOYMENT.** Since 2026-09-05 the protocol's singletons are
-> deployed and wired on Robinhood Chain mainnet (chain 4663): `VaultFactory`
-> `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp), address book
-> [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json).
+> **NO DEPLOYMENT OF THIS PROTOCOL IS LIVE ON ANY MAINNET, AND NO MEMBER FUNDS ARE AT STAKE
+> ANYWHERE.** Every incident below that begins with a deposit, a proposal or an exit is hypothetical
+> today. The one running stack is on **Base Sepolia** testnet, which holds no member money, and
+> its lifecycle evidence is
+> [`evidence/testnet-lifecycle-run.json`](evidence/testnet-lifecycle-run.json).
 >
-> **What that does and does not put in scope. THIS PARAGRAPH INVERTED ON 2026-09-12.** It used to
-> say no vault had been created and that every incident below beginning with a deposit, a proposal
-> or an exit was therefore hypothetical on this chain. **They are no longer hypothetical.**
-> `verifiedWiring["factory.vaultCount()"]` reads 2 at block 61,513,974:
-> `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` holds `idleUsdc` 20000000 — 20 USDG — at block 61,646,791 and
-> `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` holds 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash after trading its
-> USDG away, so funds ARE at stake on 4663 and the
-> deposit, proposal and exit sections apply to a live vault from today. Both vaults have also
-> already run governance rounds, but read what that means before trusting it: `holderCount()` is 1
-> on both, and `proposals(1)`, `proposals(2)` and `proposals(3)` each carry `memberCount` 1 with the
-> same address, `0x0f80606a…`, as proposer. One address proposed, voted and was the whole electorate,
-> three times. The mechanics have run end to end; nothing contested has — no quorum contest, no
-> adversarial commit-reveal, no second voter. An earlier draft of this line said the proposal
-> sections were "exercised rather than theoretical", which is the comforting half of that.
-> What was already live remains live: the factory, the registries, the fee engine, governance and
-> the oracle are on-chain and immutable, so §§ about a wrong or unwired singleton, a bad oracle
-> configuration or an unusable address book apply as before. **One standing incident-relevant
-> fact:** both vaults were created by the deployer EOA rather than the creator Safe
-> `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`, against the deployment record's own
-> `intendedCreator`, and `creator` is immutable — so a compromise of that EOA is a compromise of
-> the creator and attested-operator identity of every vault on this chain, with no rotation path.
-> This banner is what has to be
-> rewritten on the day it does.
+> **Chain 4663 (Robinhood Chain) is abandoned by owner decision of 2026-09-18, and both of its
+> vaults are empty.** Read directly at block 66,743,764:
+> `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38`
+> each return `totalShares()` 0, `navWad()` 0, `holderCount()` 0 and `idleUsdc()` 0, and hold zero
+> of all three tokens — USDG `0x5fc5360d0400a0fd4f2af552add042d716f1d168`, WETH
+> `0x0bd7d308f8e1639fab988df18a8011f41eacad73`, cbBTC
+> `0xcec185eb182c47d1ba1efc84e6959e18cd620be4`. Repeat any of it yourself:
+> `cast call <vault> 'totalShares()(uint256)' --rpc-url https://rpc.mainnet.chain.robinhood.com`.
+> **That is the end state, not the mechanism** — this banner records what the chain returns, not how
+> it got there.
 >
-> Two of that chain's properties change what an on-call reader should expect once a vault exists:
-> there is no Chainlink L2 sequencer uptime feed for 4663, so
-> that gate cannot freeze a vault there, and its feeds publish on an 86,400 s heartbeat, exactly
-> `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:132`), so the staleness breaker only
-> fires after a feed has been stopped for more than a day.
+> **ONE REACHABLE RPC ENDPOINT FOR 4663, so that reading is single-source.**
+> `https://rpc.mainnet.chain.robinhood.com` answers `eth_chainId` 4663; the Blockscout explorer sits
+> behind a challenge and no second public endpoint answered at all. The cross-check available is
+> temporal rather than independent: the same four views were read to the same zeros on 2026-09-18,
+> at a different block, by a different reader.
+>
+> **"Nothing at stake" is not "nothing exists", and treating them as the same sentence is its own
+> error.** The singletons and both vaults are still deployed on 4663 and are immutable:
+> `VaultFactory 0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1` still answers `vaultCount()` 2 at the
+> block above. Nobody can remove them, and nothing stops a deposit into either vault. **If one ever
+> arrives, this banner is false until it is rewritten.** Three facts for whoever rewrites it, each
+> read off 4663 rather than copied: that factory answers `allowSubVaults()` false, so a child vault
+> cannot be created under it; both vaults answer `creator()`
+> `0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, the deployer EOA rather than the creator Safe
+> `0xC73Bd58725afF051109b97B7Be40a8E31C6CAD4c`, and `creator` is immutable, so a compromise of that
+> EOA is a compromise of the creator and attested-operator identity of every vault there with no
+> rotation path; and 4663 has no Chainlink L2 sequencer uptime feed, so that gate cannot freeze a
+> vault on it, while its feeds publish on an 86,400 s heartbeat, inside the `MAX_HEARTBEAT` ceiling
+> in `contracts/src/oracle/ChainlinkOracle.sol` — so the staleness breaker only fires after a feed
+> has been stopped for more than a day. Neither the ceiling nor its line is quoted here: both have
+> moved once already.
+>
+> **Arc (chain 5042) is the direction and is NOT deployed.** Settlement there is USDC, which is also
+> the native gas asset. What exists is a survey read off the chain,
+> [`evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json), and the open blockers in
+> [`evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md). Nothing in this playbook has
+> been exercised on Arc.
 >
 > §8 still carries its own warning: its defences are now materially stronger, but not complete.
 > Read it before relying on any "the contract's own defences are the response" line here.
@@ -281,10 +295,9 @@ rebalance.
 > wired root-only, so no funded child can exist and the C-1 capture below has no target. C-1 is
 > thereby **closed as a class at launch** (together with the sub-vault-only Highs H-5/H-6/H-7/H-9).
 > On a factory built with `true` (`DeployTestnet.s.sol`, and the live Base Sepolia deployment),
-> none of that holds, which is where the SV-* drills run. For the live Robinhood Chain factory the
-> value is neither assumed nor inherited from either script: read
-> `verifiedWiring["factory.allowSubVaults()"]` in that chain's address book, or call
-> `VaultFactory.allowSubVaults()` on it. The rest of this box
+> none of that holds, which is where the SV-* drills run. On any other factory the value is neither
+> assumed nor inherited from either script: **call `VaultFactory.allowSubVaults()` on the factory in
+> front of you.** The 4663 factory answers false, read at block 66,743,764. The rest of this box
 > describes the sub-vault risk that applies **only** to a future release that re-enables sub-vaults
 > with the parent-casts-child-vote mechanism; on a launch (root-only) deployment it is dormant.
 >

@@ -93,16 +93,21 @@ function rule(label) {
  * one preflight run and zero CI runs, while `scripts/test/merge-preflight.test.mjs` stayed 30/30
  * green, because the suite imports `verdicts.mjs` and never executes this file.
  *
- * It is not one field. Twelve rule-bearing values reach `evaluate()` from `gh`. SEVEN fail CLOSED
- * when absent — `state`, `headRefOid`, `headRefName`, `baseRefName`, `headSha`, `status` and
- * `conclusion` each push a blocker, make the head match nothing, or make the `gh` call itself fail.
- * FIVE fail OPEN: `workflowName` disarms the self-exclusion; `commits` silently retires Mode D;
- * `comments` retires Modes A, D and E, which in the `--advisory` mode the workflow actually runs
- * leaves nothing but `pr-open` and `ci-matches-head` standing; `isDraft` lets a draft through; and
- * `.behind_by` retires Mode E, because `--jq` on a key that is not there prints `null` while `gh`
- * still exits 0. So the check is on the SET, not on the field that was noticed.
+ * It is not one field. Thirteen rule-bearing values reach `evaluate()` from `gh`. EIGHT fail CLOSED
+ * when absent — `state`, `headRefOid`, `headRefName`, `baseRefName`, `headSha`, `status`,
+ * `conclusion` and `body` each push a blocker, make the head match nothing, or make the `gh` call
+ * itself fail. (`body` is closed by construction rather than by an explicit check: an absent body
+ * makes every `extractSection` call return `null`, which `buy-borrow-build-declared`, card 190,
+ * reads as a missing section and blocks on — but it is still declared here so a `gh` contract drift
+ * is reported as "could not determine" rather than silently misjudged as "the author never wrote a
+ * Buy / borrow / build section".) FIVE fail OPEN: `workflowName` disarms the self-exclusion;
+ * `commits` silently retires Mode D; `comments` retires Modes A, D and E, which in the `--advisory`
+ * mode the workflow actually runs leaves nothing but `pr-open` and `ci-matches-head` standing;
+ * `isDraft` lets a draft through; and `.behind_by` retires Mode E, because `--jq` on a key that is
+ * not there prints `null` while `gh` still exits 0. So the check is on the SET, not on the field
+ * that was noticed.
  *
- * `number` is the thirteenth field and the only cosmetic one: it is required below because the
+ * `number` is the fourteenth field and the only cosmetic one: it is required below because the
  * printed header names the PR, and no rule reads it.
  *
  * DECLARED HERE, NOT DERIVED FROM THE `--json` STRINGS. A required set read back out of the request
@@ -112,7 +117,7 @@ function rule(label) {
  * `scripts/test/merge-preflight.test.mjs` — which also names `workflowName` and `commits`
  * literally, so deleting a field from BOTH statements is still red.
  */
-export const PR_FIELDS = ['number', 'state', 'isDraft', 'headRefName', 'headRefOid', 'baseRefName', 'comments', 'commits'];
+export const PR_FIELDS = ['number', 'state', 'isDraft', 'headRefName', 'headRefOid', 'baseRefName', 'comments', 'commits', 'body'];
 
 /** Likewise for `gh run list`. `workflowName` is what `runsForHead` excludes this gate's own runs by. */
 export const RUN_FIELDS = ['headSha', 'status', 'conclusion', 'workflowName'];
@@ -161,6 +166,16 @@ export function validateGhPayloads(prData, runsData, behindBy) {
     return "'gh pr view' returned no commits[].committedDate, which is the only input to verdict-covers-head";
   }
 
+  // Every comment must say who posted it: `trustedComments` drops any comment whose association is
+  // not trusted, so a payload that stopped carrying the field would silently drop every verdict —
+  // and a gate that sees no REJECT reads as CLEAR in advisory mode.
+  if (!Array.isArray(prData.comments)) return "'gh pr view' returned comments that are not an array";
+  for (const [i, c] of prData.comments.entries()) {
+    if (c === null || typeof c !== 'object' || typeof c.authorAssociation !== 'string') {
+      return `'gh pr view' comment #${i} carries no authorAssociation, which is how the gate tells a collaborator's verdict from anyone's`;
+    }
+  }
+
   // Not "the array is non-empty": a branch with no runs at all is a legitimate state, and
   // `ci-matches-head` already blocks on it correctly. The check is that every run PRESENT is whole.
   if (!Array.isArray(runsData)) return "'gh run list' did not return an array";
@@ -177,6 +192,36 @@ export function validateGhPayloads(prData, runsData, behindBy) {
   return null;
 }
 
+/**
+ * Who may speak to the gate. The repo is PUBLIC, and a REVIEW-ROSTER or REVIEW-VERDICT token names
+ * its reviewer in its own text, so without this any GitHub account could post a hidden
+ * `<!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT -->` after a real REJECT, or re-roster the
+ * PR to itself, and the gate would go CLEAR (Security, Findings/2026-09-24-merge-gate-counts-anyones-
+ * comments.md). GitHub's `authorAssociation` is set by GitHub, not by the commenter.
+ */
+export const TRUSTED_ASSOCIATIONS = Object.freeze(['OWNER', 'MEMBER', 'COLLABORATOR']);
+
+/**
+ * The comments the rules may read: only those whose author is the repo's owner, an org member or a
+ * collaborator. Everything else is dropped before `evaluate` sees it, so no rule can be cleared,
+ * re-rostered or blocked by an outsider. `dropped` lists the outsiders whose comments carried a
+ * token, for a note; their text is never judged.
+ * @param {any[]} raw  `gh pr view --json comments`'s `comments`
+ * @returns {{comments: {createdAt: string, body: string}[], dropped: string[]}}
+ */
+export function trustedComments(raw) {
+  const comments = [];
+  const dropped = [];
+  for (const c of raw ?? []) {
+    if (TRUSTED_ASSOCIATIONS.includes(c.authorAssociation)) {
+      comments.push({ createdAt: c.createdAt, body: c.body });
+    } else if (/<!--\s*REVIEW-(?:ROSTER|VERDICT)\b/.test(c.body ?? '')) {
+      dropped.push(`${c.author?.login ?? '(unknown)'} (${c.authorAssociation})`);
+    }
+  }
+  return { comments, dropped };
+}
+
 export function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv);
   if (!opts.pr) {
@@ -186,7 +231,7 @@ export function main(argv = process.argv.slice(2)) {
 
   const pr = gh([
     'pr', 'view', opts.pr, '--repo', opts.repo,
-    '--json', 'number,state,isDraft,headRefName,headRefOid,baseRefName,comments,commits',
+    '--json', 'number,state,isDraft,headRefName,headRefOid,baseRefName,comments,commits,body',
   ]);
   if (!pr.ok) {
     process.stderr.write(`merge-preflight: cannot read PR #${opts.pr}: ${pr.err}\n`);
@@ -219,6 +264,16 @@ export function main(argv = process.argv.slice(2)) {
     return 2;
   }
 
+  // Card #59, REPORT-ONLY: review OBJECTS (`gh pr review`), distinct from the issue comments above.
+  // Deliberately a SEPARATE call and NOT part of PR_FIELDS/validateGhPayloads — a token here can
+  // never clear or block anything (the gate reads issue comments only, see merge-policy.json's
+  // `enforcement.nativeReviewsUnavailable`), so this must never become a new way to fail CLOSED.
+  // Best-effort: if it fails, judge the PR anyway and simply skip the one note that needed it.
+  const reviewsReq = gh(['pr', 'view', opts.pr, '--repo', opts.repo, '--json', 'reviews']);
+  const reviews = reviewsReq.ok
+    ? (reviewsReq.data.reviews ?? []).map((/** @type {any} */ r) => ({ author: r.author?.login ?? '', body: r.body ?? '' }))
+    : [];
+
   // Fail CLOSED on a payload that cannot answer the rules. See the field contract above: five of
   // the twelve rule-bearing values silently DISARM a rule when absent rather than blocking, so a
   // partial payload does not produce a wrong-looking answer — it produces a confident CLEAR.
@@ -232,6 +287,7 @@ export function main(argv = process.argv.slice(2)) {
     return 2;
   }
 
+  const trusted = trustedComments(pr.data.comments);
   const decision = evaluate({
     pr: {
       number: pr.data.number,
@@ -244,13 +300,19 @@ export function main(argv = process.argv.slice(2)) {
       headCommittedDate: (pr.data.commits ?? []).at(-1)?.committedDate,
       baseRefName: pr.data.baseRefName,
       behindBy: cmp.data,
+      body: pr.data.body,
     },
-    comments: (pr.data.comments ?? []).map((/** @type {any} */ c) => ({ createdAt: c.createdAt, body: c.body })),
+    comments: trusted.comments,
     runs: (runs.data ?? []).map((/** @type {any} */ r) => ({
       headSha: r.headSha, status: r.status, conclusion: r.conclusion, name: r.workflowName,
     })),
+    reviews,
     mode: opts.mode,
   });
+
+  if (trusted.dropped.length > 0) {
+    decision.notes.push(`ignored review tokens from non-collaborators: ${trusted.dropped.join(', ')}. Only OWNER, MEMBER or COLLABORATOR comments are read.`);
+  }
 
   if (opts.json) {
     process.stdout.write(JSON.stringify({ pr: pr.data.number, headRefOid: pr.data.headRefOid, ...decision }, null, 2) + '\n');

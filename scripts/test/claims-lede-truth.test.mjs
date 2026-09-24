@@ -143,6 +143,30 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The banned-shape regexes below are factored into `scripts/lib/claims-shapes.mjs` so
+// `claims-web-prose-truth.test.mjs` (the guard scoped to `apps/web/src/*.mjs`, card #68) can reuse
+// this exact shape set instead of a second, independently-maintained copy. This file still owns
+// the reasoning for each shape (why it is banned, the approved replacement wording) in the
+// comments immediately above where each one is used below — only the regex literals moved.
+import {
+  flat,
+  sentencesOf,
+  AGENT_ACTS,
+  PRODUCT_PHRASES,
+  maskProductPhrases,
+  UNIVERSAL_WEIGHTED,
+  STAKE_WEIGHTED,
+  SUB_FIVE_QUALIFIER,
+  STAKE_BLIND,
+  REMEDIATION_STATUS,
+  DENIED,
+  ONCHAIN_MEMBER_GATE,
+  POWER_CLAIM,
+  ENUMERATION_FOLLOWS,
+  FEE_BYPASSES_OPERATOR,
+  RWLY_ATTRIBUTION,
+  RWLY_BACKED_BY_VAULT,
+} from '../lib/claims-shapes.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -185,11 +209,27 @@ const publicSurfaces = () => {
     .filter((f) => !f.endsWith('package-lock.json'));
 };
 
-const surfacesWithText = () =>
-  publicSurfaces().map((f) => ({ file: f, text: readFileSync(path.join(REPO, f), 'utf8') }));
-
-/** Collapse hard-wrapped prose so a sentence split across two lines still matches as one. */
-const flat = (s) => s.replace(/\s+/g, ' ');
+/**
+ * THE FLOOR BELONGS HERE, NOT ONLY ON `publicSurfaces()`.
+ *
+ * `every prerendered page is inside the walk` floors `publicSurfaces()`, and that is the function
+ * it reads. The seven content guards read THIS one. The two are a `.map()` apart, and nothing tied
+ * them together: with `surfacesWithText` returning `[]` and `publicSurfaces` untouched, all 11
+ * tests in this file stayed green -- 78 ms against a 544 ms baseline -- while the agent-attribution,
+ * weighted-vote, stake-weighted, stake-blind, operator-power, deposit-screening and
+ * RWLY-attribution guards each reported "no offending prose" having read no prose at all. That is
+ * a floor on one property standing in for a floor on a neighbouring one, which is the adjacency
+ * this repository rejects reviews over.
+ */
+const surfacesWithText = () => {
+  const withText = publicSurfaces().map((f) => ({ file: f, text: readFileSync(path.join(REPO, f), 'utf8') }));
+  assert.ok(
+    withText.length >= 50,
+    `the public-surface walk returned ${withText.length} file(s). Every guard below is NEGATIVE -- ` +
+      'it reports the prose it found -- so an empty corpus is indistinguishable from a clean one.',
+  );
+  return withText;
+};
 
 const report = (hits) =>
   hits.map((h) => `  ${h.file}: "${h.quote.trim()}"`).join('\n');
@@ -204,23 +244,21 @@ const report = (hits) =>
 // The subject/verb gap below is ADVERBS ONLY, never `\w+`. An arbitrary word gap made
 // "agent identity that proposes rebalances" match as agent + <gap> + `rebalances`, reading a NOUN
 // object as the verb and reddening `operators.html`, which describes the operator role correctly.
-const AGENT_ACTS = [
-  // "AI agents pool ...", "agents govern ...", "the agent manages ...", "agents trading ..."
-  //
-  // THE -ING FORMS WERE ADDED 2026-09-05, and the reason is worth recording because it was luck
-  // rather than design that the gap did no damage. The owner's positioning phrase is "the AI agent
-  // trading index", and this alternation carried `trade|trades` but not `trading` — so the phrase
-  // passed a guard that would have reddened "agents trade" one letter away. A guard that permits a
-  // phrase by oversight permits everything else the oversight covers, and the next editor closes it
-  // without knowing the product name depends on the hole. So: the participles are banned like every
-  // other form, and the product phrase is permitted BY NAME in PRODUCT_PHRASES below.
-  /\b(?:AI\s+)?agents?\b(?:\s+(?:also|only|then|now|actually|jointly|collectively|therefore))*\s+\b(?:pool|pools|pooling|govern|governs|governing|manage|manages|managing|trade|trades|trading|rebalance|rebalances|rebalancing)\b/gi,
-  // "... governed by AI agents", "... pooled by agents"
-  /\b(?:governed|pooled|managed|traded|controlled)\s+by\s+(?:\w+\s+){0,2}(?:AI\s+)?agents?\b/gi,
-  // "agent-governed index baskets" used as a MECHANIC (a basket the agent governs), as distinct
-  // from the product name "Agent-Governed Index Vault Protocol" / "agent-governed vaults".
-  /\bagent-governed\s+(?:\w+\s+){0,2}baskets?\b/gi,
-];
+// "AI agents pool ...", "agents govern ...", "the agent manages ...", "agents trading ..."
+//
+// THE -ING FORMS WERE ADDED 2026-09-05, and the reason is worth recording because it was luck
+// rather than design that the gap did no damage. The owner's positioning phrase is "the AI agent
+// trading index", and this alternation carried `trade|trades` but not `trading` — so the phrase
+// passed a guard that would have reddened "agents trade" one letter away. A guard that permits a
+// phrase by oversight permits everything else the oversight covers, and the next editor closes it
+// without knowing the product name depends on the hole. So: the participles are banned like every
+// other form, and the product phrase is permitted BY NAME in PRODUCT_PHRASES below.
+//
+// "... governed by AI agents", "... pooled by agents"
+//
+// "agent-governed index baskets" used as a MECHANIC (a basket the agent governs), as distinct
+// from the product name "Agent-Governed Index Vault Protocol" / "agent-governed vaults".
+// (AGENT_ACTS itself is imported from `../lib/claims-shapes.mjs` — see this file's header.)
 
 /**
  * Product names, permitted BY NAME rather than by an accident of the alternation above.
@@ -234,11 +272,8 @@ const AGENT_ACTS = [
  *
  * Keep this list to exact product phrases. It is not a place to park a sentence that is merely
  * inconvenient: anything added here stops being checked, everywhere, forever.
+ * (PRODUCT_PHRASES and maskProductPhrases are imported from `../lib/claims-shapes.mjs`.)
  */
-const PRODUCT_PHRASES = /\bAI agent trading index\b/gi;
-
-/** The text with every permitted product phrase blanked to the same length, so offsets survive. */
-const maskProductPhrases = (s) => s.replace(PRODUCT_PHRASES, (m) => ' '.repeat(m.length));
 
 test('no public surface says an AI agent pools capital or governs a vault', () => {
   const hits = [];
@@ -303,10 +338,7 @@ test('probe: the product-phrase exemption covers the phrase and nothing around i
 // "govern rebalances by weighted vote" / "commit-reveal weighted vote" asserts one weighting rule
 // for all vaults. There are three. Matched by shape rather than by the one sentence that shipped.
 // ---------------------------------------------------------------------------------------------
-const UNIVERSAL_WEIGHTED = [
-  /\b(?:govern|governs|governed|ratify|ratifies|decide|decides|vote|votes|voting)\b(?:\s+\w+){0,4}\s+by\s+(?:\w+[- ]){0,2}weighted\s+vote\b/gi,
-  /\bcommit-reveal\s+weighted\s+vote\b/gi,
-];
+// UNIVERSAL_WEIGHTED is imported from `../lib/claims-shapes.mjs` — see this file's header.
 
 test('no public surface claims a single universal weighted-vote regime', () => {
   const hits = [];
@@ -335,9 +367,7 @@ test('no public surface claims a single universal weighted-vote regime', () => {
 // This is the guard that pays for itself: it leaves correct analytical prose (THREAT-MODEL AG-3,
 // the FAQ) alone, and reds the NEW file that repeats the unqualified claim.
 // ---------------------------------------------------------------------------------------------
-const STAKE_WEIGHTED = /\bstake-weighted\b/i;
-const SUB_FIVE_QUALIFIER =
-  /SIGNER_REGIME_BELOW|below\s+five|fewer\s+than\s+five|under\s+five|five\s+or\s+more|<\s*5\b|sub-five|small-member\s+regime/i;
+// STAKE_WEIGHTED and SUB_FIVE_QUALIFIER are imported from `../lib/claims-shapes.mjs`.
 
 test('every "stake-weighted" claim carries its sub-five-member qualifier', () => {
   const offenders = [];
@@ -366,27 +396,19 @@ test('every "stake-weighted" claim carries its sub-five-member qualifier', () =>
 // count, describes code that no longer exists — a falsehood in the safety-understating direction,
 // which is still a falsehood.
 // ---------------------------------------------------------------------------------------------
-// `de-stake-blind` is the NAME OF THE FIX (PR #44). The lookbehind stops it matching as a claim.
-const STAKE_BLIND = [
-  /(?<!de-)\bstake-blind\b/gi,
-  /\babsolute\s+signer\s+counts?\b/gi,
-  /\bpure\s+head\s*-?\s*counts?\b/gi,
-];
+// STAKE_BLIND, REMEDIATION_STATUS and DENIED are imported from `../lib/claims-shapes.mjs`.
+// `de-stake-blind` is the NAME OF THE FIX (PR #44); the lookbehind stops it matching as a claim.
+// REMEDIATION_STATUS is deliberately NOT a finding-reference test (`H-8`/`CM-7`): ARCHITECTURE.md's
+// false spec row cited CM-7 too, so that rule would have waved it through. DENIED is deliberately
+// narrow — an explicit negation in the ~40 characters immediately BEFORE the match. An earlier
+// version tested a bare `\bnot\b` anywhere within 120 characters either side, which exempts almost
+// any prose and caught nothing.
 
 // Dated records only — see the RECORD_DIRS section of the header. Guard 4 is the ONLY guard here
-// that honors this, matching config-doc-truth.test.mjs's deliberate single-guard exemption.
+// that honors this, matching config-doc-truth.test.mjs's deliberate single-guard exemption. This
+// one stays local (not in claims-shapes.mjs): it names REPO directories, and `apps/web/src` has no
+// dated-record subdirectory for `claims-web-prose-truth.test.mjs`'s analogous guard to honor.
 const RECORD_DIRS = ['docs/audit/', 'docs/reviews/'];
-
-// Prose that names the old behaviour AND its remediation status in one breath is a RECORD of a
-// finding, not a claim about today. Deliberately NOT a finding-reference test (`H-8`/`CM-7`):
-// ARCHITECTURE.md's false spec row cited CM-7 too, so that rule would have waved it through.
-const REMEDIATION_STATUS = /\bfixed\b|\bremediated\b|\bpartially\b|\bclosed\b|\bresolved\b|\bde-stake-blind\b/i;
-
-// Prose that DENIES the phrase is the correction, not the claim — "neither is a pure head count".
-// Deliberately narrow: an explicit negation in the ~40 characters immediately BEFORE the match. An
-// earlier version tested a bare `\bnot\b` anywhere within 120 characters either side, which exempts
-// almost any prose and caught nothing.
-const DENIED = /\b(?:not|never|neither|nor|no longer|rather than|instead of|stops? being)\b[^.]{0,40}$/i;
 
 test('no public surface describes the sub-five regime as stake-blind', () => {
   const hits = [];
@@ -425,8 +447,7 @@ test('no public surface describes the sub-five regime as stake-blind', () => {
 // The gate must be a MEMBER gate to be a false claim. Requiring a member-ish noun inside the match
 // beats excluding infrastructure nouns one at a time: the adapter, oracle, factory and
 // target/selector allowlists are all real, and there will always be another one.
-const ONCHAIN_MEMBER_GATE =
-  /\b(?:contracts?|protocol|vault|on-chain)\b[^.]{0,80}\b(?:allowlist|allow-list|whitelist)s?\b[^.]{0,40}\b(?:members?|depositors?|participants?|users?|deposits?)\b|\b(?:members?|depositors?|participants?)\b[^.]{0,40}\b(?:allowlist|allow-list|whitelist)s?\b|\b(?:approved|vetted|permitted)\s+(?:members?|depositors?|participants?)\b/gi;
+// ONCHAIN_MEMBER_GATE is imported from `../lib/claims-shapes.mjs`.
 
 // ---------------------------------------------------------------------------------------------
 // Guard 6 — the operator's powerlessness must be ENUMERATED, never claimed as a universal.
@@ -461,14 +482,13 @@ const ONCHAIN_MEMBER_GATE =
 // alternative reddens every scoped negation in the audit walkthroughs, and a guard that cries wolf
 // on true prose gets weakened by the next author. Guards 1-5 share this property; none is a proof
 // of absence.
-const POWER_CLAIM =
-  /\bno\s+(?:privileged|special|on-chain|onchain|protocol-level|inherent|real|actual|meaningful|extra|additional|blanket)(?:\s+[A-Za-z][A-Za-z-]*){0,2}\s+(?:privileges?|powers?|authority|authorities|control|rights?)\b/gi;
-
+// POWER_CLAIM is imported from `../lib/claims-shapes.mjs`.
+//
 // ...and exempt the one form that is NOT a universal: an ENUMERATION. The approved sentence reads
 // "confers no authority to vote, execute, pause, reprice, or move member funds" — a list a reader
 // can check item by item. "to <verb>, <verb>…" immediately after the noun is that shape. Anything
 // else — a dash, a full stop, a scoping phrase like "over a deployed vault" — is the blanket form.
-const ENUMERATION_FOLLOWS = /^\s*to\s+[a-z][\w'-]*(?:\s+[\w'-]+){0,3}\s*,/i;
+// (ENUMERATION_FOLLOWS is imported from the same module.)
 
 test('the operator\'s lack of power is enumerated, never claimed as a universal', () => {
   const hits = [];
@@ -673,28 +693,16 @@ test('no public surface claims the contracts screen who may deposit', () => {
 // "is designed to", "a multisig moves" — all SUBJECT-first with RWLY or the treasury as the actor,
 // never the protocol/contracts/vault/governance/FeeEngine as the actor moving something TO RWLY.
 // ---------------------------------------------------------------------------------------------
-/**
- * Sentence-scoped, on the same rule `flat` applies elsewhere in this file: a mention and its status
- * split across a line break still count as one sentence.
- */
-const sentencesOf = (text) => text.replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/);
-
-const RWLY_ATTRIBUTION = [
-  // A protocol-ish subject, a transfer verb, then RWLY as the object -- in either order the deck's
-  // leg D regex was written for. The subject/verb gap and the verb/RWLY gap are both capped so an
-  // unrelated RWLY three sentences later cannot complete the shape.
-  /\b(?:the\s+)?(?:contracts?|protocol|vault|governance|feeengine|fee\s+engine)\b[^.;:!?]{0,60}\b(?:routes?|pays?|distributes?|accrues?|credits?|sends?|allocates?)\b[^.;:!?]{0,40}\bRWLY\b/gi,
-  // RWLY holders as the subject of a governance or entitlement verb.
-  /\bRWLY\s+holders?\s+(?:votes?|governs?|decides?|receives?|earns?|claims?)\b/gi,
-  // RWLY as a weighting term, or as something staked/locked/required to participate.
-  /\bRWLY-weighted\b/gi,
-  /\bstake\s+RWLY\b/gi,
-];
-
-// "backed by the vault(s)" as a description of RWLY -- sentence-scoped, on the deck's own
-// instruction ("near RWLY" rather than a fixed-shape regex), the same scoping `sentencesOf` already
-// gives guard 6's neighbours in `site.test.mjs`.
-const RWLY_BACKED_BY_VAULT = /\bbacked\s+by\s+the\s+vaults?\b/i;
+// sentencesOf, RWLY_ATTRIBUTION and RWLY_BACKED_BY_VAULT are imported from
+// `../lib/claims-shapes.mjs` — see this file's header. Their reasoning:
+//   - A protocol-ish subject, a transfer verb, then RWLY as the object -- in either order the
+//     deck's leg D regex was written for. The subject/verb gap and the verb/RWLY gap are both
+//     capped so an unrelated RWLY three sentences later cannot complete the shape.
+//   - RWLY holders as the subject of a governance or entitlement verb.
+//   - RWLY as a weighting term, or as something staked/locked/required to participate.
+//   - "backed by the vault(s)" as a description of RWLY -- sentence-scoped, on the deck's own
+//     instruction ("near RWLY" rather than a fixed-shape regex), the same scoping `sentencesOf`
+//     already gives guard 6's neighbours in `site.test.mjs`.
 
 test('no public surface says the protocol pays, routes or accrues anything to RWLY, or makes RWLY a governance or entitlement subject', () => {
   const hits = [];
@@ -751,6 +759,64 @@ test('probe: the RWLY attribution ban catches the shape and spares the approved 
     'The treasury intends to use the protocol’s fees to acquire official Robinhood Stock Tokens.',
   ]) {
     assert.equal(caught(ok), false, `the guard reds the deck's own approved copy: ${ok}`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Guard 9 — nothing is said to bypass the operator AS A PERSON. The operator is a member (the
+// creator's >=5% stake lock, THREAT-MODEL CM-1), so the exit fee reaches it pro rata through its
+// own shares (EE-9). The ROUTING form stays legal and is how the engineering docs say it; see
+// FEE_BYPASSES_OPERATOR in `../lib/claims-shapes.mjs` for exactly what is spared and why.
+// ---------------------------------------------------------------------------------------------
+test('no public surface says a fee never reaches the operator, who is a member', () => {
+  const hits = [];
+  for (const { file, text } of surfacesWithText()) {
+    const hay = flat(text);
+    for (const re of FEE_BYPASSES_OPERATOR) {
+      for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    }
+  }
+  assert.deepEqual(
+    hits.map((h) => h.file),
+    [],
+    'The exit fee stays in the vault and lifts the value of every remaining share (VaultCore\n' +
+      '_settleExit burns the full share amount but pays out only burnShares * keepBps). The\n' +
+      'operator holds a position — the creator has a >=5% stake lock, THREAT-MODEL CM-1 — so it\n' +
+      'receives the fee pro rata like any member who stays (EE-9). "Never to the operator" is false.\n' +
+      'Say the mechanism instead: "it stays in the vault, adding to the value of every remaining\n' +
+      'share". If you mean that no code path transfers it to the operator\'s ADDRESS, say "never\n' +
+      'routed to the operator" — that form is true and this guard leaves it alone.\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
+test('probe: the fee-bypass ban catches the shipped forms and spares the routing form', () => {
+  const caught = (s) =>
+    FEE_BYPASSES_OPERATOR.some((re) => {
+      re.lastIndex = 0; // /g patterns reused across probe cases
+      return re.test(flat(s));
+    });
+  // Every form that actually shipped on a member-facing surface, verbatim, plus the obvious variants.
+  for (const bad of [
+    'It goes to the members who stay, never to the operator.',
+    'Paid to the members who stay, never to the operator.',
+    'This stays in the vault and raises NAV/share for the members who remain. It never goes to the operator.',
+    'stays in the vault, never goes to the operator',
+    'exit fees accrue to members, not the operator',
+    'The exit fee is never paid to the operator.',
+    'The fee never reaches the operator.',
+  ]) {
+    assert.equal(caught(bad), true, `the guard no longer catches: ${bad}`);
+  }
+  // The true routing form the engineering docs rely on, and the replacement wording now shipped.
+  for (const ok of [
+    'Never routed to the operator; waived when the redeemer is the last member.',
+    'Exit fees never route to the operator at all.',
+    'it accrues to the members who remain, and can never be routed to the operator.',
+    'It stays in the vault, so it adds to the value of the shares every remaining member holds, including the operator if it holds a position.',
+    'The 10% performance fee goes to the operator.',
+  ]) {
+    assert.equal(caught(ok), false, `the guard reds true copy: ${ok}`);
   }
 });
 

@@ -33,6 +33,7 @@ export function serializeState(state) {
     forWeight: p.forWeight.toString(),
     againstWeight: p.againstWeight.toString(),
     revealedWeight: p.revealedWeight.toString(),
+    delegatedForWeight: p.delegatedForWeight === null ? null : p.delegatedForWeight.toString(),
   });
   return {
     version: VERSION,
@@ -100,6 +101,24 @@ export function deserializeState(obj) {
       forWeight: BigInt(p.forWeight),
       againstWeight: BigInt(p.againstWeight),
       revealedWeight: BigInt(p.revealedWeight),
+      // VO-2b, and it is deliberately a THIRD state rather than a number or a throw.
+      //
+      // A snapshot written before this field existed carries no record of how much of `forWeight`
+      // was cranked, so 0n would silently report a sub-five proposal as clearing a stake majority
+      // the contract refuses. The first revision of this line therefore threw — and that was an
+      // OUTAGE, not a migration: proposals are never pruned, so any pre-VO-2b snapshot holding even
+      // a settled proposal killed `buildIndexer` at startup, and `loadSnapshot` catches only ENOENT.
+      // The comment a few lines below spells out that exact failure for the fields before this one;
+      // this line was written without reading it.
+      //
+      // `null` means "the snapshot that produced this did not record it". It is not 0 and not an
+      // error, every consumer already distinguishes absent from zero (`quorumReadout` reports the
+      // sub-five regime as UNKNOWN rather than guessing), and `applyEvent` keeps it null once it is
+      // null — a proposal whose cranked history is partly unrecorded can never be made exact by
+      // adding the rest.
+      delegatedForWeight: p.delegatedForWeight === undefined || p.delegatedForWeight === null
+        ? null
+        : BigInt(p.delegatedForWeight),
     });
   }
   for (const [k, pid] of obj.activeProposal) s.activeProposal.set(k, pid);

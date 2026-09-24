@@ -151,6 +151,13 @@ jobs:
         run: npm run test:app
       - name: Backend + frontend logic tests
         run: npm run test:backend
+      # Card A2. Does apps/vaults-ui's VITE_VAULT_ADDRESSES name a real deployed vault, on the chain
+      # its own VITE_CHAIN_ID declares? BLOCKING -- unlike deployment-currency below, every input
+      # here (apps/vaults-ui/.env*, contracts/config/deployments/*.json) is checked into this repo
+      # and the comparison is deterministic, so a red here is a real fund-safety-adjacent config
+      # error, not noise. scripts/gate.mjs mirrors this step, unconditionally.
+      - name: Vault address cross-check (apps/vaults-ui vs contracts/config/deployments)
+        run: node scripts/vault-addresses-lint.mjs
       # Is each contracts/config/deployments/*.json record still current with contracts/src?
       # ADVISORY, narrowly and deliberately: both records are BEHIND today (a BUSL-1.1 -> MIT
       # relicense touched all 19 contracts/src files), and the remedy is a redeploy, which is an
