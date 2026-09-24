@@ -30,6 +30,35 @@ export declare function planProposal(governance: string, pid: number | bigint): 
 export declare function planLegSafety(vault: string, assets: readonly string[]): readonly PlannedCall[];
 export declare function planFeeds(feeds: readonly string[]): readonly PlannedCall[];
 
+/** Card 211 (A2) — the deployment-manifest check. See `chain-reader.mjs`'s own doc comments. */
+export type ManifestState = 'verified' | 'not-found' | 'unknown';
+export declare function planFactoryVaultCount(factory: string): readonly PlannedCall[];
+export declare function planFactoryAllVaults(factory: string, count: number): readonly PlannedCall[];
+export declare function assembleManifestCheck(
+  vaultAddress: string,
+  countValue: unknown,
+  allVaultsValues: readonly unknown[],
+): ManifestState;
+
+/** Card 211 (B2) — escrow claim surface. */
+export declare function planClaimableEscrow(
+  vault: string,
+  member: string | null | undefined,
+  assets: readonly string[],
+): readonly PlannedCall[];
+export interface ClaimableEscrowEntry {
+  readonly asset: string;
+  readonly amount: bigint;
+  readonly readAt: number | null;
+}
+export interface UnreadEscrowEntry {
+  readonly asset: string;
+  readonly readAt: number | null;
+}
+export declare function assembleClaimableEscrow(
+  entries: readonly { asset: string; value: unknown; readAt?: number | null }[],
+): { claimable: readonly ClaimableEscrowEntry[]; unread: readonly UnreadEscrowEntry[] };
+
 export interface CoreReads {
   readonly navWad: bigint | null;
   readonly totalShares: bigint;
