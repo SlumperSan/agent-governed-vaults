@@ -84,20 +84,22 @@ const ADDRESS_RE = /0x[a-fA-F0-9]{40}/;
 // the sentence is PRESENT, never that it is TRUE.
 //
 // The chain that count was read from is abandoned now, and the two vaults it
-// counted were fully exited on 2026-09-18. The replacement pins a fact this
-// deployment controls directly: the protocol is not deployed on Arc, so the
-// table has nothing to list. No createVault call anywhere can falsify that
-// until this repository's own build ships row-rendering code, and whoever
-// writes it will be editing this line anyway.
-const EMPTY_STATE = 'This table lists no vaults. The protocol is not deployed on Arc, so there is nothing to list.';
+// counted were fully exited on 2026-09-18. UPDATED AGAIN 2026-09-24: the protocol deployed to Arc
+// mainnet that day, so "the protocol is not deployed" stopped being the fact this deployment
+// controls. The replacement pins what IS still controlled directly by this deployment: this page
+// itself has not been repointed at the deployment record, so the table has nothing to list
+// regardless of what exists on chain. No createVault call anywhere can falsify that, and neither
+// can a redeploy; only editing app.js to actually read the chain can, and whoever does that will
+// be editing this line anyway.
+const EMPTY_STATE = 'This table lists no vaults. The protocol is deployed on Arc, but this page has not been repointed at it, so there is nothing here to list.';
 
-// The deployment-status sentence, exactly as it must read. This is the
-// replacement for the seven-address Contracts card this page used to render:
-// there is no VaultFactory, no VaultDeployer, no Governance, no FeeEngine, no
-// OperatorRegistry, no SubVaultRegistry and no ChainlinkOracle anywhere, and
-// the page has to say so in the place that used to carry the deployment
-// record.
-const NOT_DEPLOYED = 'Not deployed. There is no VaultFactory, no oracle, and no vault on Arc or any mainnet.';
+// The deployment-status sentence, exactly as it must read. UPDATED 2026-09-24: the protocol IS
+// deployed on Arc mainnet (contracts/config/deployments/arc-mainnet.json), so the sentence this
+// card used to pin ("Not deployed...") went false that day. This is still the replacement for the
+// seven-address Contracts card this page used to render before the prior chain was abandoned: it
+// names no address of its own and points at the manifest instead, so a real deployed address
+// still never appears on this page (see the address-absence test below).
+const NOT_DEPLOYED = 'Deployed on Arc mainnet, chain 5042: contracts/config/deployments/arc-mainnet.json. This page does not read it, and nothing here implies any funds are safe to send.';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -124,9 +126,9 @@ const oldTokenSymbol = () => ['us', 'dg'].join('');
 const BANNED = [
   { name: 'x402', re: /x402/i, why: 'apps/app is a read-only browser explorer and has no x402 payment surface. This rested on an owner decision that the chain apps/app targets would carry no x402; that decision was reversed elsewhere and a different deployment, apps/api, meters requests again, which changes nothing here because the metered API is a different surface.' },
   { name: 'airdrop', re: /\bair\s?drops?\b/i, why: 'No token distribution is promised, designed or scheduled anywhere in this repository.' },
-  { name: 'old chain name', re: new RegExp(oldChainName(), 'i'), why: "The project abandoned its prior chain and is Arc-only now. This page names no chain but Arc, and states plainly that the protocol is not deployed there either." },
-  { name: 'old chain id', re: new RegExp('\\b' + oldChainId() + '\\b'), why: 'That numeric id named the abandoned prior chain. This page targets Arc, chain 5042, and has no live reads because nothing is deployed on either chain.' },
-  { name: 'old token symbol', re: new RegExp(oldTokenSymbol(), 'i'), why: 'That symbol named the settlement token on the abandoned prior chain. Arc settles in Circle USDC, and this page reads no token from either chain because nothing is deployed.' },
+  { name: 'old chain name', re: new RegExp(oldChainName(), 'i'), why: 'The project abandoned its prior chain and is Arc-only now. This page names no chain but Arc, and reads none, whether or not the protocol is deployed there.' },
+  { name: 'old chain id', re: new RegExp('\\b' + oldChainId() + '\\b'), why: 'That numeric id named the abandoned prior chain. This page targets Arc, chain 5042, and has no live reads of it, deployed there or not.' },
+  { name: 'old token symbol', re: new RegExp(oldTokenSymbol(), 'i'), why: 'That symbol named the settlement token on the abandoned prior chain. Arc settles in Circle USDC, and this page reads no token from either chain.' },
   { name: 'presale', re: /\bpre-?sales?\b/i, why: 'Nothing is for sale on this page and nothing is being raised.' },
   { name: 'coming soon', re: /\bcoming\s+soon\b/i, why: 'A date nobody has committed to. Say what is true today and what reads 0.' },
   { name: 'em-dash', re: /—/, why: 'The owner does not want em-dashes in copy. Use a comma, a colon, or two sentences.' },
@@ -143,12 +145,12 @@ test('the built page carries the empty-state sentence verbatim', () => {
   );
 });
 
-test('the built page states plainly that the protocol is not deployed', () => {
+test('the built page states plainly that the protocol is deployed, and that this page does not read it', () => {
   const html = flat(read('index.html'));
   assert.ok(
     html.includes(NOT_DEPLOYED),
-    'The protocol is not deployed on Arc or any mainnet, and the page has to say so in the one\n' +
-      'place that used to carry the deployment record.\n' +
+    'The protocol is deployed on Arc mainnet, and the page has to say so plainly, in the one\n' +
+      'place that used to carry the deployment record, rather than continue to claim it is not.\n' +
       `Expected to find: "${NOT_DEPLOYED}"`,
   );
 });
@@ -209,10 +211,10 @@ test('the build carries the headers file, so the deploy is not policy-free', () 
     assert.ok(headers.includes(directive), `_headers is missing: ${directive}`);
   }
 
-  // connect-src names no external origin. The protocol is not deployed anywhere, so this page
-  // has nothing to call and nothing to widen the policy for. This directly guards against
-  // pointing connect-src at an invented Arc address, or leaving the abandoned chain's RPC in
-  // place.
+  // connect-src names no external origin. This page has not been repointed at the deployed
+  // protocol, so it has nothing to call and nothing to widen the policy for. This directly
+  // guards against pointing connect-src at an invented Arc address, or leaving the abandoned
+  // chain's RPC in place.
   const connectSrc = headers.match(/connect-src[^;]*/);
   assert.ok(connectSrc, '_headers has no connect-src directive at all.');
   assert.equal(
@@ -263,6 +265,6 @@ test('the page makes no request to any origin at all, because there is nothing d
   assert.equal(
     js.includes('fetch('),
     false,
-    'app.js calls fetch(), but the protocol is not deployed anywhere and there is nothing to read.',
+    'app.js calls fetch(), but this page has not been repointed at the deployed protocol and has nothing to read.',
   );
 });

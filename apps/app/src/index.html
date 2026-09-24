@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>App | RWAlly</title>
-<meta name="description" content="Explore vaults on the Agent-Governed Index Vault Protocol. The protocol is not deployed on Arc or any mainnet yet, so there is nothing to read live.">
+<meta name="description" content="Explore vaults on the Agent-Governed Index Vault Protocol. The protocol is deployed on Arc mainnet, chain 5042, since 2026-09-24, but this page has not been repointed at it, so there is nothing to read live here.">
 <meta name="robots" content="index, follow">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/app.css">
@@ -86,16 +86,16 @@
 
   <!-- ===================================================================
        PROTOCOL CARD
-       The protocol is not deployed on Arc, or on any mainnet. There is no
-       VaultFactory, no oracle, and no vault, so this card names no address
-       and this page reads no chain. The deployment record this card used to
-       cite was deleted along with the rest of the config for the project's
-       prior, now-abandoned chain: its addresses are not live.
+       The protocol is deployed on Arc mainnet, chain 5042, since 2026-09-24: the record is
+       contracts/config/deployments/arc-mainnet.json. This page has not been repointed at it, so
+       this card still names no address and this page still reads no chain; nothing here implies
+       any address is safe to send funds to. The deployment record this card used to cite before
+       was deleted along with the rest of the config for the project's prior, now-abandoned chain.
        =================================================================== -->
   <section class="card protocol" aria-labelledby="protocol-h">
     <div class="card-head">
       <h1 id="protocol-h">Protocol</h1>
-      <span class="chain-chip">Arc <b>5042</b>, not deployed</span>
+      <span class="chain-chip">Arc <b>5042</b>, deployed, not read here</span>
     </div>
 
     <dl class="meta">
@@ -105,7 +105,7 @@
       </div>
       <div class="meta-cell">
         <dt>Status</dt>
-        <dd>Not deployed. There is no VaultFactory, no oracle, and no vault on Arc or any mainnet.</dd>
+        <dd>Deployed on Arc mainnet, chain 5042: contracts/config/deployments/arc-mainnet.json. This page does not read it, and nothing here implies any funds are safe to send.</dd>
       </div>
       <div class="meta-cell">
         <dt>Vaults</dt>
@@ -120,33 +120,33 @@
       </div>
 
       <p class="reads-intro">
-        There is nothing to read live. The protocol is not deployed on Arc, so there is no
-        VaultFactory and no oracle for this browser to call. This panel will read chain state
-        the moment there is a deployment to read it from, and not before.
+        There is nothing to read live on this page. The protocol is deployed on Arc, but this
+        page has not been repointed at it, so it calls no VaultFactory and no oracle. This panel
+        will read chain state once this page is repointed at the deployment, not before.
       </p>
     </div>
 
     <!-- CONTRACTS -->
     <h2 class="contracts-h" id="contracts-h">Contracts</h2>
     <p class="contracts-note">
-      None. The protocol has no deployed contracts on Arc or any mainnet: no VaultFactory, no
-      VaultDeployer, no Governance, no FeeEngine, no OperatorRegistry, no SubVaultRegistry, and
-      no ChainlinkOracle. The seven addresses this section used to name were read back from a
-      chain the project has since abandoned, and none of them are live.
+      None named here. The protocol is deployed on Arc with a VaultFactory, VaultDeployer,
+      Governance, FeeEngine, OperatorRegistry, SubVaultRegistry, and ChainlinkOracle, all listed
+      at contracts/config/deployments/arc-mainnet.json, not on this page. The seven addresses
+      this section used to name before were read back from a chain the project has since
+      abandoned, and none of those old ones are live.
     </p>
   </section>
 
   <!-- ===================================================================
        VAULTS
-       Zero rows and zero vaults agree now: the protocol is not deployed on
-       Arc, so there is nothing for this table to list. Nothing here renders
-       rows at all, regardless: there is no <tbody> in this file and app.js
-       makes no chain call.
+       Zero rows here is a fact about this static page, not about Arc: the protocol is deployed
+       and a vault exists there (contracts/config/deployments/arc-mainnet.json), but this page has
+       never been repointed at it, so it renders nothing regardless. There is no <tbody> in this
+       file and app.js makes no chain call.
 
-       The empty state stays static markup on purpose: the sentence has to be
-       true whether or not the protocol is ever deployed to Arc. It is a
-       claim about this table, not a count of vaults, so no chain state can
-       falsify it.
+       The empty state stays static markup on purpose: the sentence has to stay true whether or
+       not this page is ever repointed at a chain. It is a claim about THIS PAGE, not a count of
+       vaults, so no chain state can falsify it.
        =================================================================== -->
   <section class="card vaults" aria-labelledby="vaults-h">
     <div class="card-head">
@@ -156,7 +156,7 @@
 
     <div class="table-scroll">
       <table class="vault-table">
-        <caption class="sr-only">Vaults on Arc. The table has no rows: the protocol is not deployed, so there is nothing to list.</caption>
+        <caption class="sr-only">Vaults on Arc. The table has no rows: this page has not been repointed at the deployment, so there is nothing here to list.</caption>
         <thead>
           <tr>
             <th scope="col" class="col-name">Name</th>
@@ -182,14 +182,14 @@
         <line x1="20.75" y1="0.75" x2="20.75" y2="39.25" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5"></line>
         <line x1="42.25" y1="0.75" x2="42.25" y2="39.25" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5"></line>
       </svg>
-      <p class="empty-lede">This table lists no vaults. The protocol is not deployed on Arc, so there is nothing to list.</p>
+      <p class="empty-lede">This table lists no vaults. The protocol is deployed on Arc, but this page has not been repointed at it, so there is nothing here to list.</p>
       <p class="empty-sub">
-        Creating a vault will be permissionless once the protocol deploys. The caller becomes
-        its creator and its attested operator, immutably.
+        Creating a vault on the deployed protocol is permissionless. The caller becomes its
+        creator and its attested operator, immutably.
       </p>
       <p class="empty-watch">
-        Rows are not built yet, and there is nothing live to read until the protocol deploys to
-        Arc. This page will read chain state the moment there is a deployment to read.
+        Rows are not built yet. The protocol is deployed on Arc, but this page will read chain
+        state only once it is repointed at that deployment, not before.
       </p>
     </div>
   </section>
