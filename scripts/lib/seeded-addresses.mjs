@@ -60,6 +60,23 @@ export function validateSeededAddressesDoc(doc) {
       errors.push(`addresses[${i}].address "${e.address}" is not checksummed (expected "${checksummed}")`);
     }
 
+    // Optional: only a persona that deposits declares one (the watch-only personas do not). When
+    // present it is the intent the Sign queue checks every persona item against
+    // (sign-queue-preconditions.mjs's personaIntentRefusal), so a malformed one fails here too.
+    if (e.intendedDeposit !== undefined) {
+      const d = /** @type {Record<string, unknown>} */ (e.intendedDeposit);
+      if (d === null || typeof d !== 'object') {
+        errors.push(`addresses[${i}].intendedDeposit is not an object`);
+      } else {
+        let v = null;
+        try { v = typeof d.vault === 'string' ? getAddress(d.vault) : null; } catch { v = null; }
+        if (v === null || v !== d.vault) errors.push(`addresses[${i}].intendedDeposit.vault is not a checksummed address`);
+        if (typeof d.amountUsdcRaw !== 'string' || !/^[1-9]\d*$/.test(d.amountUsdcRaw)) {
+          errors.push(`addresses[${i}].intendedDeposit.amountUsdcRaw is not a positive integer string of raw USDC units`);
+        }
+      }
+    }
+
     const lower = e.address.toLowerCase();
     if (seenLower.has(lower)) {
       errors.push(`addresses[${i}].address duplicates addresses[${seenLower.get(lower)}] (case-insensitive)`);

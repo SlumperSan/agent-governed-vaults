@@ -60,7 +60,7 @@ test('NON-VACUITY: the pre-fix (creator-inclusive) line would fail the holderCou
 test('ProposalPanel labels a seeded proposer, reading the real disclosure list (not a hardcoded stand-in)', () => {
   const src = readFileSync(PANEL, 'utf8');
   assert.match(src, /seededEntryFor\(p\.proposer,\s*SEEDED_ADDRESSES\)/);
-  assert.match(src, /Seeded by the RWAlly team/);
+  assert.match(src, /Seeded with RWAlly operator funds/);
   // Imported from the lib seam, never redeclared locally with a literal array — that would be a
   // second, driftable copy of the disclosure list inside the component.
   assert.match(src, /import\s*\{[^}]*SEEDED_ADDRESSES[^}]*\}\s*from\s*'\.\.\/lib\/atlas'/s);
@@ -84,7 +84,7 @@ test('App.tsx feeds organicMemberBound the creator-excluded count, never the raw
 test('MemberActions labels the connected wallet when it is a seeded address', () => {
   const src = readFileSync(MEMBER_ACTIONS, 'utf8');
   assert.match(src, /isSeeded\(address,\s*SEEDED_ADDRESSES\)/);
-  assert.match(src, /seeded by the RWAlly team/);
+  assert.match(src, /seeded wallet, RWAlly operator funds/);
 });
 
 test('atlas.ts re-exports the seeded-address seam from the real module and the real disclosure file', () => {

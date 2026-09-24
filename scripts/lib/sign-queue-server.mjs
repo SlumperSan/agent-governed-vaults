@@ -15,7 +15,7 @@ import {
 } from './chain-rpc.mjs';
 import {
   finalizePreconditionRefusal, nonceGateRefusal, personaActivatePreconditionRefusal,
-  personaDepositPreconditionRefusal, personaOrderingGateRefusal, safeRoutedRefusal, seededPersonaRefusal,
+  personaDepositPreconditionRefusal, personaIntentRefusal, personaOrderingGateRefusal, safeRoutedRefusal, seededPersonaRefusal,
 } from './sign-queue-preconditions.mjs';
 import { resolveItemData } from './sign-queue-resolve.mjs';
 import {
@@ -262,7 +262,7 @@ async function checkArcReadback(item, itemsById, fetchImpl) {
  * Which item-type precondition applies, keyed off `item.builder`/`item.id` — the closed set this
  * queue currently has. Returns null (ready) or a reason string.
  */
-async function preconditionRefusal(item, itemsById, fetchImpl, castFn) {
+async function preconditionRefusal(item, itemsById, fetchImpl, castFn, root) {
   if (item.builder === 'arc-deploy' && item.id !== 'arc-readback') {
     if (typeof item.expectedNonce === 'number') {
       const r = await nonceGateRefusal(fetchImpl, RPC_BY_CHAIN[5042], item.from, item.expectedNonce);
@@ -315,8 +315,12 @@ async function preconditionRefusal(item, itemsById, fetchImpl, castFn) {
       });
       if (r) return r;
     }
-    const seeded = seededPersonaRefusal(item.from, item.persona);
+    const seeded = seededPersonaRefusal(item.from, item.persona, root);
     if (seeded) return seeded;
+    // What gets signed must match the declared intent (#329's lesson): before any chain read, and
+    // before the chain-read gates below trust item.vault/item.amountUsdcRaw.
+    const intent = personaIntentRefusal(item, root);
+    if (intent) return intent;
     if (item.personaAction === 'approve' || item.personaAction === 'deposit') {
       const r = await personaDepositPreconditionRefusal(fetchImpl, {
         vault: item.vault, usdc: item.usdc, from: item.from, amountUsdcRaw: item.amountUsdcRaw,
@@ -398,8 +402,10 @@ export function withQueueLock(queuePath, fn) {
  * @param {typeof fetch} fetchImpl
  * @param {(args: string[]) => string} castFn
  * @param {string} [queuePath] override for tests only — the dashboard always uses the default
+ * @param {string} [root] repo root the persona gates read their declarations from — override for
+ *   tests only; undefined means each gate's own module-relative root
  */
-export async function buildSignQueueResponse(fetchImpl = fetch, castFn = defaultCast, queuePath = QUEUE_PATH) {
+export async function buildSignQueueResponse(fetchImpl = fetch, castFn = defaultCast, queuePath = QUEUE_PATH, root = undefined) {
   // The read-modify-write runs under the queue lock (see withQueueLock). Without it, a Sign POST
   // that lands while this poll awaits the chain was overwritten by this poll's stale copy: the
   // item went back to pending with no hash, its tx still mined, and the nonce gate then refused
@@ -434,7 +440,7 @@ export async function buildSignQueueResponse(fetchImpl = fetch, castFn = default
       if (!resolved.ok) blockedReason = `cannot resolve data: ${resolved.reason}`;
       else {
         resolvedData = resolved.resolved;
-        const pre = await preconditionRefusal(item, itemsById, fetchImpl, castFn);
+        const pre = await preconditionRefusal(item, itemsById, fetchImpl, castFn, root);
         if (pre) blockedReason = pre;
       }
     }

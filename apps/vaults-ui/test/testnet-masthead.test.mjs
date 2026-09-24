@@ -7,9 +7,9 @@
  * (firstVault.createdAt, contracts/config/deployments/arc-mainnet.json),
  * so that sentence is now false — Base Sepolia is no longer what this app reads, and the vault
  * exists to hold real member funds the moment anyone deposits. The masthead was updated in the
- * same commit as the chain cutover (`.env.example`, `public/_headers`) to, verbatim, "Live on Arc
- * mainnet. Deposits here are real funds, not a test. Activity seeded by the RWAlly team is
- * labelled as such." — true both while the vault sits empty and once it is not, and it still
+ * same commit as the chain cutover (`.env.example`, `public/_headers`); its seeded clause was made
+ * plain on 2026-09-24 (CEO: seeded deposits are said to be operator funds). It now reads, verbatim,
+ * MASTHEAD_TEXT below — true both while the vault sits empty and once it is not, and it still
  * distinguishes genuine member activity from anything the RWAlly team seeds on it itself.
  *
  * UNCONDITIONAL, ON PURPOSE. `App.tsx`'s masthead already had one line gated on
@@ -34,7 +34,7 @@ const APP_TSX = readFileSync(join(APP, 'src/App.tsx'), 'utf8');
 const ENV_EXAMPLE = join(APP, '.env.example');
 
 const MASTHEAD_TEXT =
-  'Live on Arc mainnet. Deposits here are real funds, not a test. Activity seeded by the RWAlly team is labelled as such.';
+  'Live on Arc mainnet. Deposits here are real funds, not a test. Seeded deposits are RWAlly operator funds, not outside members, and are labelled as such.';
 
 /** The masthead <header> block, isolated so a match elsewhere in the file cannot pass this. */
 function mastheadSource() {

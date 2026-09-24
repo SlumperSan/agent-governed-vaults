@@ -101,7 +101,7 @@ export function ProposalPanel({ vault, nowSec }: Props) {
             <>
               <br />
               <span className="tag tag-warn">
-                Seeded by the RWAlly team — {proposerEntry.persona} ({proposerEntry.model})
+                Seeded with RWAlly operator funds — {proposerEntry.persona} ({proposerEntry.model})
               </span>
             </>
           ) : null}
