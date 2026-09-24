@@ -9,14 +9,16 @@
  * that a reader could not act on a status line: no deposit button, no address, no wallet connect
  * anywhere on these pages. **That ground expired the day connect-and-sign shipped in `apps/vaults-ui`
  * and this site's "Open the app" button started leading somewhere a wallet can actually connect.**
- * `steps.notice` below is the replacement, and it is scoped to the window where a reader can
- * connect and no vault is live. Remove it when a vault is live, not before, and not because it
- * reads as a hedge.
+ * `steps.notice` below is the replacement. Until 2026-09-24 it said no vault was live and promised
+ * to name one when there was; the first vault went live on Arc that day, so it now keeps that
+ * promise. `apps/site/test/site.test.mjs` reads the vault's address out of
+ * `contracts/config/deployments/arc-mainnet.json` and fails if the page does not print it.
  *
- * WHERE THE MARKER STAYS, because this is a different thing: the app renders SAMPLE vaults with
- * figures that look like real ones, and those carry a visible label. Omitting a status line is
- * fine; presenting invented numbers as live is not. The disclaimers page keeps its precise
- * language for the same reason — it is the page a reader goes to for exactly that.
+ * REAL MONEY NOW. The app signs real deposits into that vault, so no sentence on these pages may
+ * describe it as a demo or a walkthrough with sample data — a reader who believes that could
+ * approve real USDC thinking nothing moves. Where the app still renders sample vaults, those carry
+ * their own visible label. The disclaimers page keeps its precise language for the same reason —
+ * it is the page a reader goes to for exactly that.
  *
  * Also still true and still worded carefully, because each is checkable and each was wrong once:
  *   - MEMBERS pool and vote. An AI operator proposes; it does not pool capital and does not govern.
@@ -69,8 +71,9 @@ export const HOME = {
     eyebrow: 'Four steps',
     headline: 'Four steps, and the second one is yours to come back for.',
     notice:
-      'This is how the vault works. It is not something you can do today. No RWAlly vault is ' +
-      'live on any network yet. When one is, this page will name it and say where it runs.',
+      'The first RWAlly vault is deployed on Arc: the cirBTC Vault, at ' +
+      '0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6. Its contracts cannot be changed. A deposit ' +
+      'there is real USDC — read the risks before you put anything in.',
     items: [
       {
         n: '01',
@@ -127,8 +130,8 @@ export const HOME = {
 
   cta: {
     headline: 'Have a look around.',
-    sub: 'Walk through a vault, a proposal and a vote. You can connect a wallet to look around ' +
-      '— there is nothing to deposit into yet.',
+    sub: 'The cirBTC Vault is deployed on Arc. Connect a wallet to see it as it stands on-chain — and ' +
+      'read the risks before you put anything in.',
     label: 'Open the app',
   },
 } as const;
@@ -226,11 +229,11 @@ export const ABOUT = {
   ],
   status: {
     eyebrow: 'Where it stands',
-    headline: 'Built, tested, and open to read.',
+    headline: 'Built, tested, and deployed on Arc.',
     body:
-      'The contracts are complete and a full test suite runs against them on every change, ' +
-      'alongside guards that check the claims on this site against the code. All of it is public. ' +
-      'The app walks through a vault end to end with sample data.',
+      'A full test suite runs against the contracts on every change, alongside guards that check ' +
+      'the claims on this site against the code. All of it is public. The first vault, the cirBTC ' +
+      'Vault, is deployed on Arc, and a deposit through the app moves real USDC.',
   },
 } as const;
 

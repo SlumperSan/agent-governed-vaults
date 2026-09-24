@@ -19,11 +19,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import {
   wiringImmutabilityFailure, oracleProbeWarning, intendedCreatorRefusal, normAddr,
   requireIntendedCreator, loadDeploymentRecord, CreationRefused, signerCacheRefusal, addressShapeRefusal,
-  contractCreatorRoutingRefusal,
+  contractCreatorRoutingRefusal, createVaultParamsTuple, CREATE_VAULT_SIG,
 } from '../smoke-preflight.mjs';
 
 const REVERTS = [
@@ -487,4 +488,45 @@ test('smoke-test.mjs consults both verdicts and has no bare catch left to swallo
     'the old signer-vs-event check is true by construction and passed on 4663 every time',
   );
   assert.doesNotMatch(src, /\}\s*catch\s*\{\s*(\/\*[\s\S]*?\*\/)?\s*\}/, 'a bare catch reads a transport failure as whatever the try expected');
+});
+
+// ─────────────────────────── V-379-r1: createVaultParamsTuple field-swap guard ───────────────────────────
+//
+// Security's V-379-r1: swapping `capacityCapUsdc` and `minDepositUsdc` INSIDE the shared
+// createVaultParamsTuple kept all 63 existing tests green, because every one of them -- including
+// the fork byte-identity proof in safe-tx-builder-fork.test.mjs -- compares two CALLERS of this
+// same shared function against each other, and both callers see the identical (swapped) output.
+// Nothing anywhere reads the created vault's params back, or checks a field against its NAMED
+// config source rather than its position in someone else's output. This test does that: it builds
+// the real createVault calldata through the real `cast calldata` encoder, decodes it back through
+// the real `cast decode-calldata` decoder (independent of createVaultParamsTuple's own string
+// template), and asserts each field against the config value it was supposed to carry, BY NAME --
+// so a reorder inside the tuple builder is caught here even though nothing downstream reads it back.
+test('createVaultParamsTuple: every encoded field matches its NAMED config source, independent of position (V-379-r1)', () => {
+  const cfg = {
+    usdc: '0x0000000000000000000000000000000000000001',
+    tokens: ['0x000000000000000000000000000000000000000a', '0x000000000000000000000000000000000000000b'],
+    aggregator: '0x000000000000000000000000000000000000000c',
+    capacityCapUsdc: 123456n, // deliberately DISTINCT from minDepositUsdc, so a swap is visible
+    minDepositUsdc: 777n,
+    exitFeeMaxBps: 500n,
+    exitFeeDecayPeriod: 86400n,
+    adapter: '0x000000000000000000000000000000000000000d',
+  };
+  const tuple = createVaultParamsTuple(cfg);
+  const calldata = execFileSync('cast', ['calldata', CREATE_VAULT_SIG, tuple], { encoding: 'utf8' }).trim();
+  const decoded = JSON.parse(
+    execFileSync('cast', ['--json', 'decode-calldata', CREATE_VAULT_SIG, calldata], { encoding: 'utf8' }),
+  )[0];
+
+  // Read back BY NAME against cfg -- not by trusting createVaultParamsTuple's own field order a
+  // second time, which is exactly what let the capacityCap/minDeposit swap through everywhere else.
+  assert.equal(decoded[0].toLowerCase(), cfg.usdc.toLowerCase(), 'usdc');
+  assert.deepEqual(decoded[1].map((a) => a.toLowerCase()), cfg.tokens.map((a) => a.toLowerCase()), 'tokens');
+  assert.equal(decoded[2].toLowerCase(), cfg.aggregator.toLowerCase(), 'aggregator');
+  assert.equal(BigInt(decoded[3]), cfg.capacityCapUsdc, 'capacityCapUsdc');
+  assert.equal(BigInt(decoded[4]), cfg.minDepositUsdc, 'minDepositUsdc');
+  assert.equal(BigInt(decoded[5]), cfg.exitFeeMaxBps, 'exitFeeMaxBps');
+  assert.equal(BigInt(decoded[6]), cfg.exitFeeDecayPeriod, 'exitFeeDecayPeriod');
+  assert.deepEqual(decoded[7].map((a) => a.toLowerCase()), [cfg.adapter.toLowerCase()], 'adapter');
 });

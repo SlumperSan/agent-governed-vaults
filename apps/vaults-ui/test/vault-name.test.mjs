@@ -118,14 +118,19 @@ test('mutation: the wiring assertions above are not vacuous — they fail agains
   );
 });
 
-test('.env.example: VITE_VAULT_NAME is not set against the Base Sepolia smoke fixture', () => {
-  // That vault is a generic testnet fixture, not the v1 mainnet vault — see the comment this test
-  // guards. Setting a real display name against it would be a false claim shipped into every
-  // developer's local build.
+test('.env.example: VITE_VAULT_NAME is set to "cirBTC Vault" against the real Arc mainnet vault (owner decision #353)', () => {
+  // Inverted from the pre-cutover version of this test. Before this cutover, .env.example pointed
+  // at a generic Base Sepolia smoke-test fixture, and setting a real display name against it would
+  // have been a false claim shipped into every developer's local build — this test asserted the
+  // name was ABSENT for exactly that reason. .env.example now points at RWAlly's real v1 mainnet
+  // vault (card #67, `Decisions/Vault name is cirBTC Vault 2026-09-19`), so the same false-claim
+  // risk runs the other way: leaving the name unset here would render `shortAddress` instead of the
+  // name the owner decided on. `test/csp.test.mjs` additionally asserts this string reaches the
+  // built bundle, not just this file.
   const env = readFileSync(ENV_EXAMPLE, 'utf8');
-  assert.doesNotMatch(
+  assert.match(
     env,
-    /^VITE_VAULT_NAME\s*=\s*\S/m,
-    'VITE_VAULT_NAME is set to a real value in .env.example, against the Base Sepolia smoke vault',
+    /^VITE_VAULT_NAME\s*=\s*cirBTC Vault\s*$/m,
+    'VITE_VAULT_NAME is not set to exactly "cirBTC Vault" in .env.example',
   );
 });

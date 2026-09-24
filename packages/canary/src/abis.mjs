@@ -71,6 +71,12 @@ export const VAULT_VIEWS = Object.freeze([
   // so Solidity's auto-getter returns the tuple `(amountUsdc, availableAt)` in DECLARATION order —
   // matching that order here is load-bearing, not cosmetic.
   view('pendingDeposit', ['address'], [{ name: 'amountUsdc', type: 'uint256' }, { name: 'availableAt', type: 'uint64' }]),
+  // "addresses with shares > 0, creator included" (VaultCore.sol:128) vs. the same count with the
+  // creator excluded (VaultCore.sol:107) — the contract tracks both, atomically, as two separate
+  // counters. Card 210's seeded-disclosure organic-bound math reads the second, never derives it
+  // from the first: whether the creator itself currently holds shares is not otherwise knowable
+  // from a read this module can make.
+  view('holderCount', [], ['uint256']),
   view('nonCreatorMemberCount', [], ['uint256']),
   view('lastDepositTime', ['address'], ['uint256']),
   view('exitFeeMaxBps', [], ['uint256']),

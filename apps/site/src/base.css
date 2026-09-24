@@ -2,6 +2,11 @@
 
 html { scroll-behavior: smooth; }
 
+/* A 42-character contract address is one unbreakable word; at phone width it would push the page
+   sideways. `break-word` breaks only a word that cannot fit on a line by itself, so prose is
+   untouched and the address wraps rather than scrolls. */
+body, code { overflow-wrap: break-word; }
+
 body {
   margin: 0;
   background: var(--bg);
