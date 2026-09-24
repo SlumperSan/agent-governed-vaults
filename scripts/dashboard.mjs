@@ -173,6 +173,15 @@ const PAGE = `<!doctype html>
            background:var(--panel);border:1px solid var(--line)}
   .tile.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
   .tile.on .n{background:#ffffff26;border-color:transparent;color:#fff}
+  /* Card #42: nothing in this department's "In progress" column -- it is free, not busy, and
+     nothing else on the board says so until it messages. One filter (eff(x)==='doing'), no new
+     data. The amber border/text is suppressed on the selected tile (.on already carries its own
+     strong styling and the two would otherwise fight over color/border on the same element); the
+     "idle" text label still shows either way, so selecting an idle department does not hide it. */
+  .tile.idle:not(.on){border-color:var(--warn);color:var(--warn)}
+  .tile.idle:not(.on) .n{color:var(--warn)}
+  .tile .idle-tag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--warn)}
+  .tile.on .idle-tag{color:#fff}
   .tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   /* Department tag on a card, shown only in the merged All view. */
   .cdept{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);
@@ -702,8 +711,15 @@ function render(d){
       + ['All',...DEPTS].map(t=>{
           const open=t==='All'? d.board.tasks.filter(x=>x.status!=='done').length
                               : d.board.tasks.filter(x=>x.department===t&&x.status!=='done').length;
-          return '<button class="tile'+(VIEW===t?' on':'')+'" data-view="'+esc(t)+'">'
-            +esc(t)+' <span class="n">'+open+'</span></button>';
+          // Card #42: this department's "In progress" column is empty -- it is waiting on an
+          // assignment, and nothing else on the board says so until it messages. 'All' is not a
+          // department and is never flagged. Uses the board's own in-progress bucket, eff(x)==='doing'
+          // (see eff() above), not a fresh status check invented for this tile.
+          const idle=t!=='All' && d.board.tasks.filter(x=>x.department===t&&eff(x)==='doing').length===0;
+          return '<button class="tile'+(VIEW===t?' on':'')+(idle?' idle':'')+'" data-view="'+esc(t)+'"'
+            +(idle?' title="nothing in progress — free for an assignment"':'')+'>'
+            +esc(t)+' <span class="n">'+open+'</span>'+(idle?'<span class="idle-tag">idle</span>':'')
+            +'</button>';
         }).join('')
       +'</div>'
       // SAID ONCE, HERE, AND NOWHERE ELSE. The board cannot drag, so the way to move a card is to
