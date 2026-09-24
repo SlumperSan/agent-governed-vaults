@@ -85,11 +85,36 @@ test('personaDepositPreconditionRefusal: the DEPOSIT item needs gas headroom too
   assert.match(String(r), /headroom for this item's own gas/);
 });
 
-test('personaDepositPreconditionRefusal: the DEPOSIT item passes with amount + 1 USDC headroom funded', async () => {
-  const r = await personaDepositPreconditionRefusal(depositStub({ balance: AMOUNT + 1_000_000n, allowance: AMOUNT }), {
+test('personaDepositPreconditionRefusal: the DEPOSIT item passes with amount + 0.1 USDC headroom left', async () => {
+  const r = await personaDepositPreconditionRefusal(depositStub({ balance: AMOUNT + 100_000n, allowance: AMOUNT }), {
     vault: VAULT, usdc: USDC, from: FROM, amountUsdcRaw: AMOUNT, checkAllowance: true,
   });
   assert.equal(r, null);
+});
+
+test('ONE funding level walks approve then deposit with gas deducted in between: amount + 1 USDC never deadlocks (V-398-r2)', async () => {
+  // Arc gas measured at ~20 gwei; a light call is ~0.003 USDC. Walk it at 100x that (0.3 USDC per
+  // call, a gas spike) so the headroom margin, not luck, is what passes.
+  const GAS = 300_000n;
+  let balance = AMOUNT + 1_000_000n; // the documented funding level
+  const approve = await personaDepositPreconditionRefusal(depositStub({ balance, allowance: 0n }), {
+    vault: VAULT, usdc: USDC, from: FROM, amountUsdcRaw: AMOUNT, checkAllowance: false,
+  });
+  assert.equal(approve, null, 'approve must pass at the documented funding level');
+  balance -= GAS; // approve's gas
+  const deposit = await personaDepositPreconditionRefusal(depositStub({ balance, allowance: AMOUNT }), {
+    vault: VAULT, usdc: USDC, from: FROM, amountUsdcRaw: AMOUNT, checkAllowance: true,
+  });
+  assert.equal(deposit, null, `deposit must pass after approve's gas (balance ${balance})`);
+  balance -= AMOUNT + GAS; // deposit transfers amount and pays gas
+  assert.ok(balance > GAS, `activate still has gas left (${balance})`);
+});
+
+test('an underfunded persona is refused at APPROVE, before any gas is spent, never stranded at deposit', async () => {
+  const r = await personaDepositPreconditionRefusal(depositStub({ balance: AMOUNT + 500_000n, allowance: 0n }), {
+    vault: VAULT, usdc: USDC, from: FROM, amountUsdcRaw: AMOUNT, checkAllowance: false,
+  });
+  assert.match(String(r), /fund more before approving/);
 });
 
 test('personaDepositPreconditionRefusal: insufficient USDC balance refuses', async () => {

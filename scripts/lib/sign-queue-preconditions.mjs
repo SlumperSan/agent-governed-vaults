@@ -45,7 +45,14 @@ const SEL_ALLOWANCE = '0xdd62ed3e'; // allowance(address,address) — ERC-20
  * A persona funded with EXACTLY the deposit amount would otherwise pass the approve item's balance
  * check, pay gas for it, and then have the deposit item correctly (but avoidably) refuse — so this
  * is required as headroom above `amount` on the APPROVE item specifically. */
-const GAS_HEADROOM_RAW = 1_000_000n; // 1 USDC (6 decimals)
+const GAS_HEADROOM_RAW = 1_000_000n; // 1 USDC (6 decimals): required at the APPROVE item
+/** Required at the DEPOSIT item. It must be SMALLER than GAS_HEADROOM_RAW, because the approve's own
+ * gas has already come out of the same USDC by then. Requiring the full 1 USDC again deadlocked a
+ * persona funded at amount + 1 USDC: approve passed, then the deposit refused forever at
+ * 100.997 < 101 (Security V-398-r2, reproduced). The approve's 1 USDC therefore covers the approve's
+ * gas, the deposit's gas (this 0.1 USDC) and activate's gas, which needs no check of its own. */
+export const DEPOSIT_GAS_HEADROOM_RAW = 100_000n; // 0.1 USDC
+export { GAS_HEADROOM_RAW };
 
 /**
  * The nonce gate: MetaMask picks the nonce, so a stray transaction from the same deployer between
@@ -200,12 +207,14 @@ export async function personaDepositPreconditionRefusal(fetchImpl, {
   }
   if (!balR.ok) return `could not read USDC.balanceOf(${from}): ${balR.reason}`;
   const balance = BigInt(balR.result);
-  // Headroom on BOTH items: Arc pays gas in USDC out of the same balance, so a balance of exactly
-  // `amount` pays the deposit's gas first and then reverts on the transferFrom (V-398-r1).
-  const balanceNeeded = amount + GAS_HEADROOM_RAW;
+  // Headroom on BOTH items, DECREASING: Arc pays gas in USDC out of the same balance. A balance of
+  // exactly `amount` pays the deposit's gas and then reverts on transferFrom (V-398-r1), and an equal
+  // headroom on both items deadlocks after approve's gas (V-398-r2).
+  const headroom = checkAllowance ? DEPOSIT_GAS_HEADROOM_RAW : GAS_HEADROOM_RAW;
+  const balanceNeeded = amount + headroom;
   if (balance < balanceNeeded) {
     return `${from}'s USDC balance is ${balance}, below ${balanceNeeded} (the ${amount} deposit plus `
-      + `${GAS_HEADROOM_RAW} headroom for this item's own gas — Arc pays gas in USDC) — fund more before ${checkAllowance ? 'depositing' : 'approving'}`;
+      + `${headroom} headroom for this item's own gas — Arc pays gas in USDC) — fund more before ${checkAllowance ? 'depositing' : 'approving'}`;
   }
   if (!navR.ok) {
     return `vault.navWad() reverted (${navR.reason}) — the oracle breaker looks tripped, so the vault is frozen for deposits`;
