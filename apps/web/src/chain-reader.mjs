@@ -81,6 +81,13 @@ export function planCore(vault) {
     call(vault, 'VAULT_VIEWS', 'governance'),
     call(vault, 'VAULT_VIEWS', 'creator'),
     call(vault, 'VAULT_VIEWS', 'operatorRegistry'),
+    // Card 210 (seeded-disclosure): TWO counters, not one. `holderCount` is "addresses with
+    // shares > 0, creator included" (VaultCore.sol:128); `nonCreatorMemberCount` excludes the
+    // creator (VaultCore.sol:107), maintained by the contract itself on every share-balance
+    // crossing (`if (member != creator) ++nonCreatorMemberCount`). Appended at the END of this
+    // list, never inserted earlier — callers destructure `planCore`'s results positionally.
+    call(vault, 'VAULT_VIEWS', 'holderCount'),
+    call(vault, 'VAULT_VIEWS', 'nonCreatorMemberCount'),
   ]);
 }
 
@@ -610,6 +617,7 @@ export function assembleProposal(pid, p, delegatedForWeight) {
  *   governanceConfig?: Record<string, unknown> | null,
  *   name?: string, operatorName?: string, operatorAddress?: string, attested?: boolean,
  *   holderCount?: number,
+ *   nonCreatorMemberCount?: number,
  *   blockNumber?: bigint|number|null,
  * }} r
  */
@@ -657,6 +665,12 @@ export function assembleVault(r) {
     totalPendingUsdc: r.core.totalPendingUsdc,
     usdcScalar: r.core.usdcScalar,
     holderCount: r.holderCount ?? 0,
+    // `null` — never `0` — when unread. `0` is a real value (every member is the creator, or the
+    // vault has no non-creator holders at all), so defaulting an unread count to `0` would render
+    // "confirmed no non-creator holders" over "this was never asked". Card 210's
+    // `organicMemberBound`/`organicStakeWeightedClaim` (apps/web/src/seeded.mjs) already treat
+    // `null` as unknown and refuse to render a claim from it.
+    nonCreatorMemberCount: r.nonCreatorMemberCount ?? null,
     childVaultCount: Number(r.core.childVaultCount ?? 0),
 
     oracle: r.core.oracle,

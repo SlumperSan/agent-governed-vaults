@@ -20,13 +20,15 @@ import assert from 'node:assert/strict';
 const REPO = fileURLToPath(new URL('../../..', import.meta.url));
 const PANEL = join(REPO, 'apps/vaults-ui/src/components/ProposalPanel.tsx');
 const MEMBER_ACTIONS = join(REPO, 'apps/vaults-ui/src/components/MemberActions.tsx');
+const VAULT_LIST = join(REPO, 'apps/vaults-ui/src/components/VaultList.tsx');
+const APP = join(REPO, 'apps/vaults-ui/src/App.tsx');
 const ATLAS = join(REPO, 'apps/vaults-ui/src/lib/atlas.ts');
 
 test('ProposalPanel gates the stake-weighted claim on organicStakeWeightedClaim(...) === true, not truthiness', () => {
   const src = readFileSync(PANEL, 'utf8');
   assert.match(
     src,
-    /organicStakeWeightedClaim\(vault\.holderCount,\s*SEEDED_ADDRESSES\.length\)\s*===\s*true/,
+    /organicStakeWeightedClaim\(vault\.nonCreatorMemberCount,\s*SEEDED_ADDRESSES\.length\)\s*===\s*true/,
     'the claim is no longer gated on an explicit `=== true` — a tri-state `null` (unknown) or a ' +
       'truthy-but-not-true value could then render a claim this app cannot back',
   );
@@ -35,9 +37,24 @@ test('ProposalPanel gates the stake-weighted claim on organicStakeWeightedClaim(
   assert.match(src, /stake-weighted here: five or more non-seeded members/);
 });
 
+test('ProposalPanel never feeds the creator-inclusive vault.holderCount to the organic-claim gate (security review, PR #391)', () => {
+  const src = readFileSync(PANEL, 'utf8');
+  assert.doesNotMatch(
+    src,
+    /organicStakeWeightedClaim\(vault\.holderCount/,
+    'vault.holderCount is "creator included" (VaultCore.sol:128) — the RWAlly team\'s own Safe, ' +
+      'not a seeded persona — so it must never be the base this claim is computed from',
+  );
+});
+
 test('NON-VACUITY: a truthiness-gated stake-weighted line would fail the assertion above', () => {
-  const preFix = 'const stakeWeighted = organicStakeWeightedClaim(vault.holderCount, SEEDED_ADDRESSES.length);';
+  const preFix = 'const stakeWeighted = organicStakeWeightedClaim(vault.nonCreatorMemberCount, SEEDED_ADDRESSES.length);';
   assert.doesNotMatch(preFix, /organicStakeWeightedClaim\([^)]*\)\s*===\s*true/);
+});
+
+test('NON-VACUITY: the pre-fix (creator-inclusive) line would fail the holderCount ban above', () => {
+  const preFix = 'const stakeWeighted = organicStakeWeightedClaim(vault.holderCount, SEEDED_ADDRESSES.length) === true;';
+  assert.match(preFix, /organicStakeWeightedClaim\(vault\.holderCount/);
 });
 
 test('ProposalPanel labels a seeded proposer, reading the real disclosure list (not a hardcoded stand-in)', () => {
@@ -48,6 +65,20 @@ test('ProposalPanel labels a seeded proposer, reading the real disclosure list (
   // second, driftable copy of the disclosure list inside the component.
   assert.match(src, /import\s*\{[^}]*SEEDED_ADDRESSES[^}]*\}\s*from\s*'\.\.\/lib\/atlas'/s);
   assert.doesNotMatch(src, /const\s+SEEDED_ADDRESSES\s*=/, 'SEEDED_ADDRESSES must come from atlas.ts, not a local literal');
+});
+
+test('VaultList feeds organicMemberBound the creator-excluded count, never the raw holderCount (security review, PR #391)', () => {
+  const src = readFileSync(VAULT_LIST, 'utf8');
+  assert.match(src, /organicMemberBound\(v\.nonCreatorMemberCount,\s*SEEDED_ADDRESSES\.length\)/);
+  assert.doesNotMatch(src, /organicMemberBound\(v\.holderCount/);
+  // The raw figure is still shown, unadjusted — this is a labelling fix, not a removal.
+  assert.match(src, /\{v\.holderCount\}\s*holders/);
+});
+
+test('App.tsx feeds organicMemberBound the creator-excluded count, never the raw holderCount (security review, PR #391)', () => {
+  const src = readFileSync(APP, 'utf8');
+  assert.match(src, /organicMemberBound\(vault\.nonCreatorMemberCount,\s*SEEDED_ADDRESSES\.length\)/);
+  assert.doesNotMatch(src, /organicMemberBound\(vault\.holderCount/);
 });
 
 test('MemberActions labels the connected wallet when it is a seeded address', () => {

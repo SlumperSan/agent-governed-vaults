@@ -287,7 +287,6 @@ import { vaultView, SORTS } from './src/vault-view.mjs';
 import { classify, parseSnapshotAge, describeError, loading, empty, ready } from './src/freshness.mjs';
 import { VAULTS, LEADERBOARD, WALLET, NOW } from './src/fixtures.mjs';
 import { mapVaultRecords, mapLeaderboard, MISSING_IN_LIVE } from './src/live-adapter.mjs';
-import { organicMemberBound } from './src/seeded.mjs';
 
 /* ══════════════════════════════════════════════════════════════════════════════
    APP STATE.  All financial derivation lives in ./src/*.mjs (tested); this file
@@ -308,8 +307,11 @@ const state = {
    * The disclosed seeded-address count (docs/seeded-addresses.json's `addresses.length`), or
    * `null` when it has not been read — this app is served with no build step (README), so the
    * fetch below can 404 depending on how the directory is served, and a 404 must read as
-   * "unknown", never as "zero seeded" (card 210, seeded.mjs's own header names this exact trap).
-   * Only ever used through `organicMemberBound`, which is `null`-safe the same way.
+   * "unknown, seeded status unknown", never as "zero seeded" (card 210, seeded.mjs's own header
+   * names this exact trap). Read directly by `memberCountLabel()` and the Members stat below —
+   * no `organicMemberBound`/`organicStakeWeightedClaim` call in this file: see
+   * `memberCountLabel`'s own header for why (this app has no live non-creator holder count to
+   * hand either function as its base).
    */
   seededCount: null,
   /** Set while a non-localhost ?api= origin is waiting on an explicit yes. */
@@ -391,18 +393,32 @@ const pill = (label, tone, glyph) =>
 
 /**
  * The member/holder count, honestly labelled (card 210). `v.holderCount` is the raw on-chain
- * figure — printed unadjusted, always — with a parenthetical only when `state.seededCount` is
- * actually known AND non-zero: `organicMemberBound` is `null`-safe, so an unread list renders no
- * parenthetical at all rather than a wrong one, and a zero-length real list renders none either
- * since there is nothing to disclose.
+ * figure — "addresses with shares > 0, creator included" (VaultCore.sol:128) — printed unadjusted,
+ * always.
+ *
+ * NO ORGANIC-BOUND CLAIM RENDERS HERE, ON PURPOSE. Two security-review findings on PR #391, both
+ * closed the same way:
+ *
+ *  1. `organicMemberBound` must be fed the creator-EXCLUDED count (`VaultCore.
+ *     nonCreatorMemberCount`), never the creator-inclusive `holderCount` — the vault's creator is
+ *     the RWAlly team's own Safe, not on the seeded-persona list, so `holderCount` minus only the
+ *     seeded count would silently read the team's own Safe as organic. This app's live path (the
+ *     indexer/metered API, `live-adapter.mjs`) has no `nonCreatorMemberCount`-equivalent field —
+ *     unlike `apps/vaults-ui`, which reads it directly off the contract (`live-vaults.ts`) — so
+ *     there is no live value this function could honestly pass as that base.
+ *  2. A failed/404'd read of `docs/seeded-addresses.json` must render as "seeded status unknown",
+ *     not silently as "nothing here is seeded" — see `fetchSeededCount`'s own header.
+ *
+ * Both together mean: until this app has a live non-creator holder count, it discloses the raw
+ * figure and (when known) how many entries the seeded list carries, and stops there — never an
+ * "at least N non-seeded" or "stake-weighted" claim, which would need the missing figure to back.
  */
 function memberCountLabel(v) {
   const raw = Number(v.holderCount ?? 0);
-  const bound = organicMemberBound(v.holderCount, state.seededCount);
-  const note = state.seededCount && bound !== null
-    ? ` (raw on-chain; at least ${bound} non-seeded)`
-    : '';
-  return `${raw} member${raw === 1 ? '' : 's'}${esc(note)}`;
+  const base = `${raw} member${raw === 1 ? '' : 's'}`;
+  if (state.seededCount === null) return `${base} (raw; seeded status unknown)`;
+  if (state.seededCount === 0) return base; // confirmed — nothing on the disclosure list to show
+  return `${base} (raw on-chain; ${state.seededCount} seeded team wallet${state.seededCount === 1 ? '' : 's'} disclosed)`;
 }
 
 /** Loading / empty / error, so no surface can quietly have only two of the four. */
@@ -601,12 +617,13 @@ function renderVault(addr) {
     <div class="statrow">
       <div class="stat"><div class="k">Vault NAV</div><div class="v">${navReadable(x) && v.navWad !== null ? esc(usdcShort((toBig(v.navWad) ?? 0n) / USDC_SCALAR)) : '—'}</div></div>
       <div class="stat"><div class="k">Members</div><div class="v">${Number(v.holderCount ?? 0)}${
-        (() => {
-          const bound = organicMemberBound(v.holderCount, state.seededCount);
-          return state.seededCount && bound !== null
-            ? `<small> raw · at least ${bound} non-seeded</small>`
-            : '';
-        })()
+        // Same rule as memberCountLabel() above — see its header for why no organic-bound figure
+        // is ever shown here (security review, PR #391, findings 1 and 2).
+        state.seededCount === null
+          ? '<small>raw · seeded status unknown</small>'
+          : state.seededCount === 0
+            ? ''
+            : `<small>raw · ${state.seededCount} seeded team wallet${state.seededCount === 1 ? '' : 's'} disclosed</small>`
       }</div></div>
       <div class="stat"><div class="k">Capacity used</div><div class="v">${x.capacity.usedBps !== null ? esc(bpsPct(x.capacity.usedBps)) : x.capacity.capped ? 'Unreadable' : 'Uncapped'}${x.capacity.capped ? `<small> · cap ${esc(approx(usdcCompact(x.capacity.cap)))}</small>` : ''}</div></div>
       <div class="stat"><div class="k">Escrowed pending</div><div class="v">${v.totalPendingUsdc !== null ? esc(usdcShort(v.totalPendingUsdc)) : '—'}<small> counts against the cap</small></div></div>
@@ -1597,7 +1614,8 @@ function bootFixtures() {
  * directory (README), so whether `../docs/...` resolves depends entirely on how the directory
  * happens to be served, and a member count must never wait on — or fail because of — a read this
  * unreliable. A failed or 404'd read leaves `state.seededCount` at its `null` default, which
- * `organicMemberBound` already treats as "unknown", never as "zero seeded".
+ * `memberCountLabel()` renders as "seeded status unknown", never as "zero seeded" (security
+ * review, PR #391, finding 2).
  */
 async function fetchSeededCount() {
   try {

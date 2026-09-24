@@ -21,6 +21,11 @@ interface Props {
  * raw figure to be honestly labelled when the disclosure list is non-empty, which the parenthetical
  * below does via `organicMemberBound` — a lower bound (see `seeded.mjs`'s own header for why it
  * cannot be exact), never a claim that the remainder is confirmed organic.
+ *
+ * `organicMemberBound` is fed `v.nonCreatorMemberCount`, NEVER `v.holderCount` (security review on
+ * PR #391 caught this before merge) — `holderCount` is "creator included" (VaultCore.sol:128), and
+ * the vault's creator is the RWAlly team's own Safe, not on the seeded-persona list, so the raw
+ * count alone would have silently counted it as non-seeded.
  */
 export function VaultList({ vaults, selected, onSelect }: Props) {
   return (
@@ -29,7 +34,7 @@ export function VaultList({ vaults, selected, onSelect }: Props) {
       <ul className="vault-list">
         {vaults.map((v) => {
           const isSel = v.address === selected;
-          const bound = organicMemberBound(v.holderCount, SEEDED_ADDRESSES.length);
+          const bound = organicMemberBound(v.nonCreatorMemberCount, SEEDED_ADDRESSES.length);
           return (
             <li key={v.address}>
               <button

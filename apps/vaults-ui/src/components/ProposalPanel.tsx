@@ -73,7 +73,12 @@ export function ProposalPanel({ vault, nowSec }: Props) {
   // `=== true` on purpose, not truthiness: `organicStakeWeightedClaim` is tri-state and `null`
   // ("cannot be determined") must render nothing, the same rule `quorumTag` below already applies
   // to `readout.met`. Never asserted from `null` — an unread holder count is not evidence FOR it.
-  const stakeWeighted = organicStakeWeightedClaim(vault.holderCount, SEEDED_ADDRESSES.length) === true;
+  //
+  // `vault.nonCreatorMemberCount`, NEVER `vault.holderCount` — security review on PR #391 caught
+  // this before merge. `holderCount` is "creator included" (VaultCore.sol:128) and the creator is
+  // the RWAlly team's own Safe, not one of the seeded personas on `SEEDED_ADDRESSES`, so passing
+  // `holderCount` here would silently count the team's Safe as an organic member.
+  const stakeWeighted = organicStakeWeightedClaim(vault.nonCreatorMemberCount, SEEDED_ADDRESSES.length) === true;
 
   return (
     <section className="panel">

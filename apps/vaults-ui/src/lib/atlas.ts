@@ -191,6 +191,14 @@ export interface Vault {
    * wrong from rendering nothing. `App.tsx` does not display a capacity-cap row for that reason.
    */
   readonly holderCount: number;
+  /**
+   * `null` when unread (card 210) — "creator EXCLUDED" (VaultCore.sol:107), unlike `holderCount`
+   * above ("creator included", VaultCore.sol:128). The one figure safe to hand
+   * `organicMemberBound`/`organicStakeWeightedClaim` (`seeded.mjs`) as its base; `holderCount`
+   * itself is not, since the vault's creator is the RWAlly team's own Safe and is never on the
+   * seeded-persona list.
+   */
+  readonly nonCreatorMemberCount: number | null;
   readonly basket: readonly BasketLeg[];
   readonly proposal: Proposal | null;
   readonly governanceConfig?: Record<string, unknown> | null;

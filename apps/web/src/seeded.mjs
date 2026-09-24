@@ -49,29 +49,45 @@ export function isSeeded(address, entries) {
 }
 
 /**
- * A LOWER BOUND on non-seeded ("organic") members. `holderCount` is the raw on-chain figure;
+ * A LOWER BOUND on non-seeded ("organic") members.
+ *
+ * `nonCreatorHolderCount` MUST ALREADY EXCLUDE THE VAULT'S CREATOR — it is `Governance.sol`'s /
+ * `VaultCore.nonCreatorMemberCount` (VaultCore.sol:107), never `VaultCore.holderCount`
+ * (VaultCore.sol:128), whose own doc comment reads "addresses with shares > 0, creator included".
+ * The creator is the RWAlly team's own Safe (`contracts/config/deployments/*.json`'s
+ * `operatorPayoutNote`), not one of the seeded personas on `docs/seeded-addresses.json` — a
+ * DIFFERENT address, on a DIFFERENT list — so passing the creator-inclusive `holderCount` here
+ * would count the team's own Safe as an organic member the moment `seededCount` alone did not
+ * already exclude it. This was exactly wrong until card 210's security review caught it: reviewed
+ * and fixed before merge of PR #391.
+ *
  * `seededCount` is the disclosure list's size. No live read in this repo enumerates individual
- * holder addresses per vault (`chain-reader.mjs` has no such call — see its own header), so this
- * cannot subtract the actual overlap; it assumes the WORST case, that every seeded address counts
- * toward `holderCount`, rather than the best case that none does. Understating organic
- * participation is the safe direction here; overstating it is the one the decision doc forbids.
+ * holder addresses per vault beyond the creator/non-creator split (`chain-reader.mjs` has no
+ * broader per-address call — see its own header), so this still cannot subtract the actual
+ * overlap between `seededCount` and the non-creator holder set; it assumes the WORST case, that
+ * every seeded address counts toward `nonCreatorHolderCount`, rather than the best case that none
+ * does. Understating organic participation is the safe direction here; overstating it is the one
+ * the decision doc forbids.
  *
  * `null` — never a number — when either input cannot be read, matching the "unknown is not zero"
  * convention this repo already uses elsewhere (`vault-view.mjs`'s `oracleHealth`,
  * `vault-state.mjs`'s `freezeUnknown`).
- * @param {unknown} holderCount
+ * @param {unknown} nonCreatorHolderCount
  * @param {unknown} seededCount
  * @returns {number | null}
  */
-export function organicMemberBound(holderCount, seededCount) {
+export function organicMemberBound(nonCreatorHolderCount, seededCount) {
   // `Number(null) === 0` and `Number(undefined) === NaN` — two different "absent" spellings that
   // coerce to two different things. Reject both explicitly rather than letting `null` silently
   // coerce into a real zero, which would turn "not read yet" into "read as zero seeded/zero
   // holders" — the exact unknown-renders-as-known shape this module exists to refuse.
-  if (holderCount === null || holderCount === undefined || seededCount === null || seededCount === undefined) {
+  if (
+    nonCreatorHolderCount === null || nonCreatorHolderCount === undefined ||
+    seededCount === null || seededCount === undefined
+  ) {
     return null;
   }
-  const raw = Number(holderCount);
+  const raw = Number(nonCreatorHolderCount);
   const seeded = Number(seededCount);
   if (!Number.isFinite(raw) || !Number.isFinite(seeded) || raw < 0 || seeded < 0) return null;
   return Math.max(0, raw - seeded);
@@ -79,15 +95,15 @@ export function organicMemberBound(holderCount, seededCount) {
 
 /**
  * Whether an "organically stake-weighted governance" claim may be rendered anywhere in the UI —
- * i.e. whether the non-seeded member BOUND alone already reaches `SIGNER_REGIME_BELOW`, the same
- * threshold `Governance.sol` uses to leave the signer-majority regime. `null` (never `true`) when
- * the bound itself is unknown: an unread count is not evidence FOR the claim, so a caller must
- * render nothing — never a claim — on `null`.
- * @param {unknown} holderCount
+ * i.e. whether the non-seeded, non-creator member BOUND alone already reaches
+ * `SIGNER_REGIME_BELOW`, the same threshold `Governance.sol` uses to leave the signer-majority
+ * regime. `null` (never `true`) when the bound itself is unknown: an unread count is not evidence
+ * FOR the claim, so a caller must render nothing — never a claim — on `null`.
+ * @param {unknown} nonCreatorHolderCount see `organicMemberBound`'s header — never `holderCount`
  * @param {unknown} seededCount
  * @returns {boolean | null}
  */
-export function organicStakeWeightedClaim(holderCount, seededCount) {
-  const bound = organicMemberBound(holderCount, seededCount);
+export function organicStakeWeightedClaim(nonCreatorHolderCount, seededCount) {
+  const bound = organicMemberBound(nonCreatorHolderCount, seededCount);
   return bound === null ? null : bound >= SIGNER_REGIME_BELOW;
 }
