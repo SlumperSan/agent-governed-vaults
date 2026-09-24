@@ -285,6 +285,19 @@ export function originGateRefusal(headers, port) {
 }
 
 /**
+ * One async mutex per queue file around every read-modify-write of it. Both writers (the GET
+ * poll's advance/readback and the POST that records a hash) take it, so neither can write back a
+ * copy read before the other's write. A failing section releases the lock for the next caller.
+ */
+const queueLocks = new Map();
+export function withQueueLock(queuePath, fn) {
+  const prev = queueLocks.get(queuePath) ?? Promise.resolve();
+  const run = prev.then(() => fn());
+  queueLocks.set(queuePath, run.catch(() => {}));
+  return run;
+}
+
+/**
  * `GET /api/sign-queue`'s whole handler body. Polls every `sent` item for a receipt, resolves
  * every item's `data` (template or literal), computes `ready`, and returns the enriched list. No
  * argument mutates anything the caller did not already own (the queue file itself).
@@ -293,14 +306,23 @@ export function originGateRefusal(headers, port) {
  * @param {string} [queuePath] override for tests only — the dashboard always uses the default
  */
 export async function buildSignQueueResponse(fetchImpl = fetch, castFn = defaultCast, queuePath = QUEUE_PATH) {
-  const queue = readQueue(queuePath);
-  await advanceSentItems(queue, fetchImpl, queuePath);
+  // The read-modify-write runs under the queue lock (see withQueueLock). Without it, a Sign POST
+  // that lands while this poll awaits the chain was overwritten by this poll's stale copy: the
+  // item went back to pending with no hash, its tx still mined, and the nonce gate then refused
+  // it forever (Security, #382 follow-up, reproduced). Display enrichment below runs unlocked on
+  // this in-memory copy; the next poll re-reads.
+  const queue = await withQueueLock(queuePath, async () => {
+    const q = readQueue(queuePath);
+    await advanceSentItems(q, fetchImpl, queuePath);
+    const byId = new Map(q.items.map((it) => [it.id, it]));
+    if (byId.has('arc-readback')) {
+      const changed = await checkArcReadback(byId.get('arc-readback'), byId, fetchImpl);
+      if (changed) writeQueueAtomic(q, queuePath);
+    }
+    return q;
+  });
 
   const itemsById = new Map(queue.items.map((it) => [it.id, it]));
-  if (itemsById.has('arc-readback')) {
-    const changed = await checkArcReadback(itemsById.get('arc-readback'), itemsById, fetchImpl);
-    if (changed) writeQueueAtomic(queue, queuePath);
-  }
 
   const enriched = [];
   for (const item of queue.items.sort((a, b) => (a.chainId - b.chainId) || (a.order - b.order))) {
@@ -347,7 +369,11 @@ export async function recordSentHash(id, body, fetchImpl = fetch, castFn = defau
   const hash = typeof body.hash === 'string' ? body.hash : '';
   const from = typeof body.from === 'string' ? body.from : '';
   if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) return { code: 400, msg: 'hash is not a 32-byte 0x-hex tx hash' };
+  return withQueueLock(queuePath, () => recordSentHashLocked(id, hash, from, castFn, queuePath));
+}
 
+/** recordSentHash's read-modify-write, only ever run under the queue lock. */
+function recordSentHashLocked(id, hash, from, castFn, queuePath) {
   const queue = readQueue(queuePath);
   const item = queue.items.find((it) => it.id === id);
   if (!item) return { code: 404, msg: `no queue item ${id}` };
