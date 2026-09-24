@@ -66,6 +66,10 @@ export default defineConfig({
       // ones packages/reference-agent's autonomous actor sends, so a wallet-connected member and
       // an agent never disagree about what a "deposit" or "reveal" transaction looks like.
       '@chain/act': pkg('reference-agent/src/act.mjs'),
+      // The Terms of Use text and its version hash (card #214) — the ONE string this app and
+      // apps/site both import, so the clickwrap and the published page can never disagree about
+      // what was agreed to or what its hash is. See packages/terms/src/terms-text.mjs's header.
+      '@rwally/terms': pkg('terms/src/terms-text.mjs'),
     },
   },
   build: {

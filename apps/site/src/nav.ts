@@ -19,10 +19,12 @@ export const NAV: ReadonlyArray<{ label: string; href: string; external?: true }
 ];
 
 /**
- * Disclaimers is a FOOTER link, small, by owner decision. It is not hidden — every page carries it
- * and the legal text is unchanged — it simply does not compete with the product nav for attention.
+ * Disclaimers and Terms are FOOTER links, small, by owner decision (card #214 for Terms, matching
+ * the standing Disclaimers decision). Neither is hidden — every page carries both and the legal
+ * text is unchanged — they simply don't compete with the product nav for attention.
  */
 export const FOOTER_LINKS: ReadonlyArray<{ label: string; href: string }> = [
+  { label: 'Terms of Use', href: '/terms.html' },
   { label: 'Disclaimers', href: '/disclaimers.html' },
   { label: 'Docs', href: '/docs.html' },
   { label: 'GitHub', href: GITHUB_URL },

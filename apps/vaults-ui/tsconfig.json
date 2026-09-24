@@ -21,7 +21,8 @@
     "types": ["vite/client"],
     "paths": {
       "@atlas/*": ["./src/lib/atlas-modules/*"],
-      "@chain/*": ["./src/lib/atlas-modules/chain/*"]
+      "@chain/*": ["./src/lib/atlas-modules/chain/*"],
+      "@rwally/terms": ["./src/lib/terms-modules/terms-text.d.ts"]
     }
   },
   "include": ["src"]
