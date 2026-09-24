@@ -335,10 +335,10 @@ test('no live markdown file states an exit-fee maximum other than the one the co
 //
 // It asserted that `apps/site/test/site.test.mjs` pinned the exit-fee decay row on
 // how-it-works.html to `config.smoke.exitFeeDecayPeriod`, so the published figure could not drift
-// from the configuration. Both the page and the whole `apps/site` tree were deleted when that site
-// was retired, so there is no longer a published exit-fee decay figure anywhere to keep fresh:
-// `apps/site-next` ships index and disclaimers only, and pins `smoke.gov` and `smoke.minDepositUsdc`
-// rather than this field.
+// from the configuration. Both the page and the whole `apps/site` tree of that era were deleted
+// when that site was retired, so there is no longer a published exit-fee decay figure anywhere to
+// keep fresh. `apps/site-next` was in turn deleted in #304; the current `apps/site` (the rebuild)
+// ships six static pages and pins no `smoke.*` field in its tests at all.
 //
 // It is DELETED rather than re-pointed because re-pointing it at the live site would have asserted
 // a pin that does not exist, and softening it to "some config field is pinned" would have been a

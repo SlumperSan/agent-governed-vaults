@@ -14,21 +14,27 @@
 <a class="skip" href="#main">Skip to main content</a>
 
 <!-- =====================================================================
-     THE MASTHEAD. Structure and classes follow apps/site-next/src/shell/
-     Masthead.tsx and masthead.module.css so this surface reads as the same
+     THE MASTHEAD. Structure and classes followed apps/site-next/src/shell/
+     Masthead.tsx and masthead.module.css so this surface read as the same
      product: a floating pill, the comic R and wordmark on the left, a
      four-entry nav capsule centred, the X icon and the connect control on
-     the right. This page has no build step for components, so the pill is
+     the right. apps/site-next was deleted in #304; apps/site's current
+     header (Shell.tsx, class `.nav`) is a plain top bar rather than a
+     floating pill, so this page's masthead no longer mirrors the site's
+     structure. This page has no build step for components, so the pill is
      hand-written HTML rather than a shared React piece.
 
      THE MARK IS A LINKED FILE AND IT USED TO BE AN INLINE PATH. Until
      2026-09-05 the ledger R was drawn here as one stroke path, inline, so it
      could inherit the link's colour. The owner replaced it that day with the
      comic R, which is fixed-colour artwork with nothing to inherit, so it is
-     linked instead: brand/mark-comic.svg here, byte-identical to the site's
-     own public/brand/mark-comic.svg. The guard named "the brand mark is one
-     artwork, byte-identical on both surfaces" in apps/site-next/test/
-     site.test.mjs reads both files and reds when they disagree.
+     linked instead: brand/mark-comic.svg here. apps/site-next carried a
+     byte-identical copy at public/brand/mark-comic.svg, guarded by a test
+     named "the brand mark is one artwork, byte-identical on both surfaces"
+     in apps/site-next/test/site.test.mjs, until that whole directory was
+     deleted in #304. apps/site's current mark (Shell.tsx's inline BrandMark)
+     is a different artwork, so there is no longer a byte-identical file, or
+     a guard, to point at.
 
      THE CHIP THAT SAYS "app" IS THE ONE ELEMENT THE SITE'S HEADER DOES NOT
      CARRY, because the site's masthead never needs to say which surface it
@@ -50,9 +56,12 @@
     </div>
 
     <!-- THE NAV CAPSULE. Four entries, same set as the site's HEADER_NAV in
-         apps/site-next/src/shell/pinned.ts, read from this surface: Home and
-         How it works point back at the site, App is this page and carries
-         aria-current, Disclaimers is the other document on the site. -->
+         apps/site-next/src/shell/pinned.ts before that directory was deleted
+         in #304: Home and How it works point back at the site, App is this
+         page and carries aria-current, Disclaimers is the other document on
+         the site. apps/site's current nav (nav.ts's NAV) is a different four
+         entries: How it works, About, Docs, X. This capsule no longer
+         mirrors it. -->
     <nav class="nav" aria-label="Site">
       <a class="nav-link" href="https://rwally.com">Home</a>
       <a class="nav-link" href="https://rwally.com/#how">How it works</a>
@@ -197,14 +206,15 @@
 </main>
 
 <!-- =====================================================================
-     THE FOOTER. Structure follows apps/site-next/src/shell/Footer.tsx and
+     THE FOOTER. Structure followed apps/site-next/src/shell/Footer.tsx and
      footer.module.css: a full-bleed band carrying the same mascot plate the
-     site uses in its own footer, a scrim over it, then the identity lockup
-     repeated exactly as the header sets it, the door links, and the licence
-     line. No parallax here: useParallax in the site build is a scroll
-     listener wired to a React ref, and this page has no equivalent piece to
-     wire it to without inventing one for a single static band. The crop and
-     the scrim carry the same look at rest; only the drift is missing.
+     site used in its own footer, a scrim over it, then the identity lockup
+     repeated exactly as the header set it, the door links, and the licence
+     line. apps/site-next was deleted in #304; apps/site's current footer
+     (Shell.tsx's Footer) is a plain bordered footer with no mascot band, no
+     scrim and no parallax, so this page's footer no longer mirrors the
+     site's. The crop and the scrim below are this page's own, carried
+     forward unchanged from the original design.
      ===================================================================== -->
 <footer class="footer">
   <div class="band" aria-hidden="true">

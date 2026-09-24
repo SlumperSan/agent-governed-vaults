@@ -4,8 +4,10 @@
 > rail it documents is still answering in production.** As of 2026-09-16,
 > `GET https://rwally.com/api/vaults` returns **402** with a `PAYMENT-REQUIRED` challenge and
 > `GET https://rwally.com/.well-known/x402` returns **200**, because the Cloudflare Pages project
-> has not been redeployed since the removal. The next deploy of `apps/site-next` removes both. The
-> Base-mainnet-settlement paid-snapshot rail it documents (`apps/site-next/functions/api/vaults.js`,
+> has not been redeployed since the removal. The next deploy of `apps/site` (the same Cloudflare
+> Pages project, `name = "rwally"`, that `apps/site-next` deployed to before it was deleted in #304)
+> removes both. The Base-mainnet-settlement paid-snapshot rail it documents
+> (`apps/site-next/functions/api/vaults.js`,
 > `apps/site-next/functions/.well-known/x402.js`, and their supporting `_price.js`/`_snapshot.json`)
 > was **removed on 2026-09-15** because it duplicated and conflicted with `apps/api`'s own x402 rail:
 > it settled payment in USDC on Base mainnet (chain 8453) while the data it sold described the

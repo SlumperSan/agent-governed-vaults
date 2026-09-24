@@ -58,8 +58,10 @@ file.** `test/claims.test.mjs` checks the markup for all three shapes for exactl
 
 `connect-src` names no third-party origin, just `'self'`. This page has not been repointed at the
 deployed protocol, so it makes no chain call and there is nothing to widen the policy for. The two fonts are
-self-hosted copies of the faces `apps/site-next` uses, so `font-src 'self'` holds and nothing is
-fetched from a font CDN.
+self-hosted copies of the faces `apps/site-next` used before it was deleted in #304. `apps/site`'s
+current `tokens.css` still names the same two faces (`--sans`, `--mono`: IBM Plex Sans Variable and
+IBM Plex Mono), self-hosted there too via the `@fontsource` packages rather than this page's static
+files, so `font-src 'self'` holds on both surfaces without a font CDN.
 
 ## Layout
 
