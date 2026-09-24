@@ -22,6 +22,7 @@ export { previewExit, exitFeeBps, secondsUntilFeeBps } from '@atlas/exit-preview
 export type { ExitPreview, ExitPreviewOk, ExitPreviewErr, ExitPreviewSlice } from '@atlas/exit-preview';
 export { proposalPhase, quorumReadout, PHASES } from '@atlas/governance';
 export { oracleHealth, position, vaultView } from '@atlas/vault-view';
+export type { OracleHealth, OracleLegHealth } from '@atlas/vault-view';
 export {
   planCore,
   planBasketAssets,

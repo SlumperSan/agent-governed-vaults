@@ -1,5 +1,5 @@
-import type { BasketLeg, Vault } from '../lib/atlas';
-import { usdcExact, wadExact } from '../lib/atlas';
+import type { BasketLeg, OracleLegHealth, Vault } from '../lib/atlas';
+import { oracleHealth, usdcExact, wadExact } from '../lib/atlas';
 
 interface Props {
   readonly vault: Vault;
@@ -9,6 +9,36 @@ interface Props {
 /** WAD-scaled balance for display — `assetUnit`, never `decimals`: see `atlas.ts`'s `BasketLeg`. */
 function balanceWad(leg: BasketLeg): bigint {
   return leg.assetUnit === 0n ? 0n : (leg.balance * 10n ** 18n) / leg.assetUnit;
+}
+
+/**
+ * The oracle-age cell for one leg, from `health.state` rather than a re-derived comparison.
+ *
+ * THIS REPLACES AN INLINE `age > leg.maxStalenessSec` CHECK THAT USED TO LIVE HERE, and the
+ * replacement is not cosmetic. That comparison had no `unheld` case, so a zero-balance leg with an
+ * old feed read "stale" for an asset nobody was exposed to; it had no `ageing` case, so a leg one
+ * second past 80% of its heartbeat looked identical to one still fresh; and if either input were
+ * ever non-finite, `NaN > bound` evaluates `false` in JavaScript — an UNMEASURABLE age would have
+ * rendered as NOT stale, which is a healthy-looking cell for a fact nobody actually knows. That is
+ * the exact "unknown renders as healthy" shape this project has already found and fixed more than
+ * once elsewhere (#338, quorum). `oracleHealth` (`apps/web/src/vault-view.mjs`) is the tested
+ * module every other state on this page already defers to; this cell now does too.
+ */
+function oracleAgeCell(health: OracleLegHealth): { className: string; text: string } {
+  switch (health.state) {
+    case 'unheld':
+      return { className: 'num dim', text: '—' };
+    case 'unknown':
+      // Never rendered as healthy: same tag-warn treatment as `stale`, distinct wording so a
+      // reader can tell "confirmed old" from "cannot tell".
+      return { className: 'num tag-warn', text: 'age unknown' };
+    case 'stale':
+      return { className: 'num tag-warn', text: `${health.ageSec}s · stale` };
+    case 'ageing':
+      return { className: 'num tag-warn', text: `${health.ageSec}s · ageing` };
+    case 'fresh':
+      return { className: 'num dim', text: `${health.ageSec}s` };
+  }
 }
 
 /**
@@ -31,6 +61,10 @@ export function Holdings({ vault, nowSec }: Props) {
   const idleWad = vault.idleUsdc * 10n ** 12n;
   const totalWad = basketWad + idleWad;
 
+  // Same order as `legs` — `oracleHealth` maps `basket` 1:1, index for index, so a leg and its
+  // health record share a position rather than needing a symbol-keyed lookup.
+  const health = oracleHealth(legs, nowSec);
+
   const pct = (part: bigint | null): string =>
     part === null || totalWad === 0n ? '—' : `${(Number((part * 10000n) / totalWad) / 100).toFixed(2)}%`;
 
@@ -50,9 +84,8 @@ export function Holdings({ vault, nowSec }: Props) {
           </tr>
         </thead>
         <tbody>
-          {legs.map((leg) => {
-            const age = nowSec - leg.oracleUpdatedAt;
-            const stale = age > leg.maxStalenessSec;
+          {legs.map((leg, i) => {
+            const cell = oracleAgeCell(health.assets[i]!);
             return (
               <tr key={leg.address}>
                 <th scope="row">{leg.symbol || `${leg.address.slice(0, 6)}…${leg.address.slice(-4)}`}</th>
@@ -61,9 +94,7 @@ export function Holdings({ vault, nowSec }: Props) {
                 <td className="num">{leg.valueWad === null ? '—' : `$${wadExact(leg.valueWad, { maxFrac: 2 })}`}</td>
                 <td className="num">{pct(leg.valueWad)}</td>
                 <td className="num dim">{(leg.weightBps / 100).toFixed(2)}%</td>
-                <td className={stale ? 'num tag-warn' : 'num dim'}>
-                  {age}s{stale ? ' · stale' : ''}
-                </td>
+                <td className={cell.className}>{cell.text}</td>
               </tr>
             );
           })}
@@ -83,6 +114,15 @@ export function Holdings({ vault, nowSec }: Props) {
         a leg whose price could not be read shows &ldquo;—&rdquo; rather than a fabricated $0: every
         NAV-reading path freezes on staleness, including exits.
       </p>
+      {!health.determinable ? (
+        <p className="note tag-warn">
+          {/* `health.culprits` names STALE legs (see vault-view.mjs), not unknown ones — reusing it
+              here would label the wrong assets, so the unreadable set is re-derived from `assets`. */}
+          At least one leg&rsquo;s oracle age could not be read (
+          {health.assets.filter((a) => a.state === 'unknown').map((a) => a.symbol).join(', ') || 'unnamed'}
+          ) — this vault&rsquo;s overall freshness is not fully verifiable from what loaded.
+        </p>
+      ) : null}
     </section>
   );
 }

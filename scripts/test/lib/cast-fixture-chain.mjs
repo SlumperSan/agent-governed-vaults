@@ -118,6 +118,14 @@ export function createFakeChain({ configPath, deployJsonPath, logPath, scenario 
       if (scenario === 'wire-transport') throw castError('error sending request: 429 Too Many Requests');
       throw castError('reverted: AlreadyWired()');
     }
+    // The vault's OWN creator(), re-read after the broadcast rather than trusted from the event:
+    // the event is emitted by the factory, `creator()` is what the protocol acts on for the life of
+    // the vault. 'creator-reread-differs' makes the vault disagree with the event it emitted — the
+    // only way to exercise that second assertion, since in every other scenario the two agree and
+    // the first one fails before this is reached.
+    if (sig.startsWith('creator(')) {
+      return scenario === 'creator-reread-differs' ? OTHER_ADDR : SIGNER_ADDR;
+    }
     if (sig.startsWith('priceWad(')) return '2500000000000000000000';
     if (sig.startsWith('balanceOf(') && to.toLowerCase() === usdcAddr.toLowerCase()) return usdcBalance.toString();
     if (sig.startsWith('operatorOf(')) return '1';
@@ -181,6 +189,19 @@ export function createFakeChain({ configPath, deployJsonPath, logPath, scenario 
   function handle(args) {
     const [cmd, ...rest] = args;
     if (cmd === 'chain-id') return String(cfg.chainId);
+    // `cast code <addr>` — card 179. The creator check asks the chain whether the declared
+    // intendedCreator is ACTUALLY THERE, as the kind the deployment record declares.
+    //
+    // '0x' IS THE REALISTIC DEFAULT, not a shortcut: the fixture signer is an EOA, and the real
+    // base-sepolia record declares `intendedCreatorKind: "eoa"`, so an empty code answer is exactly
+    // what the live chain returns for it (measured against sepolia.base.org, 2026-09-21). The happy
+    // path therefore exercises the agreeing case rather than skipping the check.
+    if (cmd === 'code') {
+      // 'creator-has-code' makes the chain report bytecode at an address the record declares an
+      // EOA — the other direction of the same disagreement, and the one reachable without a second
+      // deployment record.
+      return scenario === 'creator-has-code' ? '0x60806040' : '0x';
+    }
     if (cmd === 'wallet' && rest[0] === 'address') { appendLog({ kind: 'wallet-address' }); return SIGNER_ADDR; }
     if (cmd === 'balance') return (10n ** 18n).toString(); // 1 test ETH, well above the 0.01 floor
     if (cmd === 'block' && rest[0] === 'latest' && rest[1] === '-f') {
@@ -188,8 +209,15 @@ export function createFakeChain({ configPath, deployJsonPath, logPath, scenario 
     }
     if (cmd === 'keccak') return castKeccak(rest[0]);
     if (cmd === 'abi-encode') {
-      const out = fakeAbiEncode(rest[0], rest.slice(1));
-      if (rest[0].startsWith('f(address,')) { payload = out; actionHash = castKeccak(out); }
+      const sig = rest[0];
+      const encodeArgs = rest.slice(1);
+      // Logged (not just returned) so a test can re-derive the REAL abi-encoding of what
+      // smoke-test.mjs actually invoked -- see rebalance-payload-shape.test.mjs, which needs
+      // the true sig+args because fakeAbiEncode()'s own output below is a placeholder, not
+      // real ABI bytes (this fake chain has no EVM to decode it against).
+      appendLog({ kind: 'abi-encode', sig, args: encodeArgs });
+      const out = fakeAbiEncode(sig, encodeArgs);
+      if (sig.startsWith('f(address,')) { payload = out; actionHash = castKeccak(out); }
       return out;
     }
     if (cmd === 'call') {

@@ -203,6 +203,144 @@ test('mutation: the build config the policy depends on is still set', () => {
   assert.match(cfg, /assetsInlineLimit:\s*0/, "assetsInlineLimit was raised and img-src would refuse an inlined asset");
 });
 
+// ── The favicon (live defect, 2026-09-21): app.rwally.com served no icon at all ────────────────
+//
+// Measured against the live site before this change: no `<link rel="icon">` in the served HTML,
+// and `/favicon.ico` / `/favicon.svg` both 200'd with `text/html` — Cloudflare Pages' SPA-shell
+// fallback answering for a path nothing served. #359 (apps/site, unmerged, rejected — read for
+// shape, not depended on here) hit the adjacent-property gap this suite exists to avoid: a tag
+// pinned "by eye" while the file it named never reached `dist/`. So every assertion below checks
+// the built output, not the source, and the file-resolution check is separate from the tag check.
+const html404 = () => readFileSync(join(DIST, '404.html'), 'utf8');
+
+test('the served HTML links a favicon', () => {
+  assert.match(
+    html(),
+    /<link\s+rel="icon"[^>]*href="\/favicon\.svg"/,
+    'no <link rel="icon" href="/favicon.svg"> in dist/index.html',
+  );
+});
+
+test('mutation: the favicon-link check fails on markup with the link removed', () => {
+  const stripped = html().replace(/<link\s+rel="icon"[^>]*>\s*/, '');
+  assert.notEqual(stripped, html(), 'the mutation changed nothing — the icon link was not found to remove');
+  assert.doesNotMatch(
+    stripped,
+    /<link\s+rel="icon"/,
+    'the mutated markup still matches — the check above is not reading what it claims to',
+  );
+});
+
+test('the linked favicon file actually lands in dist/, not just the tag that names it', () => {
+  // This is the exact adjacent-property gap #359 was rejected for: `og:image:alt` pinned to the
+  // card by eye while a changed line left five alt attributes describing a strapline the card no
+  // longer drew. A tag existing is not evidence the file it points at resolves.
+  const m = /<link\s+rel="icon"[^>]*href="([^"]+)"/.exec(html());
+  assert.ok(m, 'no icon href to resolve');
+  const href = m[1].replace(/^\//, '');
+  assert.ok(existsSync(join(DIST, href)), `dist/${href} is missing though index.html links it`);
+});
+
+test("the favicon's literal colours match apps/site/src/tokens.css, not a hand-copied guess", () => {
+  // Both surfaces read this file (src/styles.css `@import`s it; chrome.css's own header names it
+  // canonical). An SVG cannot read a CSS custom property, so the values are copied literally here
+  // and this pins them against drift, the same way the connect-src/.env.example test above does.
+  const svg = readFileSync(join(APP, 'public', 'favicon.svg'), 'utf8');
+  const tokens = readFileSync(join(APP, '..', 'site', 'src', 'tokens.css'), 'utf8');
+  const bg = /--bg:\s*(#[0-9a-f]{6})/i.exec(tokens);
+  const blue = /--blue:\s*(#[0-9a-f]{6})/i.exec(tokens);
+  const blueBright = /--blue-bright:\s*(#[0-9a-f]{6})/i.exec(tokens);
+  assert.ok(bg && blue && blueBright, 'tokens.css is missing --bg, --blue or --blue-bright');
+  assert.ok(svg.includes(bg[1]), `favicon.svg background does not match tokens.css --bg (${bg[1]})`);
+  assert.ok(
+    svg.includes(blueBright[1]),
+    `favicon.svg gradient does not match tokens.css --blue-bright (${blueBright[1]})`,
+  );
+  assert.ok(svg.includes(blue[1]), `favicon.svg gradient does not match tokens.css --blue (${blue[1]})`);
+});
+
+test('the favicon is the shared non-pictorial mark — no letterform for a mark-elimination ban to apply to', () => {
+  const svg = readFileSync(join(APP, 'public', 'favicon.svg'), 'utf8');
+  assert.ok(!/<path\b/i.test(svg), 'a <path> element is how a pictorial mark gets drawn — this must be rect + gradient only');
+  assert.ok(!/<text\b/i.test(svg), 'a <text> element would render a letterform');
+});
+
+// ── Missing assets must 404, not fall through to index.html ────────────────────────────────────
+//
+// This app renders exactly one view (grepped src/ for a router, a `location.` read, a `hash`
+// listener — none exist), so it has no legitimate use for Cloudflare Pages' SPA-shell fallback:
+// every path that is not an exact file match is a missing asset, never client-side navigation
+// this app needs to catch. VERIFIED against the real tool, not inferred from documentation: ran
+// `wrangler pages dev` on a directory with an index.html and no 404.html — `GET /favicon.ico` came
+// back `200 text/html` (the shell). Added a `404.html` to the same directory and re-ran the exact
+// same request — `GET /missing.png` came back `404`. That probe's commands and output are in this
+// PR's description. Cloudflare's own contract is presence-triggered (a 404.html file changes the
+// status Pages returns for every unmatched path), so what these tests can assert deterministically
+// from build output is the trigger, not a second live probe — spinning a real Pages dev server
+// inside `test:backend` would add a floating, network-fetched dependency to the gate for coverage
+// this file's own `before()` already can't safely duplicate (see its header on the measured race).
+test('dist/404.html exists — its absence is Cloudflare Pages\' own trigger for the 200-with-the-shell fallback', () => {
+  assert.ok(
+    existsSync(join(DIST, '404.html')),
+    'dist/404.html is missing — every unmatched path, including a missing asset, would 200 with the SPA shell',
+  );
+});
+
+test('404.html is copied to dist/ byte-identically, the same contract as _headers above', () => {
+  assert.equal(
+    readFileSync(join(DIST, '404.html'), 'utf8'),
+    readFileSync(join(APP, 'public', '404.html'), 'utf8'),
+  );
+});
+
+test('404.html is a genuine refusal, not index.html re-served under a different name', () => {
+  assert.notEqual(
+    html404(),
+    html(),
+    'dist/404.html is byte-identical to dist/index.html — ship a distinct refusal, not the shell copied under a new name',
+  );
+});
+
+test("style-src 'self': dist/404.html carries no style attribute either", () => {
+  const m = html404().match(/\sstyle\s*=\s*["']/g);
+  assert.equal(
+    m,
+    null,
+    `a style="..." attribute reached dist/404.html and style-src 'self' would refuse it: ${m?.join(', ')}`,
+  );
+});
+
+test("script-src 'self': dist/404.html carries no inline script and no on* handler", () => {
+  const h = html404();
+  const inline = [...h.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter(
+    ([, attrs, body]) => !/\bsrc\s*=/i.test(attrs) && body.trim() !== '',
+  );
+  assert.equal(inline.length, 0, 'an inline <script> reached dist/404.html');
+  assert.equal(h.match(/\son[a-z]+\s*=\s*["']/gi), null, 'an inline event handler reached dist/404.html');
+});
+
+test('mutation: the 404.html-exists check fails on a directory that lacks one', () => {
+  // Mirrors the empty-dist mutation test below: simulate the defect's OWN shape (a served
+  // directory with an index.html and no 404.html) rather than deleting the real build output,
+  // which other concurrent runs in this shared checkout could be reading mid-test.
+  const missing = mkdtempSync(join(tmpdir(), 'vaults-ui-no-404-'));
+  try {
+    writeFileSync(join(missing, 'index.html'), html());
+    assert.ok(!existsSync(join(missing, '404.html')), 'sanity: the probe directory must not have one');
+    assert.throws(
+      () => {
+        if (!existsSync(join(missing, '404.html'))) {
+          throw new Error('missing 404.html — Cloudflare Pages would 200 every unmatched path with the SPA shell');
+        }
+      },
+      /missing 404\.html/,
+      'the check must THROW on a directory shaped like the live defect, not pass over it',
+    );
+  } finally {
+    rmSync(missing, { recursive: true, force: true });
+  }
+});
+
 // ── Plan item 0.7's own guard: no fixture number may reach app.rwally.com ──────────────────────
 //
 // `app.rwally.com` rendering `apps/web/src/fixtures.mjs` over a live vault is the most expensive

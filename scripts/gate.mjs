@@ -58,6 +58,13 @@ const ENTRYPOINTS = [
   // once without being added here" until 2026-09-13; the file has never been on protocol/main, and
   // after a squash merge that sentence would have read as history about main that never happened.
   'scripts/build-rebalance-order.mjs',
+  // Added 2026-09-23, same reasoning as build-rebalance-order.mjs immediately above: this is run BY
+  // HAND against a live chain (the owner, importing its output at app.safe.global) once Arc 5042 is
+  // deployed, and nothing in CI executes the file directly — scripts/test/safe-tx-builder-fork.test.mjs
+  // and scripts/test/safe-tx-builder-refusals.test.mjs only ever SPAWN it as a child process with a
+  // controlled env, which parses it incidentally on whichever code path each test happens to reach,
+  // never the whole file up front the way `node --check` does.
+  'scripts/build-safe-tx-builder.mjs',
   // Added 2026-09-18, after a parse error took the board server down TWICE in one day. Its whole
   // page is one template literal, so a single stray backtick inside a comment in that literal
   // terminates the string and the file stops parsing — a class of defect no test here can reach,
@@ -176,6 +183,21 @@ const STEPS = [
     args: ['run', 'test:backend'],
     cwd: REPO,
     why: 'Backend + frontend logic suite. Needs `build`, `site-build` and `app-test` first (see above).',
+  },
+  {
+    id: 'vault-addresses',
+    title: 'vault-addresses-lint (apps/vaults-ui vs contracts/config/deployments)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-addresses-lint.mjs')],
+    cwd: REPO,
+    // BLOCKING, unlike vault-lint (a local machine path absent from CI) and deployment-currency
+    // (advisory because both recorded deployments are KNOWINGLY behind mainline -- a fact no PR can
+    // fix). Every input here -- apps/vaults-ui/.env* and contracts/config/deployments/*.json -- is
+    // checked into this repository, so there is no environment where this is expected to be red for
+    // a reason other than a real config error. VITE_VAULT_ADDRESSES is hand-edited on deploy day
+    // with zero prior cross-check against what is actually deployed; a typo, a stale address, or an
+    // address from the wrong chain would silently ship. Card A2.
+    why: 'Does VITE_VAULT_ADDRESSES name a real deployed vault, on the chain VITE_CHAIN_ID declares? Card A2.',
   },
   {
     id: 'deployment-currency',

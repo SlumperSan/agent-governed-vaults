@@ -34,12 +34,17 @@
  * Run:  node scripts/build-og-card.mjs
  * Then: git add apps/site/public/og-card.png   (the PNG is committed; this script is not run in CI)
  *
- * Every alt text under apps/site describes this image. There are nine of them, one per page, and
- * they must be re-read whenever either constant below changes.
+ * EVERY `og:image:alt` UNDER apps/site DESCRIBES THIS IMAGE, WIRED 2026-09-21. Five of them, one
+ * per real page (index, about, how-it-works, docs, disclaimers — 404 is excluded on purpose: it is
+ * `noindex` and not a page anyone shares) — all five identical, because it is one shared image, not
+ * five different ones. They must be re-read whenever either constant below changes. Until this date
+ * `og:image` did not exist anywhere in apps/site at all: the file was built, committed, and never
+ * linked from a single page — every shared link rendered with no preview image, silently, because
+ * nothing guarded a tag's ABSENCE the way this repository's other guards catch a false PRESENT one.
  *
  * apps/site-next NO LONGER EXISTS — it was renamed to apps/site, and this paragraph used to warn
- * about keeping two cards in step. There is one card now, written by this generator, and the alt
- * attributes under apps/site describe it.
+ * about keeping two cards in step. There is one card now, written by this generator, and the five
+ * `og:image:alt` attributes under apps/site describe it.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, copyFileSync, rmSync, readdirSync } from 'node:fs';
@@ -62,11 +67,20 @@ const HEIGHT = 630;
  * EVERY WORD THE CARD CARRIES. Two lines: the wordmark, and the second line. Nothing else is drawn
  * — no glyph, no rule, no host line.
  *
- * NOTHING UNDER apps/site DESCRIBES THIS IMAGE. There is no `og:image` tag and no `og:image:alt`
- * attribute anywhere in the repository; the only two occurrences of that string are in this file,
- * talking about attributes that do not exist. Three paragraphs here used to instruct the reader to
- * keep "the nine `og:image:alt` attributes" in step, and a change was relayed on that basis on
- * 2026-09-18 before anyone grepped for them. Changing the strings below is a ONE-FILE commit.
+ * FIVE `og:image:alt` ATTRIBUTES NOW DESCRIBE THIS IMAGE, wired 2026-09-21 into every real page's
+ * HTML entry (index, about, how-it-works, docs, disclaimers), each reading verbatim
+ * "WORDMARK — STRAPLINE" — so changing either constant below is a two-file commit, this one and
+ * every `<meta property="og:image:alt">` under apps/site, kept in step by eye rather than by a
+ * generator, because there are only five.
+ *
+ * THAT WAS NOT ALWAYS TRUE, AND THE GAP WAS WORSE THAN A STALE STRING. Until 2026-09-21 there was
+ * no `og:image` tag anywhere in apps/site at all — the card was built, committed, and never linked
+ * from a single page, so every shared link to rwally.com rendered with no preview image, silently.
+ * Before that, on 2026-09-18, three paragraphs here instructed the reader to keep "the nine
+ * `og:image:alt` attributes" in step, and a change was relayed on that basis before anyone grepped
+ * for them — there were none. Two different failures in the same three days: a comment asserting
+ * attributes that did not exist, then the tag itself missing from every page that would have carried
+ * one. Read the actual HTML before trusting this comment about it.
  *
  * The second line deliberately carries NO DATE and no address. A date baked into a PNG is the one
  * copy no guard can read and no edit can reach, which is the whole reason this generator exists.

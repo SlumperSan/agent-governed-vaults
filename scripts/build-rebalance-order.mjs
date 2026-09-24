@@ -43,11 +43,33 @@
  * Usage:
  *   node scripts/build-rebalance-order.mjs --vault 0x… --amount-in 5000000
  *     [--fee 100] [--ttl N] [--token-out 0x…] [--adapter 0x…] [--accept-partial-window]
+ *     [--max-slippage-bps N] [--allow-below-derived] [--floor-buffer-bps N]
  *
  * `--token-out` and `--adapter` default to WETH and the deployed adapter on chain 4663.
  * `--accept-partial-window` allows a deadline that expires inside the execution window; read
  * the refusal text before reaching for it, because it trades one real risk for another.
  * `GOVERNANCE` in the environment overrides the address read from `vault.governance()`.
+ *
+ * `--max-slippage-bps N` overrides the DEFAULT DERIVED `maxSlippageBps` encoded into the payload
+ * (see the CTO-decision comment near the derivation, card 209, below). The default is never the
+ * contract's ceiling: it computes `ceil(poolFeeBps + measuredExecutionGapBps) + 25 bps` from this
+ * order's own pool and oracle reads, and refuses above a 100 bps cap unless `N` is passed
+ * explicitly. `N` must be `1..MAX_REBALANCE_SLIPPAGE_BPS`, read from chain, and above that this
+ * refuses before `VaultCore.executeRebalance` would revert `BadSlippageBound()`. `N` below the
+ * derived minimum also refuses -- it would just revert `SwapSlippage()` once `minAmountOut` is
+ * computed against it -- unless `--allow-below-derived` is passed too.
+ *
+ * `--floor-buffer-bps` DEFAULTS TO 100, UNCHANGED FROM BEFORE CARD 209, AND THAT DEFAULT WAS SIZED
+ * AGAINST THE OLD 200 BPS CEILING DEFAULT. The default DERIVED maxSlippageBps is now typically well
+ * under 100 (a real pool fee plus a small measured gap plus 25 bps), so `--floor-buffer-bps 100`
+ * will usually be AT OR ABOVE the derived value and this script will REFUSE on the coherence check
+ * below rather than emit an order it cannot back. This is intentional -- refusing beats silently
+ * emitting an order with no real buffer -- but it means most real invocations now need an explicit,
+ * smaller `--floor-buffer-bps` (this script prints the derived value so you can choose one under
+ * it), or an explicit `--max-slippage-bps` wide enough to leave room for 100. Whether
+ * `--floor-buffer-bps`'s OWN default should also change is a separate decision this card does not
+ * make -- it trades one real risk (oracle drift between propose and execute) against another
+ * (tolerance to sandwich extraction) and is not something to pick silently in this diff.
  *
  * `RPC_URL` in the environment overrides the default, which is `https://rpc.mainnet.chain.robinhood.com`
  * — Robinhood MAINNET, chain 4663, not a testnet. Every call this script makes against it is
@@ -58,7 +80,11 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RPC = process.env.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com';
 const BPS = 10000n;
 
@@ -68,6 +94,33 @@ const BPS = 10000n;
 const EXACT_INPUT_SINGLE = '0x04e45aaf';
 const EXACT_INPUT_SINGLE_SIG =
   'exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))';
+
+/**
+ * The exact `abi.decode` shape Governance.execute's Rebalance branch destructures a payload
+ * into (contracts/src/Governance.sol), read off the COMPILED CONTRACT
+ * (contracts/out/VaultCore.sol/VaultCore.json's `executeRebalance` ABI -- typed identically,
+ * since Governance.sol's Rebalance branch calls `IVaultExecution.executeRebalance` with the
+ * decoded values) rather than typed out by hand here a second time. Card 207: this script's own
+ * hand-assembled payload below used to omit `maxSlippageBps` entirely -- a 2-field payload that
+ * decoded on-chain as garbage and its own round-trip check decoded with the same stale 2-field
+ * signature, so the check passed on a payload that would Panic(0x41) on Governance.execute.
+ * Exported so scripts/test/build-rebalance-order-slippage.test.mjs reads the same signature this
+ * script's own round-trip check uses, rather than typing a third copy.
+ */
+export function rebalanceDecodeSig() {
+  const artifactPath = path.join(ROOT, 'contracts', 'out', 'VaultCore.sol', 'VaultCore.json');
+  const abi = JSON.parse(fs.readFileSync(artifactPath, 'utf8')).abi;
+  const fn = abi.find((e) => e.type === 'function' && e.name === 'executeRebalance');
+  if (!fn) throw new Error('executeRebalance not found in the compiled VaultCore ABI');
+  const typeOf = (input) => {
+    if (input.type.startsWith('tuple')) {
+      const suffix = input.type.slice('tuple'.length);
+      return `(${input.components.map(typeOf).join(',')})${suffix}`;
+    }
+    return input.type;
+  };
+  return `f(${fn.inputs.map(typeOf).join(',')})`;
+}
 
 function cast(...args) {
   return execFileSync('cast', [...args, '--rpc-url', RPC], {
@@ -110,9 +163,115 @@ function arg(name, fallback = null) {
   return process.argv[i + 1];
 }
 
-function fail(msg) {
-  console.error(`\nREFUSING TO EMIT AN ORDER: ${msg}\n`);
-  process.exit(1);
+/** Like `arg`, but returns `null` on absence instead of throwing or requiring a fallback -- for
+ * flags that are genuinely optional and whose absence is a meaningful, distinct branch (an
+ * override that was not supplied), not a default value. */
+function argOpt(name) {
+  const i = process.argv.indexOf(`--${name}`);
+  return i === -1 ? null : process.argv[i + 1];
+}
+
+/**
+ * Card 209: an explicit `--max-slippage-bps N` must be `1..ceilingBps` (VaultCore's
+ * MAX_REBALANCE_SLIPPAGE_BPS, read off chain by the caller) -- above that, VaultCore.
+ * executeRebalance would revert BadSlippageBound() before this order ever reached the adapter.
+ * Exported and pure (no chain call, no process.exit) so it is unit- and mutation-testable
+ * directly: scripts/test/build-rebalance-order-slippage.test.mjs.
+ */
+export function validateOverrideRange(overrideBps, ceilingBps) {
+  if (overrideBps < 1n || overrideBps > ceilingBps) {
+    return {
+      ok: false,
+      reason: `--max-slippage-bps ${overrideBps} is outside 1..${ceilingBps} `
+        + '(MAX_REBALANCE_SLIPPAGE_BPS, read from chain). VaultCore.executeRebalance would '
+        + 'revert BadSlippageBound() before this order ever reached the adapter.',
+    };
+  }
+  return { ok: true };
+}
+
+// The fixed buffer and default cap from the CTO decision below (card 209) -- exported so a test
+// reads the same constants this script enforces rather than hand-duplicating "25" and "100" and
+// silently drifting from them.
+export const DERIVED_BUFFER_BPS = 25n;
+export const DERIVED_CAP_BPS = 100n;
+
+/**
+ * Card 209's maxSlippageBps derivation (see the CTO-decision comment in main(), below, for the
+ * full rationale), isolated into a PURE function -- no chain call, no process.exit -- so every
+ * refusal branch is unit- and mutation-testable directly against plain bigint inputs instead of
+ * through a simulated chain: scripts/test/build-rebalance-order-slippage.test.mjs.
+ *
+ * `grossOut` MUST BE THE POOL'S EXPECTED FILL BEFORE ITS OWN TRADING FEE (spot from slot0, no fee
+ * subtracted) -- NOT the fee-adjusted `expectedOut` this script also computes and prints. Feeding
+ * the fee-adjusted figure here would count the pool fee twice (once explicitly as `poolFeeBps`,
+ * once again embedded in the gap measured against a fee-adjusted fill), silently doubling the
+ * "attacker pays the fee twice" MEV margin this function's caller depends on being accurate.
+ *
+ * `overrideBps` and `allowBelowDerived` are `null`/`false` for the no-override, default-derived
+ * path. NO SILENT FALLBACK: a missing/zero `priceOutWad`, `poolFeeRawPpm`, or `grossOut` refuses
+ * rather than deriving from a partial or zeroed input.
+ */
+export function deriveMaxSlippageBps({
+  poolFeeRawPpm,
+  valueInWad,
+  unitOut,
+  priceOutWad,
+  grossOut,
+  overrideBps = null,
+  allowBelowDerived = false,
+  BPS = 10000n,
+}) {
+  if (priceOutWad === null || priceOutWad === undefined || priceOutWad === 0n) {
+    return { ok: false, reason: 'oracle price is 0 or missing; cannot derive maxSlippageBps without it.' };
+  }
+  if (poolFeeRawPpm === null || poolFeeRawPpm === undefined) {
+    return { ok: false, reason: 'pool fee is missing; cannot derive maxSlippageBps without it.' };
+  }
+  if (grossOut === null || grossOut === undefined) {
+    return { ok: false, reason: 'expected fill (grossOut) is missing; cannot derive maxSlippageBps without it.' };
+  }
+
+  const poolFeeBps = (poolFeeRawPpm + 99n) / 100n; // ppm -> bps, rounded up
+  // The oracle-implied output at ZERO slippage discount: what amountIn is worth, in tokenOut
+  // units, at today's oracle price.
+  const oracleFloorZeroSlip = (valueInWad * unitOut + priceOutWad - 1n) / priceOutWad;
+  // How far the pool's own PRE-FEE expected fill sits below that, in bps of it -- zero, never
+  // negative, when the pool's spot price is at or above oracle value. Pre-fee, not post-fee: the
+  // pool's trading fee is already counted once via poolFeeBps above, so measuring the gap from a
+  // fee-adjusted figure would count it twice.
+  const measuredExecutionGapBps = grossOut >= oracleFloorZeroSlip
+    ? 0n
+    : ((oracleFloorZeroSlip - grossOut) * BPS + oracleFloorZeroSlip - 1n) / oracleFloorZeroSlip;
+  const derivedSlipBps = poolFeeBps + measuredExecutionGapBps + DERIVED_BUFFER_BPS;
+  const base = { poolFeeBps, measuredExecutionGapBps, derivedSlipBps };
+
+  if (overrideBps !== null && overrideBps !== undefined) {
+    if (overrideBps < derivedSlipBps && !allowBelowDerived) {
+      return {
+        ok: false,
+        ...base,
+        reason: `--max-slippage-bps ${overrideBps} is below the derived minimum ${derivedSlipBps} bps `
+          + `(pool fee ${poolFeeBps} + execution gap ${measuredExecutionGapBps} + `
+          + `${DERIVED_BUFFER_BPS} bps buffer). A tolerance tighter than the pool can actually `
+          + 'deliver just reverts SwapSlippage() once minAmountOut is computed against it. Pass '
+          + '--allow-below-derived to force it anyway.',
+      };
+    }
+    return { ok: true, ...base, chosenSlipBps: overrideBps, usedOverride: true };
+  }
+
+  if (derivedSlipBps > DERIVED_CAP_BPS) {
+    return {
+      ok: false,
+      ...base,
+      reason: `derived maxSlippageBps ${derivedSlipBps} bps (pool fee ${poolFeeBps} + execution gap `
+        + `${measuredExecutionGapBps} + ${DERIVED_BUFFER_BPS} bps buffer) exceeds the `
+        + `${DERIVED_CAP_BPS} bps default cap. Pass --max-slippage-bps N explicitly (1..ceiling) `
+        + 'to accept a wider tolerance than the default derivation allows.',
+    };
+  }
+  return { ok: true, ...base, chosenSlipBps: derivedSlipBps, usedOverride: false };
 }
 
 /** One 32-byte ABI word, from an address string or a bigint. */
@@ -125,6 +284,113 @@ function word(v) {
 function pad32(hex) {
   const rem = hex.length % 64;
   return rem === 0 ? hex : hex + '0'.repeat(64 - rem);
+}
+
+/**
+ * The rest of card 209's pipeline, downstream of `deriveMaxSlippageBps`: pick `chosenSlipBps`,
+ * check `--floor-buffer-bps` stays under it (not under the ceiling -- that was the same bug one
+ * level down), build `minAmountOut` against `chosenSlipBps`, confirm the pool can actually pay it,
+ * and assemble the exact payload bytes `Governance.execute`'s Rebalance branch decodes -- with
+ * `chosenSlipBps`, never the ceiling, as the second head word. PURE (no chain call, no
+ * process.exit) and exported so the payload's `maxSlippageBps` word is asserted directly against
+ * the value that was actually derived, rather than only against the pure derivation in isolation
+ * -- a regression that re-wired the payload assembly to a different variable (the original shape
+ * of card 209's bug) would not be caught by testing `deriveMaxSlippageBps` alone.
+ */
+export function buildRebalanceOrder({
+  adapter,
+  usdc,
+  tokenOut,
+  amountIn,
+  unitOut,
+  priceOutWad,
+  usdcScalar,
+  poolFeeRawPpm,
+  grossOut,
+  overrideBps = null,
+  allowBelowDerived = false,
+  floorBufferBps,
+  deadline,
+  BPS = 10000n,
+}) {
+  const valueInWad = amountIn * usdcScalar;
+  const derivation = deriveMaxSlippageBps({
+    poolFeeRawPpm, valueInWad, unitOut, priceOutWad, grossOut, overrideBps, allowBelowDerived, BPS,
+  });
+  if (!derivation.ok) return { ok: false, derivation, reason: derivation.reason };
+
+  const chosenSlipBps = derivation.chosenSlipBps;
+
+  if (floorBufferBps >= chosenSlipBps) {
+    return {
+      ok: false,
+      derivation,
+      reason: `--floor-buffer-bps ${floorBufferBps} is at or above the chosen maxSlippageBps ${chosenSlipBps}. `
+        + 'The oracle bound allows the swap to come in that far below oracle value; a buffer that '
+        + 'large demands more from the pool than the bound leaves room for, and the swap reverts '
+        + 'SwapSlippage() instead. Stay well inside it.',
+    };
+  }
+
+  // minOut such that minOut * priceOut / unitOut >= valueIn * (BPS - chosenSlipBps) / BPS, rounded
+  // UP at each step so the emitted value satisfies a `>=` rather than landing one wei under it,
+  // then widened by floorBufferBps for tolerance to an oracle price fall between propose and
+  // execute (see the "WHY A BUFFER IS NOT OPTIONAL POLISH" comment in main(), below).
+  const requiredValueWad = (valueInWad * (BPS - chosenSlipBps) + BPS - 1n) / BPS;
+  const bareFloor = (requiredValueWad * unitOut + priceOutWad - 1n) / priceOutWad;
+  const minAmountOut = (bareFloor * (BPS + floorBufferBps) + BPS - 1n) / BPS;
+
+  // Affordability, using the FEE-ADJUSTED expected fill (unlike the gap measurement above, which
+  // deliberately uses the pre-fee grossOut) -- this checks what the swap would actually deliver
+  // net of the pool's own fee, which is the real quantity `received >= minAmountOut` compares
+  // against at execution time.
+  const expectedOut = (grossOut * (1000000n - poolFeeRawPpm)) / 1000000n;
+  if (expectedOut < minAmountOut) {
+    return {
+      ok: false,
+      derivation,
+      minAmountOut,
+      expectedOut,
+      reason: `the pool would pay about ${expectedOut} and minAmountOut is ${minAmountOut}, so the swap `
+        + `reverts SwapSlippage() on the measured delta. The +${floorBufferBps} bps buffer is not `
+        + 'affordable at this pool price. Lower --floor-buffer-bps, accept less tolerance to an '
+        + 'oracle fall, or use a deeper fee tier.',
+    };
+  }
+  const headroomBps = minAmountOut === 0n ? 0n : ((expectedOut - minAmountOut) * BPS) / minAmountOut;
+
+  // Every member of ExactInputSingleParams is STATIC, so this is seven words after the selector
+  // with no offsets and no tail. The pool's own fee (poolFeeRawPpm, read on chain), not the CLI
+  // --fee value used only to locate the pool.
+  const routeData = EXACT_INPUT_SINGLE
+    + [usdc, tokenOut, poolFeeRawPpm, adapter, amountIn, minAmountOut, 0n].map(word).join('');
+
+  // abi.encode(address, uint256, SwapOrder[]) -- THREE head words (adapter, chosenSlipBps, offset
+  // to the array), not two (card 207). SwapOrder is dynamic because of `bytes routeData`, so the
+  // array itself has offsets. The second head word is `chosenSlipBps` -- the DERIVED or explicitly
+  // overridden value from `deriveMaxSlippageBps`, above -- not the chain ceiling (card 209).
+  const orderBody = [usdc, tokenOut, amountIn, minAmountOut, deadline].map(word).join('')
+    + word(0xc0n)
+    + word(BigInt((routeData.length - 2) / 2))
+    + pad32(routeData.slice(2));
+  const payload = '0x' + word(adapter) + word(chosenSlipBps) + word(0x60n) + word(1n) + word(0x20n) + orderBody;
+
+  return {
+    ok: true,
+    derivation,
+    chosenSlipBps,
+    bareFloor,
+    minAmountOut,
+    expectedOut,
+    headroomBps,
+    routeData,
+    payload,
+  };
+}
+
+function fail(msg) {
+  console.error(`\nREFUSING TO EMIT AN ORDER: ${msg}\n`);
+  process.exit(1);
 }
 
 async function main() {
@@ -153,6 +419,26 @@ async function main() {
       `--amount-in ${amountIn} exceeds idleUsdc ${idle}. VaultCore.executeRebalance reverts `
         + 'InsufficientAssetBalance() before it ever reaches the adapter.',
     );
+  }
+
+  // ---- the contract's ceiling, and any explicit override, validated against it EARLY ----------
+  // MAX_REBALANCE_SLIPPAGE_BPS is the RAIL VaultCore enforces (`BadSlippageBound()` outside
+  // `(0, ceilingBps]`), read off chain rather than restated. It is not this script's default --
+  // see the CTO-decision comment below, where the actual value used (`chosenSlipBps`) is derived.
+  const ceilingBps = big(call(vault, 'MAX_REBALANCE_SLIPPAGE_BPS()(uint256)'));
+  console.log(`MAX_REBALANCE_SLIPPAGE_BPS (ceiling)  ${ceilingBps}\n`);
+
+  const allowBelowDerived = process.argv.includes('--allow-below-derived');
+  const overrideRaw = argOpt('max-slippage-bps');
+  let overrideBps = null;
+  if (overrideRaw !== null) {
+    try {
+      overrideBps = BigInt(overrideRaw);
+    } catch {
+      fail(`--max-slippage-bps ${overrideRaw} is not an integer.`);
+    }
+    const rangeCheck = validateOverrideRange(overrideBps, ceilingBps);
+    if (!rangeCheck.ok) fail(rangeCheck.reason);
   }
 
   // ---- governance timing, read live ----------------------------------------------------------
@@ -264,69 +550,9 @@ async function main() {
   // the four SwapRouter/SwapRouter02 entry points were probed and only this one returned true.
   console.log(`adapter   ${adapter}  (router ${router}, selector ${EXACT_INPUT_SINGLE} allowed)\n`);
 
-  // ---- the H-4 oracle bound ---------------------------------------------------------------------
-  // VaultCore.executeRebalance requires, BEFORE executing:
-  //   _valueWad(tokenOut, minAmountOut) * BPS >= _valueWad(tokenIn, amountIn) * (BPS - MAX_SLIPPAGE)
-  // Both sides use the vault's OWN oracle, so minAmountOut has a floor unrelated to what the pool
-  // would pay. MAX_REBALANCE_SLIPPAGE_BPS is read off the chain rather than restated.
-  const maxSlipBps = big(call(vault, 'MAX_REBALANCE_SLIPPAGE_BPS()(uint256)'));
-  const priceOutWad = big(call(oracle, 'priceWad(address)(uint256)', tokenOut));
-
-  // `_valueWad(usdc, amt)` is `amt * usdcScalar()` — oracle-independent, and NOT `amt * price /
-  // assetUnit(usdc)`. `assetUnit(usdc)` is 0 by construction: VaultCore forbids the settlement
-  // token in the basket. An earlier version divided by a hardcoded 1e6 fallback that was taken on
-  // every run; it happened to agree on this vault and would be wrong on any non-6-decimal
-  // settlement token, which the constructor permits.
-  const usdcScalar = big(call(vault, 'usdcScalar()(uint256)'));
-  const valueInWad = amountIn * usdcScalar;
-
-  // minOut such that minOut * priceOut / unitOut >= valueIn * (BPS - slip) / BPS, rounded UP at
-  // each step so the emitted value satisfies a `>=` rather than landing one wei under it.
-  const requiredValueWad = (valueInWad * (BPS - maxSlipBps) + BPS - 1n) / BPS;
-  const bareFloor = (requiredValueWad * unitOut + priceOutWad - 1n) / priceOutWad;
-
-  // WHY A BUFFER IS NOT OPTIONAL POLISH. Work the bound at execute time:
-  //
-  //   minOut * priceOut_exec / unitOut  >=  amountIn * usdcScalar * (BPS - slip) / BPS
-  //
-  // The right-hand side is ORACLE-INDEPENDENT — `_valueWad(usdc, amt)` is `amt * usdcScalar`, a
-  // constant. `minOut` is frozen at propose time. So substituting the bare floor, which is defined
-  // by equality at TODAY's price, the condition at execute reduces to exactly:
-  //
-  //   priceOut_exec >= priceOut_now
-  //
-  // An order whose minAmountOut is the bare floor therefore reverts `MinOutTooLow()` on ANY fall
-  // in tokenOut's oracle price between propose and execute — and the gap is at least
-  // commit+reveal, two hours on this vault. That is not a tail risk on a two-hour horizon; it is
-  // roughly a coin flip, and it burns the whole round because `actionHash` is frozen.
-  //
-  // The buffer buys tolerance to a price FALL of `floorBufferBps`, and it is paid for on the other
-  // side: the swap must actually deliver `minAmountOut`, so too large a buffer reverts
-  // `SwapSlippage()` on the measured delta instead. The headroom between the two is set by
-  // `MAX_REBALANCE_SLIPPAGE_BPS` minus the pool fee, so a buffer must stay well inside it.
-  const floorBufferBps = BigInt(arg('floor-buffer-bps', '100'));
-  if (floorBufferBps >= maxSlipBps) {
-    fail(
-      `--floor-buffer-bps ${floorBufferBps} is at or above MAX_REBALANCE_SLIPPAGE_BPS ${maxSlipBps}. `
-        + 'The oracle bound allows the swap to come in that far below oracle value; a buffer that '
-        + 'large demands more from the pool than the bound leaves room for, and the swap reverts '
-        + 'SwapSlippage() instead. Stay well inside it.',
-    );
-  }
-  const minAmountOut = (bareFloor * (BPS + floorBufferBps) + BPS - 1n) / BPS;
-
-  console.log(`MAX_REBALANCE_SLIPPAGE_BPS  ${maxSlipBps}`);
-  console.log(`priceWad(tokenOut)          ${priceOutWad}`);
-  console.log(`usdcScalar()                ${usdcScalar}`);
-  console.log(`value(amountIn)             ${valueInWad} wad`);
-  console.log(`bare oracle floor           ${bareFloor}`);
-  console.log(`minAmountOut                ${minAmountOut}  (+${floorBufferBps} bps)`);
-  console.log(
-    `  => survives a fall in tokenOut's oracle price of up to ${floorBufferBps} bps before\n`
-    + '     MinOutTooLow(); a bare floor survives ZERO and reverts on any fall at all.\n',
-  );
-
-  // ---- what the pool can actually pay ------------------------------------------------------------
+  // ---- the pool this order would actually execute against -------------------------------------
+  // Moved ahead of the slippage derivation: the derivation below needs this pool's own fee and its
+  // own expected fill, both read from the chain, before it can compute anything.
   const factory = call(router, 'factory()(address)');
   const pool = call(factory, 'getPool(address,address,uint24)(address)', usdc, tokenOut, feeTier);
   if (/^0x0{40}$/i.test(pool)) fail(`no pool for that pair at fee ${feeTier}`);
@@ -355,9 +581,18 @@ async function main() {
       ? `order is ${ppmOfPool} ppm of the pool's usdc side (depth ratio, NOT a quote)`
       : `order is under 1 ppm of the pool's usdc side: 1 part in ${ratio} (depth ratio, NOT a quote)`,
   );
-  // WHAT THE POOL WOULD ACTUALLY PAY, from slot0. This is the check that makes the buffer safe
-  // rather than merely chosen: the buffer defends against an oracle fall, and it is paid for by
-  // demanding more from the swap, so the only way to know it is affordable is to price it.
+
+  // The pool's OWN fee, read from the pool itself -- never the CLI `--fee` used only to look it up
+  // via getPool. `getPool` is keyed by fee tier so the two should always agree, but the derivation
+  // below is a launch-parameter input and reads it from the contract that actually charges it.
+  const poolFeeRawPpm = big(call(pool, 'fee()(uint24)'));
+  const poolFeeBps = (poolFeeRawPpm + 99n) / 100n; // ppm -> bps, rounded up -- printed only; the
+  // authoritative copy of this arithmetic lives in deriveMaxSlippageBps, called below.
+
+  // WHAT THE POOL WOULD ACTUALLY PAY, from slot0. `grossOut` (pre-fee) feeds the slippage
+  // derivation below; `expectedOut` (net of the pool's own fee) is what the swap would actually
+  // deliver, and is only for this print -- buildRebalanceOrder (below) recomputes it internally
+  // for the real affordability check against `minAmountOut`.
   //
   // NOT A QUOTE. It is spot from `sqrtPriceX96` less the pool fee, with no tick-crossing and no
   // price impact — sound only because this order is a rounding error against the pool's depth
@@ -370,84 +605,170 @@ async function main() {
   // price of token1 in token0 units, scaled: (sqrtP^2 / 2^192)
   const usdcIsToken0 = token0.toLowerCase() === usdc.toLowerCase();
   const num = sqrtP * sqrtP;
-  // out = in * (price) adjusted for which side usdc is on, then less the fee tier.
+  // out = in * (price) adjusted for which side usdc is on -- PRE-FEE. Fed to the slippage
+  // derivation as `grossOut`; see that function's docstring for why it must stay pre-fee.
   const grossOut = usdcIsToken0
     ? (amountIn * num) / Q192
     : (amountIn * Q192) / num;
-  const expectedOut = (grossOut * (1000000n - feeTier)) / 1000000n;
+  const expectedOut = (grossOut * (1000000n - poolFeeRawPpm)) / 1000000n;
 
-  console.log(`pool spot would pay ~${expectedOut} (slot0, less the ${feeTier} fee tier; NOT a quote)`);
-  if (expectedOut < minAmountOut) {
+  console.log(`pool fee (on chain)         ${poolFeeRawPpm} ppm  (${poolFeeBps} bps)`);
+  console.log(`pool spot would pay ~${expectedOut} net of fee, ~${grossOut} gross (slot0; NOT a quote)\n`);
+
+  // ---- the oracle side of the H-4 bound ---------------------------------------------------------
+  const priceOutWad = big(call(oracle, 'priceWad(address)(uint256)', tokenOut));
+  if (priceOutWad === 0n) {
     fail(
-      `the pool would pay about ${expectedOut} and minAmountOut is ${minAmountOut}, so the swap `
-        + `reverts SwapSlippage() on the measured delta. The +${floorBufferBps} bps buffer is not `
-        + 'affordable at this pool price. Lower --floor-buffer-bps, accept less tolerance to an '
-        + 'oracle fall, or use a deeper fee tier.',
+      `oracle.priceWad(${tokenOut}) is 0. The slippage derivation below needs a live oracle price `
+        + 'for the output asset and this cannot fall back to anything -- fix the oracle or wait '
+        + 'for it to report a price before building this order.',
     );
   }
-  const headroomBps = minAmountOut === 0n ? 0n : ((expectedOut - minAmountOut) * BPS) / minAmountOut;
-  console.log(`  => ${headroomBps} bps of headroom above minAmountOut before SwapSlippage()\n`);
+
+  // `_valueWad(usdc, amt)` is `amt * usdcScalar()` — oracle-independent, and NOT `amt * price /
+  // assetUnit(usdc)`. `assetUnit(usdc)` is 0 by construction: VaultCore forbids the settlement
+  // token in the basket. An earlier version divided by a hardcoded 1e6 fallback that was taken on
+  // every run; it happened to agree on this vault and would be wrong on any non-6-decimal
+  // settlement token, which the constructor permits.
+  const usdcScalar = big(call(vault, 'usdcScalar()(uint256)'));
+
+  // ---- CTO DECISION 2026-09-23 (card 209): derive maxSlippageBps, never default to the ceiling --
+  //
+  // Security, reviewing PR #375 (card 207), found that this script always encoded the contract's
+  // ceiling `MAX_REBALANCE_SLIPPAGE_BPS` (200 bps / 2%) as the payload's `maxSlippageBps`, with no
+  // override. The ceiling is a safety RAIL VaultCore enforces (`require(maxSlippageBps > 0 &&
+  // maxSlippageBps <= MAX_REBALANCE_SLIPPAGE_BPS)`), not a default: hard-wiring the builder to the
+  // rail means the contract's bound is the only protection left, and every real rebalance
+  // authorises the worst loss the contract will tolerate regardless of pool depth or order size.
+  //
+  // `maxSlippageBps` bounds, AT EXECUTION TIME and against the vault's OWN oracle:
+  //   _valueWad(tokenOut, minAmountOut) * BPS >= _valueWad(tokenIn, amountIn) * (BPS - maxSlippageBps)
+  // (`VaultCore.executeRebalance`, H-4). The separate `received >= minAmountOut` check is a
+  // measured-delta defence against a lying router (EX-3), not the slippage bound itself.
+  //
+  // DEFAULT is DERIVED, per order: `ceil(poolFeeBps + measuredExecutionGapBps) + 25 bps`.
+  //   - `poolFeeBps` is read from the POOL itself (`pool.fee()`, above) -- never a constant.
+  //   - `measuredExecutionGapBps` is how far this order's own PRE-FEE expected fill (`grossOut`,
+  //     from slot0, above) sits below the oracle value of the input, in bps of that oracle value.
+  //     Zero when the pool's spot price is at or above oracle value -- the gap is a shortfall, not
+  //     a quote. Pre-fee, deliberately: the fee is already counted once via `poolFeeBps`, and
+  //     measuring the gap from a fee-adjusted fill would count it twice (see
+  //     deriveMaxSlippageBps's docstring) -- which would have quietly doubled the margin the MEV
+  //     rationale below claims.
+  //   - the 25 bps buffer is fixed, not a CLI knob.
+  // Capped at 100 bps by default: a derivation above the cap REFUSES rather than silently widening,
+  // unless `--max-slippage-bps N` is passed explicitly (validated against the chain ceiling above,
+  // before any of this order's numbers were even assembled). An explicit `N` below the derived
+  // minimum also refuses -- it would just revert `SwapSlippage()` once `minAmountOut` is computed
+  // against it -- unless `--allow-below-derived` is passed too.
+  //
+  // NO SILENT FALLBACK: if the derivation cannot be computed -- no oracle price (checked above), no
+  // pool fee, no expected fill -- this script refuses. It never falls back to the ceiling or to a
+  // constant.
+  //
+  // MEV RATIONALE. A sandwich can extract at most the slack between the tolerance this order grants
+  // and the real cost of executing it. Real cost is roughly one pool fee plus the real (pre-fee)
+  // price gap; this order's tolerance is exactly (fee + gap) + 25 bps, so the slack available to an
+  // attacker is bounded by ~25 bps, against which the attacker pays the pool fee TWICE (a front-run
+  // leg and a back-run leg) plus gas on top -- unprofitable at the order sizes a launch vault
+  // trades. THAT ASSUMPTION IS EXPLICIT, STATED, AND NOT ALWAYS TRUE: it weakens as an order grows
+  // relative to pool depth (see the "over 1% of one side" warning below), because both price impact
+  // and the slack available to an attacker grow with order size while the attacker's own cost --
+  // the pool fee -- does not grow proportionally as fast against a sufficiently deep pool.
+  const floorBufferBps = BigInt(arg('floor-buffer-bps', '100'));
+  const deadline = big(cast('block', 'latest', '--field', 'timestamp')) + ttl;
+
+  const order = buildRebalanceOrder({
+    adapter, usdc, tokenOut, amountIn,
+    unitOut, priceOutWad, usdcScalar,
+    poolFeeRawPpm, grossOut,
+    overrideBps, allowBelowDerived,
+    floorBufferBps,
+    deadline,
+    BPS,
+  });
+
+  console.log('--- maxSlippageBps derivation ----------------------------------------------------');
+  if (order.derivation && order.derivation.poolFeeBps !== undefined) {
+    console.log(`poolFeeBps                  ${order.derivation.poolFeeBps}`);
+    console.log(`measuredExecutionGapBps     ${order.derivation.measuredExecutionGapBps}`);
+    console.log(`buffer                      ${DERIVED_BUFFER_BPS}`);
+    console.log(`derived (fee+gap+buffer)    ${order.derivation.derivedSlipBps}`);
+    console.log(`default cap                 ${DERIVED_CAP_BPS}`);
+    console.log(`ceiling (chain)             ${ceilingBps}`);
+  }
+  if (!order.ok) fail(order.reason);
+  const chosenSlipBps = order.chosenSlipBps;
+  console.log(
+    order.derivation.usedOverride
+      ? `chosen                      ${chosenSlipBps}  (--max-slippage-bps override)\n`
+      : `chosen                      ${chosenSlipBps}  (derived default)\n`,
+  );
+
+  console.log(`chosen maxSlippageBps       ${chosenSlipBps}`);
+  console.log(`priceWad(tokenOut)          ${priceOutWad}`);
+  console.log(`usdcScalar()                ${usdcScalar}`);
+  console.log(`bare oracle floor           ${order.bareFloor}`);
+  console.log(`minAmountOut                ${order.minAmountOut}  (+${floorBufferBps} bps)`);
+  console.log(
+    `  => survives a fall in tokenOut's oracle price of up to ${floorBufferBps} bps before\n`
+    + '     MinOutTooLow(); a bare floor survives ZERO and reverts on any fall at all.\n',
+  );
+  console.log(`  => ${order.headroomBps} bps of headroom above minAmountOut before SwapSlippage()\n`);
 
   const bpsOfPool = ppmOfPool / 100n;
   if (bpsOfPool > 100n) {
     console.log(
       '  WARNING: over 1% of one side. The oracle bound is the ONLY slippage protection here, and '
-        + 'it is measured against the oracle, not against depth.',
+        + 'it is measured against the oracle, not against depth. This is also where the MEV '
+        + 'rationale above weakens: both price impact and an attacker\'s extractable slack grow '
+        + 'with order size relative to pool depth.',
     );
   }
   console.log();
 
-  // ---- assemble ------------------------------------------------------------------------------
-  const derived = castPure('sig', EXACT_INPUT_SINGLE_SIG).trim();
-  if (derived.toLowerCase() !== EXACT_INPUT_SINGLE) {
+  // ---- verify the encoding, independent of buildRebalanceOrder's own construction -------------
+  const derivedSelector = castPure('sig', EXACT_INPUT_SINGLE_SIG).trim();
+  if (derivedSelector.toLowerCase() !== EXACT_INPUT_SINGLE) {
     fail(
-      `keccak of "${EXACT_INPUT_SINGLE_SIG}" is ${derived}, not ${EXACT_INPUT_SINGLE}. The struct `
-        + 'shape in this script does not match the one the adapter allowlists.',
+      `keccak of "${EXACT_INPUT_SINGLE_SIG}" is ${derivedSelector}, not ${EXACT_INPUT_SINGLE}. The `
+        + 'struct shape in this script does not match the one the adapter allowlists.',
     );
   }
 
-  const deadline = big(cast('block', 'latest', '--field', 'timestamp')) + ttl;
-
-  // Every member of ExactInputSingleParams is STATIC, so this is seven words after the selector
-  // with no offsets and no tail. `cast calldata` cannot be used: it splits a "(a,b,c)" argument on
-  // its commas and reports `encode length mismatch: expected 1 types, got 3`.
-  const routeData = EXACT_INPUT_SINGLE
-    + [usdc, tokenOut, feeTier, adapter, amountIn, minAmountOut, 0n].map(word).join('');
-
-  // abi.encode(address, SwapOrder[]). SwapOrder is dynamic because of `bytes routeData`, so this
-  // one has offsets, and it is verified by decoding it back rather than by inspection.
-  const orderBody = [usdc, tokenOut, amountIn, minAmountOut, deadline].map(word).join('')
-    + word(0xc0n)
-    + word(BigInt((routeData.length - 2) / 2))
-    + pad32(routeData.slice(2));
-  const payload = '0x' + word(adapter) + word(0x40n) + word(1n) + word(0x20n) + orderBody;
-
   // Compare the VALUES, not just the adapter's presence. An earlier version substring-matched the
   // adapter address, which also appears inside routeData as `recipient` — so it would have passed
-  // on a payload whose amounts were wrong.
-  const rt = castPure(
-    'abi-decode', '--input',
-    'f(address,(address,address,uint256,uint256,uint256,bytes)[])', payload,
-  );
+  // on a payload whose amounts were wrong. The decode signature itself is read off the compiled
+  // contract (rebalanceDecodeSig, above) rather than hand-typed here a second time -- that
+  // hand-typed second copy is what drifted from Governance.execute's real 3-field decode in the
+  // first place (card 207).
+  const decodeSig = rebalanceDecodeSig();
+  const rt = castPure('abi-decode', '--input', decodeSig, order.payload);
   // `\d+`, not `\d{4,}`. The four-digit floor was a false NEGATIVE: `--amount-in 100` produces a
   // correct payload that this check then rejected. It failed safe, but a verifier that reds on
   // good input is one people learn to bypass. Hex bodies are stripped first so the digits inside
   // `0x…` cannot accidentally satisfy a value.
   const rtNums = (rt.replace(/0x[0-9a-fA-F]+/g, ' ').match(/\b\d+\b/g) || []).map((n) => BigInt(n));
-  for (const [label, want] of [['amountIn', amountIn], ['minAmountOut', minAmountOut], ['deadline', deadline]]) {
+  for (const [label, want] of [
+    ['maxSlippageBps', chosenSlipBps],
+    ['amountIn', amountIn],
+    ['minAmountOut', order.minAmountOut],
+    ['deadline', deadline],
+  ]) {
     if (!rtNums.includes(want)) {
       fail(`payload did not round-trip: ${label} ${want} is absent from the decode:\n${rt}`);
     }
   }
-  console.log(`round-trip decode ok (amountIn, minAmountOut and deadline all recovered)\n`);
+  console.log(`round-trip decode ok (maxSlippageBps, amountIn, minAmountOut and deadline all recovered)\n`);
 
-  const actionHash = castPure('keccak', payload).trim();
+  const actionHash = castPure('keccak', order.payload).trim();
 
   console.log('--- the order -------------------------------------------------------------------');
   console.log(`tokenIn       ${usdc}`);
   console.log(`tokenOut      ${tokenOut}`);
   console.log(`amountIn      ${amountIn}`);
-  console.log(`minAmountOut  ${minAmountOut}   <-- FROZEN NOW, FILLED HOURS LATER`);
+  console.log(`maxSlippageBps ${chosenSlipBps}   <-- DERIVED by default (card 209); see derivation above`);
+  console.log(`minAmountOut  ${order.minAmountOut}   <-- FROZEN NOW, FILLED HOURS LATER`);
   // STATE THE COVERAGE, ALWAYS. An earlier version printed "covers the whole 86400s window" as a
   // flat assertion and that was false; removing it left NOTHING, so an --accept-partial-window run
   // emitted output byte-identical to a fully-covered one and a pasted payload carried no evidence
@@ -465,7 +786,7 @@ async function main() {
   );
   console.log(`recipient     ${adapter}   <-- the ADAPTER, which measures its own balance delta`);
   console.log(`\nactionHash    ${actionHash}`);
-  console.log(`\npayload\n${payload}\n`);
+  console.log(`\npayload\n${order.payload}\n`);
 
   console.log('--- what is still uncontrolled --------------------------------------------------');
   console.log(
@@ -473,13 +794,21 @@ async function main() {
     + 'the INPUT leg is oracle-independent, so the bound reduces to a condition on one price only:\n'
     + `this order survives a fall in tokenOut's oracle price of up to ${floorBufferBps} bps between\n`
     + 'propose and execute, and reverts MinOutTooLow() beyond that. A BARE floor survives zero -\n'
-    + 'any fall at all - which is why --floor-buffer-bps defaults to 100 rather than 0.\n'
+    + 'any fall at all - which is why --floor-buffer-bps must be passed below the chosen\n'
+    + 'maxSlippageBps printed above (its old 100 bps default was sized against the old 200 bps\n'
+    + 'ceiling default and will usually be incoherent with a derived value now -- see the usage\n'
+    + 'comment at the top of this file).\n'
     + '\n'
     + 'The buffer is paid for on the other side: the swap must actually deliver minAmountOut, so\n'
-    + `too large a buffer reverts SwapSlippage() instead. Measured above at ${headroomBps} bps of\n`
+    + `too large a buffer reverts SwapSlippage() instead. Measured above at ${order.headroomBps} bps of\n`
     + 'headroom against what the pool would pay at spot. Never set minAmountOut BELOW the bare\n'
     + 'floor: that is the region H-4 rejects outright, since the bound is a minimum on what you\n'
     + 'must receive.\n'
+    + '\n'
+    + 'maxSlippageBps ITSELF is now DERIVED per order rather than fixed at the ceiling (card 209):\n'
+    + `${chosenSlipBps} bps here, against a ${ceilingBps} bps ceiling. The MEV rationale for why that\n`
+    + 'is still safe is written above the derivation, and it names its own order-size assumption --\n'
+    + 'it weakens as this order grows relative to the pool\'s depth.\n'
     + '\n'
     + 'THE DEADLINE DOES NOT COVER A FIXED WINDOW, and an earlier version of this script asserted\n'
     + 'that it did. `Governance.finalize` sets `executableAt = block.timestamp + timelockDuration`\n'
@@ -497,7 +826,14 @@ async function main() {
   console.log('\nThis script has broadcast nothing and holds no key. SWARM §10: the owner signs.');
 }
 
-main().catch((e) => {
-  console.error(e.message);
-  process.exit(1);
-});
+// Run only when invoked as a script, not when imported. scripts/test/build-rebalance-order-
+// slippage.test.mjs imports this module for its pure, exported functions (validateOverrideRange,
+// deriveMaxSlippageBps, buildRebalanceOrder, rebalanceDecodeSig) -- an unconditional main() would
+// call process.exit(1) inside the TEST process on the very first missing-`--vault` check.
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  main().catch((e) => {
+    console.error(e.message);
+    process.exit(1);
+  });
+}

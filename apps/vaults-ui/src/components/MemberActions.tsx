@@ -259,7 +259,16 @@ export function MemberActions({ vault }: Props) {
     depositStatus == null ||
     depositStatus.state === 'unknown' ||
     depositStatus.state === 'waiting' ||
-    depositStatus.state === 'available';
+    depositStatus.state === 'available' ||
+    // FROZEN, read straight off the vault prop rather than through `vaultActions` below — so this
+    // refusal survives a failed exit-side read (`queuedExitShares`, `shares`) that nulls the
+    // verdict object entirely. A refusal that disappears because an unrelated call reverted is the
+    // same defect as a caveat that disappears. `VaultCore._deposit` calls `navWad()`
+    // UNCONDITIONALLY (VaultCore.sol:412), above the `capacityCapUsdc != 0` branch, so this
+    // reverts on every vault while frozen — including an uncapped one with no capacity check to
+    // run. vault-state.mjs's own reason text attributes the read to the capacity check; that is
+    // true of a capped vault and understates the reach.
+    vault.frozen;
 
   // The exit shares typed so far — 0n (not a parse failure) once nothing/invalid is entered, so
   // an empty box reads as "burns nothing" rather than falling through to `creatorGateRefusal`'s
@@ -305,13 +314,16 @@ export function MemberActions({ vault }: Props) {
           attested: vault.attested,
           exitMode: pendingExecution === true ? 'F' : pendingExecution === false ? 'I' : 'unknown',
           isMember: shares > 0n,
-          // Only `exit`'s own verdict is rendered below — deposit/activate/skipWindow need
-          // capacity data this component does not read (see atlas.ts's own note on why
-          // `capacityCapUsdc` is not sourced here), so those three facts are inert placeholders
-          // for verdicts this component never displays, not real inputs to a rendered decision.
-          hasPendingDeposit: false,
-          pendingMatured: false,
+          // TRUTHFUL, not placeholders. `capacityCapUsdc` is not sourced by this app at all
+          // (atlas.ts says why), so capacity here is genuinely UNDETERMINABLE — and
+          // `{capacityFull: false, capacityKnown: false}` is exactly how vault-view.mjs's own
+          // `vaultView` encodes that pair (`capacityFull: cap.capped && cap.determinable && ...`
+          // is necessarily false whenever `determinable` is), not a default standing in for a
+          // number nobody read.
+          hasPendingDeposit: depositStatus?.state === 'waiting' || depositStatus?.state === 'available',
+          pendingMatured: depositStatus?.state === 'available',
           capacityFull: false,
+          capacityKnown: false,
           hasQueuedExit: exitGate.queuedExitShares > 0n,
           walletConnected: connected,
         })
@@ -484,6 +496,17 @@ export function MemberActions({ vault }: Props) {
         Two signatures: an ERC-20 approve, then <code>deposit(amountUsdc)</code>. A first-time deposit escrows for a
         4-hour observation window before it mints shares — it does not mint immediately (VaultCore.sol:52).
       </p>
+      {vault.frozen ? (
+        // The refusal states its reason, same rule as the exit button's. Wording comes from
+        // vault-state.mjs's own `actions().deposit` verdict rather than a second copy written
+        // here, so this app and apps/web never say different things about the same refusal —
+        // the `frozen === true` branch sits above every capacity/pending branch in that chain,
+        // so it is the one this renders and the facts below it cannot change the answer.
+        <p className="note tag-warn">
+          {vaultActions?.deposit.reason ??
+            'Frozen — the deposit reads NAV to price the vault, and NAV is unavailable while the oracle is stale.'}
+        </p>
+      ) : null}
       {depositStatus ? (
         <p
           className={
@@ -682,7 +705,7 @@ export function MemberActions({ vault }: Props) {
                 <span className="dim">
                   {preview.isSoleHolder
                     ? 'sole member: accrues to those who remain, and there are none'
-                    : 'stays in the vault, never goes to the operator'}
+                    : 'stays in the vault, adding to every remaining share'}
                 </span>
               </th>
               <td className="num">{preview.feeValueWad !== null ? `−${usdcShort(preview.feeValueWad / USDC_SCALAR)}` : bpsPct(preview.feeBps)}</td>
