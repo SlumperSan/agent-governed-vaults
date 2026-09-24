@@ -4,16 +4,19 @@ anything the baseline does not already cover.
 
 WHY NOT SLITHER'S OWN --triage-mode / --triage-database. That mechanism (see
 docs/reviews/SLITHER-TRIAGE.md's history for the measurement) matches on Slither's own per-finding
-`id`, a hash of the finding's description text -- which, for "dangerous comparisons" style
-detectors (`timestamp`, `incorrect-equality`, the `reentrancy-*` family), is a hash over WHICHEVER
-subset of comparisons/reads Slither happened to bundle into that particular run. Measured directly:
-adding one unrelated new contract elsewhere in contracts/src, with VaultCore.sol byte-for-byte
-unchanged, changed VaultCore._mintShares's reported `timestamp` and `incorrect-equality` ids -- not
-because the finding is new, but because Slither picked a different representative comparison to
-name in the description. A baseline keyed on that id would have reintroduced exactly the
-self-disarming-guard problem this card exists to close: a required check that reds on routine,
-unrelated PRs until someone reflexively regenerates the baseline (silently re-accepting whatever is
-in the tree at that moment, including a real new finding).
+`id`, a hash of the finding's description text. Detectors that bundle several equivalent
+comparisons or reads into one finding and pick which subset to name -- `timestamp` and
+`incorrect-equality` are the two this was actually MEASURED against; the `reentrancy-*` family is
+structurally the same shape (several elements per finding) but was not observed to drift under the
+same perturbations, see FUZZY_COUNT_KEYS below -- can render that description differently between
+runs with no change to the code the finding is about. Measured directly: adding one unrelated new
+contract elsewhere in contracts/src, with VaultCore.sol byte-for-byte unchanged, changed
+VaultCore._mintShares's reported `timestamp` and `incorrect-equality` ids -- not because the finding
+is new, but because Slither picked a different representative comparison to name in the
+description. A baseline keyed on that id would have reintroduced exactly the self-disarming-guard
+problem this card exists to close: a required check that reds on routine, unrelated PRs until
+someone reflexively regenerates the baseline (silently re-accepting whatever is in the tree at that
+moment, including a real new finding).
 
 THE KEY THIS SCRIPT USES INSTEAD never includes a line number, a column, or a specific comparison
 expression: `<check>::<Contract>.<function>` (or `<check>::<Contract>` for a contract-level finding,

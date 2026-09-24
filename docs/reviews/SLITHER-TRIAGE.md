@@ -282,15 +282,18 @@ Anything the baseline already covers passes; anything it does not reds the `slit
 
 **Not Slither's own `--triage-mode` / `--triage-database`, and this was tried first.** That
 mechanism matches on Slither's own per-finding `id` — a hash of the finding's *description text*.
-For detectors that bundle several equivalent comparisons or reads into one finding and pick which
-one to name (`timestamp`, `incorrect-equality`, the `reentrancy-*` family), that text is not stable
-across unrelated changes: measured directly, adding one new, unrelated contract file elsewhere in
-`contracts/src/`, with `VaultCore.sol` byte-for-byte unchanged, changed which comparison
-`VaultCore._mintShares`'s `timestamp` and `incorrect-equality` findings named — sometimes bundled
-into one finding, sometimes split into two. A baseline keyed on that id would have reintroduced the
-exact self-disarming-guard shape this card exists to close: a required check that reds on routine,
-unrelated PRs, training whoever hits it to reflexively regenerate the baseline — which re-accepts
-whatever is in the tree at that moment, including a real new finding.
+Detectors that bundle several equivalent comparisons or reads into one finding and pick which one to
+name can render that text differently between runs with nothing in the code changed. Measured
+directly on two of them — `timestamp` and `incorrect-equality`: adding one new, unrelated contract
+file elsewhere in `contracts/src/`, with `VaultCore.sol` byte-for-byte unchanged, changed which
+comparison `VaultCore._mintShares`'s `timestamp` and `incorrect-equality` findings named — sometimes
+bundled into one finding, sometimes split into two. The `reentrancy-*` family bundles elements the
+same way but was NOT observed to drift under this or the venv perturbation below — see
+`FUZZY_COUNT_KEYS` in the script, scoped to the one key actually measured. A baseline keyed on
+Slither's own id would have reintroduced the exact self-disarming-guard shape this card exists to
+close: a required check that reds on routine, unrelated PRs, training whoever hits it to reflexively
+regenerate the baseline — which re-accepts whatever is in the tree at that moment, including a real
+new finding.
 
 **The key `slither_baseline_check.py` uses instead never carries a line number, a column, or a
 specific comparison's text**: `<check>::<Contract>.<function>` (or `<check>::<Contract>` for a
