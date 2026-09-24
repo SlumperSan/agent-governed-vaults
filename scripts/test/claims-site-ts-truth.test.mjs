@@ -41,12 +41,20 @@
  * ## Entity decoding — the second hard part `apps/web/src` does not have
  *
  * `disclaimers-copy.ts` writes its copy as HTML entities inline in the string literals themselves
- * — `&rsquo;`, `&mdash;`, `&#39;` — because the strings are rendered into `dangerouslySetInnerHTML`
- * elsewhere in the site. A shape regex written against plain punctuation (an apostrophe in
- * "operator's", a hyphen in "stake-weighted") would silently slide past the entity-encoded form and
- * report a false clean. `decodeEntities` below normalizes the small, closed set of named and
- * numeric entities this corpus actually uses before any shape regex runs. The mutation probe proves
- * an entity-laden banned phrase is still caught, not just a plain one.
+ * — `&rsquo;`, `&mdash;`, `&#39;`, `&nbsp;` — because the strings are rendered into
+ * `dangerouslySetInnerHTML` elsewhere in the site. `decodeEntities` normalizes the small, closed
+ * set of named and numeric entities this corpus actually uses before any shape regex runs, and
+ * THROWS on anything outside that table rather than passing it through unchanged — an unrecognized
+ * entity silently breaking a shape match (Design's review on #406, 2026-09-24) is the exact
+ * silent-skip this file's other tripwires exist to refuse, and a `?? m` fallback is precisely that
+ * skip. The entity that actually changes whether a shape matches is `&nbsp;`/`&#160;`/`&#xa0;`: it
+ * decodes to a literal space, which closes a `\s+` gap between two words a shape regex requires
+ * adjacent (`AGENT_ACTS`'s `agent(s)\s+pool(s)`, for one) — a gap the RAW extracted text does not
+ * have, because `&nbsp;` as literal characters contains no whitespace at all. `&rsquo;`/`&mdash;`
+ * decode to a curly quote and an em dash, neither of which any shape regex here requires, so those
+ * entities are decoded for correctness but are not, on their own, proof that decoding changes a
+ * verdict — the mutation probe below uses the `&nbsp;` case specifically, because it is the one
+ * where an unmet claim about decoding would actually matter.
  *
  * ## Coverage tripwires — a guard that can skip is a guard that will
  *
@@ -85,9 +93,12 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const SITE_SRC = 'apps/site/src';
 
 /** The small, closed set of named/numeric HTML entities this corpus actually uses (checked
- * 2026-09-23: `&rsquo;`, `&lsquo;`, `&mdash;`, `&ndash;`, `&amp;`, `&quot;`, `&#39;`). Decoding a
- * fixed table rather than reaching for an HTML-entity dependency keeps this guard's only
- * dependency the same hand-rolled tokenizer `claims-web-prose-truth.test.mjs` already uses. */
+ * 2026-09-23: `&rsquo;`, `&lsquo;`, `&mdash;`, `&ndash;`, `&amp;`, `&quot;`, `&#39;`, `&nbsp;`,
+ * `&#160;`, `&#xa0;`). Decoding a fixed table rather than reaching for an HTML-entity dependency
+ * keeps this guard's only dependency the same hand-rolled tokenizer
+ * `claims-web-prose-truth.test.mjs` already uses. `&nbsp;`/`&#160;`/`&#xa0;` decode to a plain
+ * space (` `), not ` `, so the decoded text behaves identically to a normal word gap
+ * everywhere a shape regex tests it. */
 const ENTITIES = {
   '&rsquo;': '’',
   '&lsquo;': '‘',
@@ -99,8 +110,32 @@ const ENTITIES = {
   '&quot;': '"',
   '&#39;': "'",
   '&apos;': "'",
+  '&nbsp;': ' ',
+  '&#160;': ' ',
+  '&#xa0;': ' ',
 };
-const decodeEntities = (s) => s.replace(/&[a-z#0-9]+;/gi, (m) => ENTITIES[m.toLowerCase()] ?? m);
+
+/**
+ * Decode the closed ENTITIES table above and THROW on anything outside it, rather than passing an
+ * unrecognized entity through unchanged. `?? m` — the original shape of this function — is the
+ * silent-skip this guard's own header refuses everywhere else: an entity this table has never
+ * seen breaks a shape regex exactly as effectively as `&nbsp;` does, and a guard that quietly
+ * treats "I don't recognize this" as "nothing to see here" is unusable for the one job this file
+ * exists to do. `context` (a file path when called from the real walk) makes the thrown message
+ * actionable; probes below call this with no context and get a slightly plainer message.
+ */
+const decodeEntities = (s, context = '(inline)') =>
+  s.replace(/&[a-z#0-9]+;/gi, (m) => {
+    const key = m.toLowerCase();
+    if (!(key in ENTITIES)) {
+      throw new Error(
+        `${context}: unrecognized HTML entity ${m}. Add it to ENTITIES with a vetted decoding, ` +
+          'or fix the source — passing it through unchanged is the silent skip this guard exists ' +
+          'to refuse.',
+      );
+    }
+    return ENTITIES[key];
+  });
 
 /**
  * Every `.ts` module directly inside `apps/site/src`. Enumerated from the filesystem, never from a
@@ -134,7 +169,7 @@ const modulesWithExtractedText = () =>
         'extraction means extract-string-literals.mjs failed to tokenize it, and treating that as ' +
         '"nothing to check" is exactly the silent skip this guard exists to refuse.',
     );
-    return { file, text: flat(decodeEntities(strings.join(' '))) };
+    return { file, text: flat(decodeEntities(strings.join(' '), file)) };
   });
 
 const report = (hits) => hits.map((h) => `  ${h.file}: "${h.quote.trim()}"`).join('\n');
@@ -344,9 +379,13 @@ test('probe: the extractor reads rendered strings, not the comments that describ
   );
 });
 
-test('probe: an HTML-entity-encoded banned phrase is still caught, not silently slid past', () => {
+test('probe: a realistic entity-laden banned phrase (the shape disclaimers-copy.ts actually writes) still decodes and is caught', () => {
   // The exact shape disclaimers-copy.ts writes in practice — an apostrophe and a dash encoded as
-  // named entities inside a string literal rendered via dangerouslySetInnerHTML.
+  // named entities inside a string literal rendered via dangerouslySetInnerHTML. NOTE what this
+  // probe does and does not prove: FEE_BYPASSES_OPERATOR and STAKE_BLIND below both match this
+  // sentence's RAW (undecoded) text too, because neither shape's match depends on the apostrophe
+  // or the dash — so this is a realistic-shape regression check, not proof that decoding changes
+  // the verdict. The probe below this one supplies that proof, with a case built for it.
   const entityEncoded = [
     "export const bad = { dd: 'the operator&rsquo;s fee is never to the operator, which is an ' +",
     "    'absolute signer count &mdash; a pure head-count, not stake-weighted.' };",
@@ -367,12 +406,60 @@ test('probe: an HTML-entity-encoded banned phrase is still caught, not silently 
     }),
     `entity-decoded STAKE_BLIND shape was not caught. Decoded text: ${JSON.stringify(hay)}`,
   );
-  // And the undecoded form must NOT trivially match the same probes, proving decoding is load-
-  // bearing rather than redundant with what extractStringLiterals already returns.
   const raw = flat(strings.join(' '));
   assert.ok(
     /operator&rsquo;s/.test(raw),
     'sanity check on the probe itself: the raw extracted text should still carry the entity',
+  );
+});
+
+test('probe: decoding is load-bearing — a banned shape hidden by an &nbsp; gap is invisible raw and caught only decoded', () => {
+  // AGENT_ACTS requires a literal \s+ run directly between "agent(s)" and the pooling/governing
+  // verb. An &nbsp; sitting in that gap, AS LITERAL CHARACTERS ("&nbsp;" — six non-whitespace
+  // characters, no space among them), leaves NO whitespace there at all, so the raw extracted
+  // text must NOT match — this is the actual case blocker 1 (Design's review on #406) described:
+  // "The AI agent&nbsp;pools member capital." passed clean at the head under review because
+  // decodeEntities silently passed &nbsp; through unchanged instead of turning it into a space.
+  const entityGap = 'The AI agent&nbsp;pools member capital.';
+
+  const rawHay = flat(maskProductPhrases(entityGap));
+  const rawHit = AGENT_ACTS.some((re) => {
+    re.lastIndex = 0;
+    return re.test(rawHay);
+  });
+  assert.equal(
+    rawHit,
+    false,
+    'sanity check on the probe itself: the RAW (undecoded) text unexpectedly matched AGENT_ACTS ' +
+      `— the probe proves nothing if this is true. Raw text: ${JSON.stringify(rawHay)}`,
+  );
+
+  const decodedHay = flat(maskProductPhrases(decodeEntities(entityGap)));
+  const decodedHit = AGENT_ACTS.some((re) => {
+    re.lastIndex = 0;
+    return re.test(decodedHay);
+  });
+  assert.equal(
+    decodedHit,
+    true,
+    'decoding &nbsp; to a space did not close the gap AGENT_ACTS needs — decoding failed to be ' +
+      `load-bearing. Decoded text: ${JSON.stringify(decodedHay)}`,
+  );
+});
+
+test('probe: decodeEntities THROWS on an entity outside the table rather than passing it through', () => {
+  assert.throws(
+    () => decodeEntities('The operator&zzzz;s fee.'),
+    /unrecognized HTML entity &zzzz;/,
+    'an unrecognized entity must throw, naming the entity — passing it through unchanged (the ' +
+      'original `?? m` shape of this function) is the exact silent skip Design\'s review caught: ' +
+      'an entity outside the table broke a shape match with a fully green guard.',
+  );
+  // The context argument, when supplied (the real walk always supplies the file path), must
+  // appear in the thrown message so the failure is actionable.
+  assert.throws(
+    () => decodeEntities('&zzzz;', 'apps/site/src/copy.ts'),
+    /apps\/site\/src\/copy\.ts: unrecognized HTML entity &zzzz;/,
   );
 });
 
