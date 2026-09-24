@@ -401,7 +401,9 @@ test('Vault 1: both commit and reveal, per persona policy', () => {
   const totalQueued = BigInt(chain.callOne(fork.rpcUrl, vault1, 'totalQueuedShares()(uint256)'));
   const oracleAgeSeconds = chain.oracleFeedAgeSeconds(fork.rpcUrl, dep.aggregator, WETH);
   const auditorReadout = policy.auditorDecide({
-    navUsdc, idleUsdc: idleUsdcNow, queuedExitShares: totalQueued, oracleAgeSeconds, feeAccruedUsdc: 0n,
+    // feeAccruedUsdc: null — FeeEngine is a separate contract this readout does not query here;
+    // see auditorDecide's own doc comment for why that is null, not a fabricated 0.
+    navUsdc, idleUsdc: idleUsdcNow, queuedExitShares: totalQueued, oracleAgeSeconds, feeAccruedUsdc: null,
     voters: [{ member: ballast.address, support: ballastSupport }, { member: momentum.address, support: momentumSupport }],
   });
   assert.equal(auditorReadout.action, 'publishReadout');

@@ -143,7 +143,10 @@ export function contrarianDecide({ funded, prevailingSupport, caseStrength, ownB
  * Auditor's thesis: no opinion, no vote — publish the facts every round. Pure passthrough/shape
  * function: it never decides an action against the chain, only names which facts belong in the
  * readout it publishes, so a caller cannot accidentally wire it into a voting path.
- * @param {{ navUsdc: bigint, idleUsdc: bigint, queuedExitShares: bigint, oracleAgeSeconds: number, feeAccruedUsdc: bigint, voters: {member: string, support: boolean}[] }} readout
+ * @param {{ navUsdc: bigint, idleUsdc: bigint, queuedExitShares: bigint, oracleAgeSeconds: number, feeAccruedUsdc: bigint | null, voters: {member: string, support: boolean}[] }} readout
+ *   `feeAccruedUsdc` is `null` when the caller did not query FeeEngine for this round (fee accrual
+ *   lives in a separate contract this readout does not always read) — never fabricated as 0, which
+ *   would misreport "queried and found zero" as indistinguishable from "not queried".
  * @returns {{ action: 'publishReadout', readout: object }}
  */
 export function auditorDecide(readout) {
