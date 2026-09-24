@@ -58,8 +58,9 @@
      failed; the figures and the fix band are in
      Findings/2026-09-19-site-button-rules-fail-wcag-aa.
 
-     WHY --blue DID NOT SIMPLY MOVE. It is the brand's blue — the mark's
-     gradient, --blue-soft, --blue-line and every non-text fill read from it,
+     WHY --blue DID NOT SIMPLY MOVE. It is the brand's blue — the Threshold mark's own fill
+     (single accent, no gradient, by the 2026-09-18 brand decision), --blue-soft, --blue-line and
+     every non-text fill read from it,
      and none of those carries a label, so none of them has a contrast floor.
      Darkening it to satisfy one component would move the identity to fix a
      button. The accent stays where it is; the control gets a value chosen for

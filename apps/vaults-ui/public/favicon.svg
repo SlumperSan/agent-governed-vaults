@@ -1,23 +1,18 @@
-<!-- The tab icon. Not a new design — the placeholder `.brand-mark` in src/chrome.css already
-     ships (shipped since #317): a rounded gradient square beside the wordmark, deliberately
-     non-pictorial. Pictorial marks are banned (Design/mark-elimination-record-2026-09-18) and a
-     considered brand pass is deferred to Phase 2 by Chairman directive, so this is that same
-     placeholder wired into the tab rather than a second mark someone had to design.
-
-     Values copied literally from apps/site/src/tokens.css — the file src/styles.css already
-     `@import`s and chrome.css's own header says is canonical for both surfaces — because this file
-     cannot read a CSS custom property: --bg #070b18, --blue-bright #5b8cff, --blue #2f6bff, at the
-     masthead mark's own proportions (19px square, 5px radius -> 1024 canvas, 560 square, ~147
-     radius, centered: (1024-560)/2 = 232). No path element and no text element — a rect and a
-     gradient are the whole drawing, so there is no letterform the mark-elimination ban could ever
-     apply to. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="RWAlly">
-  <rect width="1024" height="1024" fill="#070b18"/>
-  <rect x="232" y="232" width="560" height="560" rx="147" fill="url(#mark)"/>
-  <defs>
-    <linearGradient id="mark" x1="190" y1="232" x2="834" y2="792" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5b8cff"/>
-      <stop offset="1" stop-color="#2f6bff"/>
-    </linearGradient>
-  </defs>
+<!-- THRESHOLD. Replaces the placeholder rounded gradient square per the owner's brand decision,
+     Agent-Governed Vaults/Decisions/the-mark-is-threshold-2026-09-18.md, rolled out repo-wide
+     2026-09-24. Everything below is copied verbatim from Design/brand-threshold/favicon.svg — do
+     not hand-edit the geometry; regenerate from that source file if it ever changes. This app ships
+     no favicon.ico (see index.html; only the SVG is linked), so there is nothing else to rebuild. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RWAlly">
+  <!-- FAVICON. The mark is a wide letterbox, so on its own it floats in a square tile with dead
+       space either side. Here it sits on the brand ground and is scaled to fill the tile, which
+       is what makes it resolve at 16px. The opening is the whole idea: if it closes up, the
+       icon has failed and the course heights are wrong, not the concept. -->
+  <rect width="64" height="64" rx="12" fill="#070b18"/>
+  <g fill="#2f6bff" transform="translate(32 32) scale(1.06) translate(-32 -32)">
+    <rect x="8" y="16" width="48" height="10" rx="2.5"/>
+    <rect x="8" y="29" width="14" height="10" rx="2.5"/>
+    <rect x="42" y="29" width="14" height="10" rx="2.5"/>
+    <rect x="8" y="42" width="48" height="10" rx="2.5"/>
+  </g>
 </svg>
