@@ -13,7 +13,10 @@ import { execFileSync } from 'node:child_process';
 import {
   ethGetTransactionByHash, ethGetTransactionReceipt,
 } from './chain-rpc.mjs';
-import { finalizePreconditionRefusal, nonceGateRefusal, safeRoutedRefusal } from './sign-queue-preconditions.mjs';
+import {
+  finalizePreconditionRefusal, nonceGateRefusal, personaActivatePreconditionRefusal,
+  personaDepositPreconditionRefusal, personaIntentRefusal, personaOrderingGateRefusal, safeRoutedRefusal, seededPersonaRefusal,
+} from './sign-queue-preconditions.mjs';
 import { resolveItemData } from './sign-queue-resolve.mjs';
 import {
   QUEUE_PATH, EVENT_LOG_FIELDS, isForeignTx, normAddr, readQueue, verifyReceipt, writeQueueAtomic,
@@ -149,9 +152,61 @@ export async function advanceSentItems(queue, fetchImpl, queuePath = QUEUE_PATH)
     }
     item.status = 'done'; item.receipt = receipt; item.doneAt = new Date().toISOString(); item.verifyNote = null;
     changed = true;
+    await recordPersonaPostCheck(item, queue.items, fetchImpl);
   }
   if (changed) writeQueueAtomic(queue, queuePath);
   return changed;
+}
+
+/**
+ * Card 210: once a persona-deposit item confirms `done`, record the reads the owner asked for so
+ * shares/NAV can be verified after it lands without a separate manual pass: `sharesOf(holder)`,
+ * `totalShares()`, `navWad()`, `idleUsdc()` and the holder's own USDC balance. `postCheckPlan` is
+ * set on ALL THREE persona-deposit items (approve, deposit, activate), not only deposit/activate,
+ * specifically so the APPROVE item's recorded `holderUsdcBalance` becomes the baseline the DEPOSIT
+ * item's own post-check diffs against for `holderUsdcBalanceDelta` — the deposit item's precondition
+ * (`personaDepositPreconditionRefusal`) requires `dependsOn` includes the approve item, so by the
+ * time a deposit item can even confirm, its sibling approve item is guaranteed `done` with its own
+ * `postCheck` already recorded. Never throws: an individual read failure is recorded in
+ * `readErrors` rather than blocking the item's own `done` transition, which has already happened by
+ * the time this runs.
+ * @param {import('./sign-queue.mjs').QueueItem} item
+ * @param {import('./sign-queue.mjs').QueueItem[]} allItems the full queue, for finding this
+ *   persona's own approve item as the balance-delta baseline
+ * @param {typeof fetch} fetchImpl
+ */
+async function recordPersonaPostCheck(item, allItems, fetchImpl) {
+  if (item.builder !== 'persona-deposit' || !item.postCheckPlan) return;
+  const { vault, usdc, holder } = item.postCheckPlan;
+  const rpcUrl = RPC_BY_CHAIN[item.chainId];
+  const { ethCall } = await import('./chain-rpc.mjs');
+  const [sharesR, totalR, navR, idleR, balR] = await Promise.all([
+    ethCall(fetchImpl, rpcUrl, vault, `0xf5eb42dc${encodeAddr(holder)}`), // sharesOf(address)
+    ethCall(fetchImpl, rpcUrl, vault, '0x3a98ef39'), // totalShares()
+    ethCall(fetchImpl, rpcUrl, vault, '0xd09074c0'), // navWad()
+    ethCall(fetchImpl, rpcUrl, vault, '0x047b7fc7'), // idleUsdc()
+    ethCall(fetchImpl, rpcUrl, usdc, `0x70a08231${encodeAddr(holder)}`), // balanceOf(address)
+  ]);
+  const val = (r) => (r.ok ? BigInt(r.result).toString() : null);
+  const holderUsdcBalance = val(balR);
+  let holderUsdcBalanceDelta = null;
+  if (item.personaAction === 'deposit' && holderUsdcBalance !== null) {
+    const approveSibling = allItems.find(
+      (it) => it.builder === 'persona-deposit' && it.persona === item.persona && it.personaAction === 'approve',
+    );
+    const baseline = approveSibling?.postCheck?.holderUsdcBalance;
+    if (baseline != null) holderUsdcBalanceDelta = (BigInt(holderUsdcBalance) - BigInt(baseline)).toString();
+  }
+  item.postCheck = {
+    at: new Date().toISOString(),
+    sharesOfHolder: val(sharesR),
+    totalShares: val(totalR),
+    navWad: val(navR),
+    idleUsdc: val(idleR),
+    holderUsdcBalance,
+    holderUsdcBalanceDelta,
+    readErrors: [sharesR, totalR, navR, idleR, balR].filter((r) => !r.ok).map((r) => r.reason),
+  };
 }
 
 /** The `arc-readback` item never signs: it is marked `done` once every wired-state read agrees,
@@ -207,7 +262,7 @@ async function checkArcReadback(item, itemsById, fetchImpl) {
  * Which item-type precondition applies, keyed off `item.builder`/`item.id` — the closed set this
  * queue currently has. Returns null (ready) or a reason string.
  */
-async function preconditionRefusal(item, itemsById, fetchImpl, castFn) {
+async function preconditionRefusal(item, itemsById, fetchImpl, castFn, root) {
   if (item.builder === 'arc-deploy' && item.id !== 'arc-readback') {
     if (typeof item.expectedNonce === 'number') {
       const r = await nonceGateRefusal(fetchImpl, RPC_BY_CHAIN[5042], item.from, item.expectedNonce);
@@ -240,6 +295,44 @@ async function preconditionRefusal(item, itemsById, fetchImpl, castFn) {
   }
   if (item.builder === 'finalize-12') {
     return finalizePreconditionRefusal(fetchImpl, item.to, item.proposalId);
+  }
+  if (item.builder === 'persona-deposit') {
+    // "A guard that can skip is a guard that will" — unlike arc-deploy's pre-existing branch above,
+    // a persona-deposit item with no usable expectedNonce REFUSES rather than silently skipping the
+    // nonce gate; the builder always sets a number, so a missing one means something is wrong.
+    if (typeof item.expectedNonce !== 'number') return 'item has no expectedNonce recorded — refusing rather than skipping the nonce gate';
+    const nonceRefusal = await nonceGateRefusal(fetchImpl, RPC_BY_CHAIN[5042], item.from, item.expectedNonce);
+    if (nonceRefusal) return nonceRefusal;
+    // The ordering gate runs before the other persona gates. Every gate must pass either way, so the
+    // order changes nothing about what is signable; it makes this call site reachable in a wiring
+    // test without a real seeded persona (V-398-r1: replacing it with `if (false)` stayed green).
+    if (item.personaAction === 'deposit' && item.orderingGate) {
+      const firstActivate = itemsById.get(item.orderingGate.firstActivateId);
+      const r = await personaOrderingGateRefusal(fetchImpl, {
+        vault: item.vault, firstPersonaFrom: item.orderingGate.firstPersonaFrom,
+        firstActivateDone: firstActivate?.status === 'done',
+        firstActivatePostCheck: firstActivate?.postCheck,
+      });
+      if (r) return r;
+    }
+    const seeded = seededPersonaRefusal(item.from, item.persona, root);
+    if (seeded) return seeded;
+    // What gets signed must match the declared intent (#329's lesson): before any chain read, and
+    // before the chain-read gates below trust item.vault/item.amountUsdcRaw.
+    const intent = personaIntentRefusal(item, root);
+    if (intent) return intent;
+    if (item.personaAction === 'approve' || item.personaAction === 'deposit') {
+      const r = await personaDepositPreconditionRefusal(fetchImpl, {
+        vault: item.vault, usdc: item.usdc, from: item.from, amountUsdcRaw: item.amountUsdcRaw,
+        checkAllowance: item.personaAction === 'deposit',
+      });
+      if (r) return r;
+    }
+    if (item.personaAction === 'activate') {
+      const r = await personaActivatePreconditionRefusal(fetchImpl, { vault: item.vault, from: item.from });
+      if (r) return r;
+    }
+    return null;
   }
   return null;
 }
@@ -309,8 +402,10 @@ export function withQueueLock(queuePath, fn) {
  * @param {typeof fetch} fetchImpl
  * @param {(args: string[]) => string} castFn
  * @param {string} [queuePath] override for tests only — the dashboard always uses the default
+ * @param {string} [root] repo root the persona gates read their declarations from — override for
+ *   tests only; undefined means each gate's own module-relative root
  */
-export async function buildSignQueueResponse(fetchImpl = fetch, castFn = defaultCast, queuePath = QUEUE_PATH) {
+export async function buildSignQueueResponse(fetchImpl = fetch, castFn = defaultCast, queuePath = QUEUE_PATH, root = undefined) {
   // The read-modify-write runs under the queue lock (see withQueueLock). Without it, a Sign POST
   // that lands while this poll awaits the chain was overwritten by this poll's stale copy: the
   // item went back to pending with no hash, its tx still mined, and the nonce gate then refused
@@ -345,7 +440,7 @@ export async function buildSignQueueResponse(fetchImpl = fetch, castFn = default
       if (!resolved.ok) blockedReason = `cannot resolve data: ${resolved.reason}`;
       else {
         resolvedData = resolved.resolved;
-        const pre = await preconditionRefusal(item, itemsById, fetchImpl, castFn);
+        const pre = await preconditionRefusal(item, itemsById, fetchImpl, castFn, root);
         if (pre) blockedReason = pre;
       }
     }

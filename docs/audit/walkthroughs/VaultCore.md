@@ -10,8 +10,10 @@
 > is **20,650 B**, **3,926 B** under the EIP-170 cap, and no longer on the critical path for
 > deployability. This line said 23,016 B / 1,560 B until 2026-09-13; that pair was true when the
 > Sprint 7 note was written and has been superseded by later work on the contract. The current
-> pair was measured with `forge build --sizes` on 2026-09-13. There is no mainnet deployment to
-> corroborate it against on chain today; the protocol is built for Arc, not yet deployed there.
+> pair was measured with `forge build --sizes` on 2026-09-13. The protocol is now deployed on Arc
+> mainnet (2026-09-24); `contracts/config/deployments/arc-mainnet.json`'s `firstVault.runtimeCodesize`
+> corroborates a vault built from this contract at 20,886 B on chain, though no byte-level
+> currency comparison against this exact walkthrough's measurement was performed for that record.
 
 ## Purpose
 

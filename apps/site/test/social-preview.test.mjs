@@ -143,10 +143,10 @@ test('favicon.svg is a geometric mark, not the retired comic illustration', () =
   // letter-shaped strokes. So "no letterforms" is not a string this file can assert — the honest,
   // checkable proxy is COMPLEXITY: an illustrated word needs dozens of `<path>` elements with
   // hundreds of coordinate pairs each (the retired file had four, one per fill colour, each with a
-  // `d` attribute several kilobytes long); the current non-pictorial mark
-  // (`apps/vaults-ui/src/chrome.css`'s `.brand-mark`, matched here) is two shapes: a background rect
-  // and one rounded-square fill. A <text> element would be the same category of regression even
-  // though it never existed here.
+  // `d` attribute several kilobytes long); the current mark (Threshold, owner-approved
+  // 2026-09-18 — Design/brand-threshold/favicon.svg) is five shapes, none of them a `<path>`: a
+  // background rect and the four course rects the mark itself is drawn from. A <text> element
+  // would be the same category of regression even though it never existed here.
   const svg = readFileSync(path.join(PUBLIC, 'favicon.svg'), 'utf8');
   assert.doesNotMatch(svg, /<text\b/, 'favicon.svg now contains a <text> element');
   const pathCount = (svg.match(/<path\b/g) ?? []).length;

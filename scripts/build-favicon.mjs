@@ -8,7 +8,7 @@
  * decades. So a browser or crawler that ignores `<link>` entirely still gets the OLD FAVICON, no
  * matter how correct the SVG is or how many pages link it. `favicon.svg` is the single source of
  * this icon's design; this script rasterizes it rather than a second, hand-maintained description
- * of the same rounded gradient square drifting from the first.
+ * of the same Threshold tile drifting from the first.
  *
  * WHY HEADLESS CHROME, SAME PATTERN AS build-og-card.mjs. No npm dependency: the browser already on
  * the machine renders the actual SVG file, at the actual sizes a browser tab needs, so what ships

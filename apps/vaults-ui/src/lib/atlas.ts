@@ -36,6 +36,11 @@ export {
   assembleLegSafety,
   assembleProposal,
   navPerShareWad,
+  planFactoryVaultCount,
+  planFactoryAllVaults,
+  assembleManifestCheck,
+  planClaimableEscrow,
+  assembleClaimableEscrow,
 } from '@atlas/chain-reader';
 export type {
   PlannedCall,
@@ -46,6 +51,9 @@ export type {
   AssembledLeg,
   AssembledProposal,
   AssembledVault,
+  ManifestState,
+  ClaimableEscrowEntry,
+  UnreadEscrowEntry,
 } from '@atlas/chain-reader';
 export { loading, empty, failed, ready, describeError } from '@atlas/freshness';
 export type { Fetched } from '@atlas/freshness';
@@ -68,6 +76,39 @@ export type { DepositStatus } from '@atlas/deposit-status';
 // signs at all, rather than re-deriving the frozen/Mode-F refusal a second time in the component.
 export { actions, vaultStatus } from '@atlas/vault-state';
 export type { VaultFacts, VaultActions, Verdict, VaultNotice, VaultStatusBadge } from '@atlas/vault-state';
+// The deposit/exit size-impact notice (#183) — the live constant-liquidity walk over the
+// cirBTC/USDC pool. `sizeForecast` is the one entry point MemberActions.tsx calls; the rest are
+// exported for chain-actions.ts's own use assembling `ticks` and `tokenInIsToken0` from live pool
+// reads. See apps/web/src/size-impact.mjs's own header for the method and why the edge is where
+// `liquidityNet` stops being a rounding error, not the nearest initialised tick.
+export {
+  MATERIALITY_BPS,
+  MAX_TICK_WALK,
+  tickBoundaries,
+  findMaterialEdge,
+  sizeForecast,
+  valueRawAtSpot,
+} from '@atlas/size-impact';
+export type { MaterialEdge, SizeForecast } from '@atlas/size-impact';
+
+// Seeded-address awareness (Decisions/Seed agent personas 2026-09-23.md, card 210) — labels a
+// disclosed address and gates any "organically stake-weighted" governance claim. See
+// apps/web/src/seeded.mjs's own header for why quorum math itself is never touched here.
+export { seededEntryFor, isSeeded, organicMemberBound, organicStakeWeightedClaim } from '@atlas/seeded';
+export type { SeededAddressEntry } from '@atlas/seeded';
+import type { SeededAddressEntry } from '@atlas/seeded';
+
+/**
+ * The public disclosure list itself (`docs/seeded-addresses.json`) — DATA, not one of the mirrored
+ * contract modules above, so it is not behind an `@atlas/*` alias: it is a plain static import,
+ * exactly as the task briefing calls for, and it is read from the one repo-root location the
+ * decision doc names rather than a copy kept inside this app. `resolveJsonModule` (tsconfig.json)
+ * and Vite's native JSON handling (vite.config.ts) are both required for this line to resolve.
+ * Ships with an empty `addresses` array until the owner actually funds a persona wallet.
+ */
+import seededAddressesDoc from '../../../../docs/seeded-addresses.json';
+export const SEEDED_ADDRESSES: readonly SeededAddressEntry[] =
+  (seededAddressesDoc as { readonly addresses: readonly SeededAddressEntry[] }).addresses;
 
 /**
  * A basket leg as `chain-reader.mjs`'s `assembleLeg` shapes it, plus the per-leg safety tri-state
@@ -173,9 +214,24 @@ export interface Vault {
    * wrong from rendering nothing. `App.tsx` does not display a capacity-cap row for that reason.
    */
   readonly holderCount: number;
+  /**
+   * `null` when unread (card 210) — "creator EXCLUDED" (VaultCore.sol:107), unlike `holderCount`
+   * above ("creator included", VaultCore.sol:128). The one figure safe to hand
+   * `organicMemberBound`/`organicStakeWeightedClaim` (`seeded.mjs`) as its base; `holderCount`
+   * itself is not, since the vault's creator is the RWAlly team's own Safe and is never on the
+   * seeded-persona list.
+   */
+  readonly nonCreatorMemberCount: number | null;
   readonly basket: readonly BasketLeg[];
   readonly proposal: Proposal | null;
   readonly governanceConfig?: Record<string, unknown> | null;
+  /**
+   * Card 211 (A2, frontend security pass) — is THIS address actually on `VaultFactory.allVaults`,
+   * not merely a well-formed address configured in `VITE_VAULT_ADDRESSES`. `'unknown'` when the
+   * manifest could not be read (including when `VITE_FACTORY_ADDRESS` is unset) — treated the same
+   * as `'not-found'` everywhere Sign is gated, never the same as `'verified'`.
+   */
+  readonly manifestVerified: 'verified' | 'not-found' | 'unknown';
 }
 
 export interface WalletPosition {

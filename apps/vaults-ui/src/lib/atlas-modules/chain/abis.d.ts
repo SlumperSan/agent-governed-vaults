@@ -13,3 +13,8 @@ export declare const CHAINLINK_ORACLE_VIEWS: Abi;
 export declare const AGGREGATOR_V3_VIEWS: Abi;
 export declare const TOKEN_SAFETY_VIEWS: Abi;
 export declare const OPERATOR_REGISTRY_VIEWS: Abi;
+/** Card 211 (A2) — `allowSubVaults`/`vaultCount`/`allVaults`, the manifest read. */
+export declare const VAULT_FACTORY_VIEWS: Abi;
+// The size-impact notice's pool reads (#183) — chain-actions.ts's readPoolSizeImpactInputs.
+export declare const UNISWAP_V3_FACTORY_VIEWS: Abi;
+export declare const UNISWAP_V3_POOL_VIEWS: Abi;

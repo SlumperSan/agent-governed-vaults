@@ -23,6 +23,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPublicClient, createWalletClient, custom, http, type PublicClient, type WalletClient } from 'viem';
 import { TARGET_CHAIN } from './chains';
+import { isSanctionedAddress } from './sanctions';
 
 /** EIP-1193. Only the surface this app calls. */
 export interface Eip1193Provider {
@@ -61,6 +62,14 @@ export interface WalletState {
   readonly chainId: number | null;
   readonly providers: readonly DiscoveredProvider[];
   readonly error: string | null;
+  /**
+   * Card 213: whether `address` matches OFAC's SDN digital-currency address list. Read-only chain
+   * data keeps flowing when this is true — this Interface never hides a member's own position —
+   * but `chain-actions.ts`'s `simulateThenWrite` refuses every signed write regardless of whether
+   * a caller checks this flag first, so it is a courtesy for the UI to surface early, not the
+   * enforcement point itself.
+   */
+  readonly sanctioned: boolean;
   /** Always available, independent of connection — chain reads need no wallet. */
   readonly publicClient: PublicClient;
   readonly walletClient: WalletClient | null;
@@ -85,6 +94,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [chainId, setChainId] = useState<number | null>(null);
   const [status, setStatus] = useState<WalletStatus>('disconnected');
   const [error, setError] = useState<string | null>(null);
+  const [sanctioned, setSanctioned] = useState(false);
 
   // EIP-6963 discovery. Announcements can arrive any time (a wallet extension finishing its own
   // init), so the listener stays mounted for the app's lifetime rather than firing once.
@@ -123,6 +133,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const accounts = args[0] as string[] | undefined;
       const next = accounts?.[0] ?? null;
       setAddress(next);
+      // Card 213: re-checked on every account switch, not just the initial connect — a wallet
+      // extension can swap the active account without a fresh `connect()` call.
+      setSanctioned(isSanctionedAddress(next));
       if (!next) setStatus('disconnected');
     };
     const onChain = (...args: unknown[]) => {
@@ -157,6 +170,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const first = accounts?.[0];
       if (!first) throw new Error('Wallet returned no account.');
       setAddress(first);
+      // Card 213: checked against the vendored OFAC SDN address list at the moment a wallet
+      // connects. Connection itself is never refused — this Interface does not hide a member's own
+      // read-only position — but `chain-actions.ts`'s simulateThenWrite refuses every signed write
+      // independently of this flag, so a caller bypassing the UI state still cannot sign.
+      setSanctioned(isSanctionedAddress(first));
       const hexChain = await provider.request({ method: 'eth_chainId' });
       const chain = hexToNumber(hexChain);
       setChainId(chain);
@@ -164,6 +182,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       setStatus('disconnected');
       setAddress(null);
+      setSanctioned(false);
       setError(e instanceof Error ? e.message : String(e));
     }
   }, [providers]);
@@ -176,6 +195,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setChainId(null);
     setStatus('disconnected');
     setError(null);
+    setSanctioned(false);
   }, []);
 
   const switchToTarget = useCallback(async () => {
@@ -216,7 +236,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [activeProvider]);
 
   const value: WalletState = {
-    status, address, chainId, providers, error, publicClient, walletClient, connect, disconnect, switchToTarget,
+    status, address, chainId, providers, error, sanctioned, publicClient, walletClient, connect, disconnect, switchToTarget,
   };
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }

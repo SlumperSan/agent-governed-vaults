@@ -89,12 +89,15 @@ const clean = (line) => line.replace(/\s+\[[^\]]*\]$/, '').trim();
  * Starts `anvil --fork-url <BASE_SEPOLIA_RPC> --chain-id 84532` in the background and waits for it
  * to answer. Returns `{ rpcUrl, stop() }`. `stop()` is idempotent and kills the whole process tree.
  */
-export async function startFork({ port, forkUrl = process.env.BASE_SEPOLIA_RPC ?? 'https://sepolia.base.org' } = {}) {
+// Same fork source and retry settings as scripts/test/lib/safe-fork-chain.mjs (card 215): sepolia.base.org
+// rate-limits anvil's lazy state fetches under CI load.
+export async function startFork({ port, forkUrl = process.env.BASE_SEPOLIA_RPC ?? 'https://base-sepolia.gateway.tenderly.co' } = {}) {
   const bin = requireBin('anvil');
   const { spawn } = await import('node:child_process');
   const child = spawn(
     bin,
-    ['--fork-url', forkUrl, '--chain-id', String(BASE_SEPOLIA_CHAIN_ID), '--port', String(port), '--silent'],
+    ['--fork-url', forkUrl, '--chain-id', String(BASE_SEPOLIA_CHAIN_ID), '--port', String(port), '--silent',
+      '--retries', '10', '--fork-retry-backoff', '1000', '--timeout', '60000'],
     { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true },
   );
   let stderr = '';

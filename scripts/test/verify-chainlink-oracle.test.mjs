@@ -1009,3 +1009,89 @@ test('no config or evidence note asserts an owner decision and denies it in the 
     'the fourth instance: a summary field that still counts a settled decision as open',
   );
 });
+
+// --- #171 end to end: an RPC 429 must not read as a failed check --------------
+//
+// Before this fix, `castRetry` was a blind one-shot retry: any second failure -- a rate limit
+// exactly as much as a genuine revert -- surfaced as `null`, which every call site recorded as a
+// FAILED check ("do NOT deploy the oracle"). A verifier that cannot tell "I could not check" from
+// "the check failed" produces a false red, and a false red is how a real red gets ignored.
+//
+// Same CAST=node + NODE_OPTIONS=--require stub mechanism as `runVerifier` above, extended to answer
+// `code` (so the feed passes the code check) and to fail every `call … description()…` with 429
+// wording -- `classifyCallError`'s own measured HTTP-429 text -- on every attempt, so the retries in
+// `castRetry` are exhausted and `TransportError` is what reaches `runAssetChecks`.
+
+/** Run the verifier with `code` and `chain-id` stubbed, and every `description()` call 429ing. */
+function runVerifierWith429() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chainlink-429-'));
+  const stub = path.join(dir, 'stub-cast.cjs');
+  fs.writeFileSync(
+    stub,
+    [
+      `'use strict';`,
+      `const p = require('node:path');`,
+      `const sub = p.basename(String(process.argv[1] ?? ''));`,
+      `const rest = process.argv.slice(2);`,
+      `if (sub === 'chain-id') { console.log('4663'); process.exit(0); }`,
+      `if (sub === 'code') { console.log('0x6001'); process.exit(0); }`,
+      `if (sub === 'call' && String(rest[1] ?? '').startsWith('description()')) {`,
+      `  console.error('HTTP request failed. Request exceeds defined limit. status: 429');`,
+      `  process.exit(1);`,
+      `}`,
+      `if (!/[.](mjs|cjs|js)$/.test(sub)) {`,
+      `  console.error('stub-cast: unexpected invocation ' + [sub, ...rest].join(' '));`,
+      `  process.exit(3);`,
+      `}`,
+      '',
+    ].join('\n'),
+  );
+  const cfg = path.join(dir, 'cfg.json');
+  fs.writeFileSync(
+    cfg,
+    JSON.stringify({
+      chainId: 4663,
+      chainlinkOracle: {
+        sequencerUptimeFeed: '',
+        assets: [{ symbol: 'WETH', feed: '0x1111111111111111111111111111111111111111', feedDescriptionOnChain: 'ETH / USD' }],
+      },
+    }),
+  );
+  const env = { ...process.env, CONFIG: cfg, CAST: process.execPath };
+  delete env.BASE_MAINNET_RPC;
+  delete env.BASE_RPC;
+  const r = spawnSync(process.execPath, [VERIFIER], {
+    encoding: 'utf8',
+    env: { ...env, NODE_OPTIONS: `--require "${stub.split(path.sep).join('/')}"` },
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+  return r;
+}
+
+test('a persistent RPC 429 on one feed is reported as RPC-UNAVAILABLE, never as FAIL', () => {
+  const r = runVerifierWith429();
+  assert.match(r.stdout, /RPCUNAVAILABLE.*WETH: feed checks/, `expected an RPCUNAVAILABLE row. stdout: ${r.stdout}`);
+  assert.doesNotMatch(
+    r.stdout,
+    /FAIL .*WETH/,
+    'a transport failure must never be printed as a FAILED check -- that is the false red #171 exists to remove',
+  );
+});
+
+test('a persistent RPC 429 exits 3 (could not fully verify), never 1 (do not deploy) or 0 (clean)', () => {
+  const r = runVerifierWith429();
+  assert.equal(r.status, 3, `expected exit 3 for "not a confirmed defect, re-run". stdout: ${r.stdout} stderr: ${r.stderr}`);
+});
+
+test('the summary line names the RPC-unavailable count separately from FAILED and DRIFT', () => {
+  const r = runVerifierWith429();
+  assert.match(r.stdout, /1 RPC-UNAVAILABLE \(not a defect — re-run/);
+  assert.doesNotMatch(r.stdout, /FAILED/);
+});
+
+test('one feed 429ing does not stop the sweep from reaching the next check row', () => {
+  // The code check for this same feed runs BEFORE description() and must still be recorded --
+  // proof the whole run did not abort, only the rest of this one feed's checks.
+  const r = runVerifierWith429();
+  assert.match(r.stdout, /PASS  WETH: feed has code/);
+});

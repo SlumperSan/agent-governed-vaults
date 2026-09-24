@@ -87,6 +87,13 @@ function buildHarnessOnce() {
     cwd: APP,
     encoding: 'utf8',
     windowsHide: true,
+    // `chains.ts`'s TARGET_CHAIN default flipped to Arc mainnet with the Arc cutover
+    // (`.env.example`), but this harness forks Base Sepolia (BASE_SEPOLIA_CHAIN_ID above) and every
+    // address it reads comes from `contracts/config/base-sepolia.json` — it must keep building
+    // against that chain regardless of the app's own production default, or the walletClient this
+    // bundle constructs (`chain: TARGET_CHAIN`) would target chain 5042 against a fork answering
+    // 84532, and the wrong-chain-id mutation test below would no longer be testing a mutation.
+    env: { ...process.env, VITE_TARGET_CHAIN: 'base-sepolia' },
   });
   if (r.status !== 0) {
     throw new Error(`vite build --ssr ui-smoke.ts failed (exit ${r.status}):\n${r.stdout}\n${r.stderr}`);
