@@ -152,13 +152,22 @@ export const FEE_BYPASSES_OPERATOR = [
 // a claim split by inline markup — "Exits pay <strong>USDC</strong>." — still reads as one run of
 // text before either regex sees it.
 // ---------------------------------------------------------------------------------------------
-// The word-gap unit is `[\w$.,%]+`, not bare `\w+`: a bare `\w+` cannot cross a decimal point, so
-// "You will receive 140.50 USDC" (a REAL instance of the banned shape) silently failed to match
-// with `\w+` — the "." in "140.50" breaks the token and the gap quantifier has nowhere to
-// continue from. Rendered money amounts routinely carry a decimal, a thousands comma, or a
-// leading "$", so the gap has to tolerate them or the guard misses exactly the sentences a member
-// reads at the moment they are deciding whether to trust the number.
-const GAP = '[\\w$.,%]+';
+// The word-gap unit is `[\w$.,%{}()]+`, not bare `\w+`: a bare `\w+` cannot cross a decimal
+// point, so "You will receive 140.50 USDC" (a REAL instance of the banned shape) silently failed
+// to match with `\w+` — the "." in "140.50" breaks the token and the gap quantifier has nowhere
+// to continue from. Rendered money amounts routinely carry a decimal, a thousands comma, or a
+// leading "$", so the gap has to tolerate them.
+//
+// `{}()` were added second, and the reason is worth recording because the first version already
+// looked complete: in the SOURCE FILES this guard walks, a rendered amount is not usually a
+// literal number at all — it is an interpolation, `You will receive {usdcOut} USDC.` in JSX or
+// `` `Exits pay ${fmt(x)} USDC` `` in a template literal. Verified with `node` before this was
+// added: neither matched ANY shape in EXIT_PAYS_USDC_UNCONDITIONALLY, because `{`, `}`, `$`
+// (already covered) and `(` `)` broke the gap exactly the way `.` did for decimals. `$` alone is
+// not enough for a template literal — `${fmt(x)}` needs `{`, `(`, `)` and `}` all four to stay
+// inside one gap token. This is not a hypothetical: it is the shape a real Engineering plant would
+// take, and the mutation test below exercises exactly that string in a real component.
+const GAP = '[\\w$.,%{}()]+';
 export const EXIT_PAYS_USDC_UNCONDITIONALLY = [
   new RegExp(`\\bexits?\\b(?:\\s+${GAP}){0,4}\\s+(?:pay|pays|paying|paid)\\b(?:\\s+${GAP}){0,3}\\s+(?:in\\s+|out\\s+in\\s+)?USDC\\b`, 'gi'),
   new RegExp(`\\b(?:redeem|redeems|redeeming|redeemed|redemptions?|withdraw|withdraws|withdrawing|withdrawn|withdrawals?)\\b(?:\\s+${GAP}){0,4}\\s+(?:for|in|into|to)\\s+USDC\\b`, 'gi'),

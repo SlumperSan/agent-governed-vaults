@@ -322,6 +322,12 @@ test('probe: shape A catches the wide, unqualified claim and spares the qualifie
     'Redemptions are paid in USDC.',
     'This is a USDC-settled exit.',
     'You will receive 140.50 USDC for your shares.',
+    // INTERPOLATED AMOUNT: how a rendered figure actually appears in TSX/JS source, not as a
+    // literal number — see GAP's own note in claims-shapes.mjs. This is the shape a real
+    // Engineering plant would take (`<p>You will receive {usdcShort(preview.usdcPay)} USDC.</p>`
+    // in MemberActions.tsx), simplified to the minimum that exercises the same gap character.
+    'You will receive {usdcOut} USDC.',
+    'Exits pay ${fmt(x)} USDC',
     // Queuing is a TIMING mechanic (Mode F) and says nothing about which currency pays — this is
     // still the unconditional claim, not a qualified one (see EXIT_USDC_QUALIFIER's header note).
     'Exits are queued and pay USDC.',
