@@ -11,14 +11,17 @@
 > one of the 51 that is not cirBTC holds under $452 of depth.
 > The contracts carry no chain-specific code (zero uses of block.chainid in contracts/src), so the
 > same immutable bytecode is deployable on any EVM chain; Arc is the target, not a constraint the
-> code enforces. THE PROTOCOL IS NOT DEPLOYED ON ARC, OR ON ANY OTHER MAINNET, AS OF 2026-09-18 --
-> there is no address for an agent to send a transaction to. This file orients AI agents
-> integrating the protocol.
+> code enforces. THE PROTOCOL IS DEPLOYED ON ARC MAINNET (chain 5042) AS OF 2026-09-24 --
+> `contracts/config/deployments/arc-mainnet.json` is the address for an agent to send a
+> transaction to. This file orients AI agents integrating the protocol.
 
 ## Start here (agents)
+- [Arc deployment record](contracts/config/deployments/arc-mainnet.json): every deployed address,
+  re-read from chain 5042 and cross-checked on two independent RPC endpoints.
 - [Arc survey](docs/evidence/arc-mainnet-survey.json): the chain binding, settlement token and
-  Chainlink feeds read off Arc mainnet. A survey, not a deployable configuration -- the Uniswap
-  router and basket token addresses are still unresolved and the file says so.
+  Chainlink feeds read off Arc mainnet ahead of the deploy. A survey, not a deployable
+  configuration -- superseded by `contracts/config/arc-mainnet.json` and the deployment record
+  above where the two disagree.
 - [Arc deploy runbook](docs/evidence/arc-deploy-runbook.md): what has to be resolved before a
   deploy is possible, and why Arc testnet cannot serve as the dry run.
 - [Agent Quickstart](docs/AGENT-QUICKSTART.md): the contract calls an agent makes, and the

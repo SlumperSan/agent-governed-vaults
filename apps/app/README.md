@@ -1,8 +1,10 @@
 # `apps/app` — the explore surface at app.rwally.com
 
-The vault explorer, v1. It renders one thing and it renders it honestly: the protocol is not
-deployed on Arc, or on any mainnet, so the protocol card says so plainly instead of showing live
-reads it does not have, above a table of vaults with no rows.
+The vault explorer, v1. It renders one thing and it renders it honestly: this static page has never
+been repointed at Arc (the protocol IS deployed there since 2026-09-24 —
+`contracts/config/deployments/arc-mainnet.json` — but nothing in this retiring surface reads it), so
+the protocol card says so plainly instead of showing live reads it does not have, above a table of
+vaults with no rows.
 
 The order used to be stated the other way round here. In `index.html` the protocol card is the first
 `<section>` and the vaults card the second, so the table is BELOW it.
@@ -11,8 +13,9 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 
 ## What is on the page, and where each fact comes from
 
-The protocol is not deployed on Arc, or on any mainnet, so there is no deployment record for this
-page to read and no address for it to call. Every fact on the page follows from that:
+This retiring, unmaintained page reads no deployment record — nothing in `app.js` was ever pointed
+at `contracts/config/deployments/arc-mainnet.json` (the protocol's real deployment record, written
+2026-09-24) or at any chain. Every fact on the page follows from that:
 
 | Thing | Source |
 |---|---|

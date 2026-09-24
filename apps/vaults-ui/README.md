@@ -29,9 +29,10 @@ the allocator front end's OWN test fixtures and nothing in this workspace's `src
 
 **Three env vars, build-time only** (Vite inlines `import.meta.env.*` — a served page cannot read
 them at runtime): `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_VAULT_ADDRESSES` (comma-separated). Unset —
-which is the state of a production build today, since nothing from this repository is deployed on
-Arc mainnet yet (`contracts/config/arc-mainnet.json`'s own `status` field says so) — and the page
-renders an honest "not configured" state, never a bundled sample. `cp .env.example
+which is the state of a production build today, since this app's own env is not yet pointed at Arc
+(the protocol itself IS deployed on Arc mainnet since 2026-09-24 —
+`contracts/config/deployments/arc-mainnet.json` — but nothing here has been reconfigured to read it
+yet) — and the page renders an honest "not configured" state, never a bundled sample. `cp .env.example
 .env.development.local` sets all three against **Base Sepolia**, the one live-read path this
 repository can prove end to end right now (`contracts/config/deployments/base-sepolia.json`'s smoke
 vault, with nothing to fill in — see the template's own header), so `npm run dev` exercises real
