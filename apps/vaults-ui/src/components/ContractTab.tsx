@@ -60,14 +60,11 @@ interface Props {
  * literal-copy hazard `test/btc-exposure-disclosure.test.mjs` already guards for
  * `MemberActions.tsx`. `test/contract-tab.test.mjs` carries the same pin for this file.
  *
- * OPEN COPY QUESTIONS (none of these are guessed public-facing copy; see this PR's body):
- *  - Row 6's live line for a CONFIRMED paused/blacklisted leg (as opposed to unread) has no string
- *    in the copy doc, which only gives the reassurance sentence. This renders the same plain,
- *    factual wording `Holdings.tsx`'s existing "Safety" column already ships, rather than inventing
- *    new alarm copy.
- *  - Row 6b's UNREAD line ("could not check this token's escrow balance") is not in the copy doc
- *    either — `Findings/2026-09-21-row-6b-collapses-unread-into-zero.md`'s disposition names the
- *    shape ("its own visible … line") but not the exact sentence. Plain and factual, not alarming.
+ * COPY SOURCE: `Decisions/app-workspace-copy-2026-09-18.md` (Product), including Row 3's correction
+ * and the Row 6 confirmed-state and Row 6b unread lines Product answered on #434 (2026-09-24). Row 3
+ * no longer says nothing can halt deposits or exits: `navWad` reverts on a stale feed, and deposits
+ * and exits revert with it, as the exit screen already says (#388). Row 6 says "its issuer", never
+ * the issuer's name (a hard constraint in the copy doc).
  */
 export function ContractTab({ vault }: Props) {
   const { status, address, publicClient } = useWallet();
@@ -291,8 +288,8 @@ export function ContractTab({ vault }: Props) {
       {connected && unread.length > 0
         ? unread.map((u) => (
             <p className="note tag-warn" role="status" key={u.asset}>
-              {symbolFor(u.asset)}: could not check your escrowed balance for this token. This is
-              not evidence you have nothing — it means the read did not complete.
+              {symbolFor(u.asset)}: we could not check your escrowed balance for this token just now.
+              That is not the same as having nothing to claim. Reload to check again.
             </p>
           ))
         : null}
@@ -321,8 +318,12 @@ export function ContractTab({ vault }: Props) {
         No contract can be replaced, and no contract&rsquo;s code can change after deployment.
       </p>
 
-      <h3>3. No pause</h3>
-      <p className="note">Nothing in the protocol can halt deposits, exits or voting.</p>
+      <h3>3. No pause switch</h3>
+      <p className="note">
+        No contract has a pause function, and no address — ours included — can halt deposits, exits
+        or voting. The contracts do stop on their own when the price feed goes stale: deposits and
+        exits revert until it answers again.
+      </p>
 
       <h3>4. Deploy-time wiring is locked once</h3>
       <p className="note">
@@ -359,12 +360,22 @@ export function ContractTab({ vault }: Props) {
         <p className="note dim">Read now: not paused, and this vault is not blacklisted.</p>
       ) : null}
       {leg && (leg.paused === 'paused' || leg.blacklisted === 'blacklisted') ? (
-        <p className="note tag-warn" role="status">
-          Read now: {leg.symbol || shortAddress(leg.address)} is
-          {leg.paused === 'paused' ? ' paused' : ''}
-          {leg.paused === 'paused' && leg.blacklisted === 'blacklisted' ? ' and' : ''}
-          {leg.blacklisted === 'blacklisted' ? ' blacklisted for this vault' : ''}.
-        </p>
+        <>
+          {leg.paused === 'paused' ? (
+            <p className="note tag-warn" role="status">
+              Read now: cirBTC is paused by its issuer. Exiting returns your share of what the vault
+              holds — cirBTC, not cash — whether or not anything is paused. A pause does not reduce
+              what you get; it only means the cirBTC waits as a claim instead of arriving now.
+            </p>
+          ) : null}
+          {leg.blacklisted === 'blacklisted' ? (
+            <p className="note tag-warn" role="status">
+              Read now: this vault&rsquo;s address is blacklisted on cirBTC. While that lasts the vault
+              cannot send cirBTC, so the cirBTC part of an exit waits as a claim instead of arriving
+              now. It does not reduce what you get.
+            </p>
+          ) : null}
+        </>
       ) : null}
     </section>
   );
