@@ -1221,6 +1221,12 @@ document.getElementById('sq-items').addEventListener('click', async (e) => {
     // Omit the 'to' key entirely for a CREATE — a present 'to: null' is not the same shape as an
     // absent key to every wallet's own eth_sendTransaction validation.
     if (item.to !== null) txParams.to = item.to;
+    // Gas = the node's own estimate x 1.25. An exact estimate has underrun a real activate() and
+    // run out of gas (#402, traced with gasUsed == gasLimit). Without a gas field MetaMask's estimate
+    // decides, and a revert still burns the gas (Security, #402). This buffers the limit only: the
+    // signed from/to/value/data are unchanged, and those are all the server's receipt check compares.
+    var gasEstimate = await window.ethereum.request({ method: 'eth_estimateGas', params: [txParams] });
+    txParams.gas = '0x' + (BigInt(gasEstimate) * 125n / 100n).toString(16);
     var hash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [txParams] });
     var resp = await fetch('/api/sign-queue/' + encodeURIComponent(id) + '/hash', {
       method: 'POST', headers: { 'content-type': 'application/json' },
