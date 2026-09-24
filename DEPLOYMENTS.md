@@ -86,8 +86,13 @@ command lives with the owner rather than on this page for the reason above: the 
 - `connect-src` names the one RPC origin this app reads, and must change in the SAME commit as any
   code that calls a different one — or every read is refused by the browser and the page renders
   empty with no build-time warning.
-- No `functions/` directory, and one must not appear casually: Pages bundles Functions from
-  `./functions` relative to the directory wrangler runs in, not from inside the uploaded assets.
+- `functions/` holds one Function, `_middleware.js` — the sanctions-jurisdiction geofence (card
+  212), refusing a comprehensively-sanctioned request with a plain HTTP 451 before anything else
+  runs. It imports nothing and uses no Node built-in. Pages bundles Functions from `./functions`
+  relative to the directory wrangler runs in, not from inside the uploaded assets, which is why it
+  sits beside this file's own `wrangler.toml` rather than under `public/` or `dist/` — see that
+  file's own header for the "must not appear casually" history this directory used to be an
+  exception to.
 
 See [`apps/vaults-ui/wrangler.toml`](apps/vaults-ui/wrangler.toml)'s own header, which is the source
 for every line above.
