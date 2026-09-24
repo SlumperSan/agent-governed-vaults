@@ -65,13 +65,44 @@ export function balanceOf(rpcUrl, token, address) {
   return BigInt(callOne(rpcUrl, token, 'balanceOf(address)(uint256)', address));
 }
 
-/** `cast send ... --json`, parsed. Throws with the real revert text on failure — callers that
- *  expect a specific revert use `trySend` instead. */
+/**
+ * `cast send ... --json`, parsed. Throws with the real revert text on failure — callers that
+ * expect a specific revert use `trySend` instead.
+ *
+ * GAS LIMIT: explicitly estimated via `cast estimate` and sent with a 25% buffer, rather than
+ * trusting `cast send`'s own zero-buffer internal estimate. Found empirically, not theoretically:
+ * a real `activate()` call reverted `OutOfGas` with `gasUsed === gasLimit` exactly at the
+ * `eth_estimateGas` figure (`cast tx <hash> gas`), traced with `cast run` while the fork was still
+ * alive. `eth_estimateGas` on this fork occasionally underestimates a call whose gas cost branches
+ * on state (`activate`'s `ts == 0 ? … : navWad()` path in `_mintShares`); a fixed buffer is the
+ * same fix `forge`/most tooling apply by default and `cast send` alone does not.
+ */
 export function send(rpcUrl, privateKey, to, sig, args) {
-  const out = cast(['send', to, sig, ...args.map(String), '--rpc-url', rpcUrl, '--private-key', privateKey, '--json']);
+  const argsStr = args.map(String);
+  let gasArgs = [];
+  try {
+    const est = BigInt(clean(cast(['estimate', to, sig, ...argsStr, '--rpc-url', rpcUrl])));
+    gasArgs = ['--gas-limit', String((est * 125n) / 100n)];
+  } catch { /* best-effort: fall through to cast send's own (zero-buffer) estimate if this fails */ }
+  const out = cast(['send', to, sig, ...argsStr, ...gasArgs, '--rpc-url', rpcUrl, '--private-key', privateKey, '--json']);
   const receipt = JSON.parse(out.slice(out.indexOf('{')));
   if (receipt.status !== '0x1' && receipt.status !== 1) {
-    throw new Error(`${sig}: transaction reverted (${receipt.transactionHash})`);
+    // A revert that reaches HERE (rather than throwing inside `cast(...)` at gas-estimation time,
+    // the way a static-state revert like GS013/StaleOracle does) means `eth_estimateGas` passed
+    // and the MINED execution then failed — gas exhaustion against too-tight an estimate, or a
+    // block-environment change between estimation and mining. Both are diagnosable from the trace
+    // while the fork is still alive; a bare tx hash is not. Best-effort: never let a diagnostic
+    // failure here mask the real error.
+    let detail = '';
+    try {
+      const gasLimit = clean(cast(['tx', receipt.transactionHash, 'gas', '--rpc-url', rpcUrl]));
+      detail += ` gasUsed=${receipt.gasUsed} gasLimit=${gasLimit}`;
+    } catch { /* best-effort */ }
+    try {
+      const trace = cast(['run', receipt.transactionHash, '--rpc-url', rpcUrl]);
+      detail += `\ntrace (tail):\n${trace.split('\n').slice(-25).join('\n')}`;
+    } catch (e) { detail += `\n(cast run failed: ${/** @type {Error} */ (e).message})`; }
+    throw new Error(`${sig}: transaction reverted (${receipt.transactionHash})${detail}`);
   }
   return receipt;
 }

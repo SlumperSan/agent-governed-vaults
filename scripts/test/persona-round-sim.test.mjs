@@ -42,9 +42,14 @@
  * Safe holding exactly 0 shares throughout — asserted explicitly, not merely assumed.
  *
  * PERSONA POLICIES (`scripts/lib/persona-policies.mjs`) ARE PURE FUNCTIONS, CALLED FOR EVERY
- * DECISION. Nothing here hardcodes "Ballast votes yes" — every deposit, vote and exit decision
- * below is the return value of a `decide(readout)`-shaped policy function, fed a readout this file
- * assembles from real chain reads. No LLM call anywhere in this suite.
+ * DECISION A PERSONA ACTUALLY MAKES. Nothing here hardcodes "Ballast votes yes" — every vote
+ * (Ballast, Momentum), Momentum's own propose and exit decisions, Ballast's deposit sizing, and
+ * Contrarian's/Auditor's publish decisions are the return value of a `decide(readout)`-shaped
+ * policy function, fed a readout this file assembles from real chain reads. What is NOT a persona
+ * decision, and is not routed through one: every OTHER deposit (the spec's own scripted "100 USDC,
+ * exactly" for every member) and Ballast's own exit in Vault 2 (its Mode-F queue/settle path is
+ * the edge case under test, not a choice Ballast's policy makes). No LLM call anywhere in this
+ * suite.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -168,13 +173,16 @@ test('Vault 3: a frozen oracle (warped past the heartbeat) blocks a second-mint 
   assert.ok(chain.sharesOf(fork3.rpcUrl, vault3, member.address) > 0n, 'the first deposit, oracle-independent, must succeed');
   assert.doesNotThrow(() => chain.oraclePriceWad(fork3.rpcUrl, dep3.aggregator, WETH), 'sanity: the oracle must read as fresh at this point, before any deliberate warp');
 
-  // `navWad()` only calls `oracle.priceWad(asset)` for a basket asset whose `assetBalance[asset]`
-  // is nonzero (VaultCore.sol's NAV walk) — with a purely-idle-USDC vault, the SECOND deposit's
-  // `_mintShares -> navWad()` call would never touch the oracle at all, and the freeze below would
-  // block nothing. `seedAssetBalance` is a deliberate, labelled fork adaptation (its own doc
-  // comment in persona-fork-chain.mjs) that gives this vault a real WETH holding, internally AND
-  // in real token custody, WHILE THE ORACLE IS STILL FRESH, so navWad() genuinely depends on it
-  // from here on.
+  // `VaultCore._deposit` computes `navWad()` UNCONDITIONALLY on every call (VaultCore.sol:413,
+  // ahead of the capacity-cap branch — not only when a cap is set), so the SECOND deposit below
+  // will call it regardless. But `navWad()`'s own asset loop only calls `oracle.priceWad(asset)`
+  // for a basket asset whose `assetBalance[asset]` is nonzero — with a purely-idle-USDC vault that
+  // inner call never touches the oracle at all, and the freeze below would block nothing.
+  // `seedAssetBalance` is a deliberate, labelled fork adaptation (its own doc comment in
+  // persona-fork-chain.mjs) that gives this vault a real WETH holding, internally AND in real
+  // token custody, WHILE THE ORACLE IS STILL FRESH, so navWad() genuinely depends on it from here
+  // on. The revert this test proves happens inside `_deposit` itself (:413), before the
+  // pending-vs-immediate branch is even reached — not inside `_mintShares`.
   const wethUnits = 1n * 10n ** 18n; // 1 WETH
   dealErc20(fork3.rpcUrl, WETH, vault3, wethUnits);
   chain.seedAssetBalance(fork3.rpcUrl, vault3, WETH, wethUnits);
