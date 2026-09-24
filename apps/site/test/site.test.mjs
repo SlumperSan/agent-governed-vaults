@@ -172,6 +172,12 @@ t('the site states the deployment status the deployment record gives it', () => 
   const lower = all.toLowerCase();
   const stale = NOT_DEPLOYED_SHAPES.filter((shape) => lower.includes(shape));
   assert.deepEqual(stale, [], `the deployment record names a live vault, but the site still says: ${stale.join(' | ')}`);
+  // Stating a deployment is not inviting anyone into it. skills/rwally-claims-contract/SKILL.md
+  // keeps the OUTCOME/INVITATION shapes banned after the flip; "a vote is live" is mechanism, so the
+  // shapes below are anchored to the product, not to the bare word.
+  const invite = ['vault is live', 'is live on', 'goes live', 'now trading', 'launched on', 'mainnet is up']
+    .filter((shape) => lower.includes(shape));
+  assert.deepEqual(invite, [], `a deployment is stated as an invitation: ${invite.join(' | ')}`);
 });
 
 t('the product phrase survives as ONE contiguous string in the rendered HTML', () => {

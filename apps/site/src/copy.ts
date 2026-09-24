@@ -71,7 +71,7 @@ export const HOME = {
     eyebrow: 'Four steps',
     headline: 'Four steps, and the second one is yours to come back for.',
     notice:
-      'The first RWAlly vault is live: the cirBTC Vault, on Arc, at ' +
+      'The first RWAlly vault is deployed on Arc: the cirBTC Vault, at ' +
       '0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6. Its contracts cannot be changed. A deposit ' +
       'there is real USDC — read the risks before you put anything in.',
     items: [
@@ -130,7 +130,7 @@ export const HOME = {
 
   cta: {
     headline: 'Have a look around.',
-    sub: 'The cirBTC Vault is live on Arc. Connect a wallet to see it as it stands on-chain — and ' +
+    sub: 'The cirBTC Vault is deployed on Arc. Connect a wallet to see it as it stands on-chain — and ' +
       'read the risks before you put anything in.',
     label: 'Open the app',
   },
@@ -229,11 +229,11 @@ export const ABOUT = {
   ],
   status: {
     eyebrow: 'Where it stands',
-    headline: 'Built, tested, and live on Arc.',
+    headline: 'Built, tested, and deployed on Arc.',
     body:
       'A full test suite runs against the contracts on every change, alongside guards that check ' +
       'the claims on this site against the code. All of it is public. The first vault, the cirBTC ' +
-      'Vault, is live on Arc, and a deposit through the app moves real USDC.',
+      'Vault, is deployed on Arc, and a deposit through the app moves real USDC.',
   },
 } as const;
 

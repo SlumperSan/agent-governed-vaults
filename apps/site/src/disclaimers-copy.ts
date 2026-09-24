@@ -171,7 +171,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "The contracts carry no proxy, no upgrade path and no pause, and the source declares no owner and no admin role. One privileged caller exists &mdash; the deploy key &mdash; and its entire power is wiring: three one-shot calls that write four registry-pointer slots and revert the second time each is tried. None of the four is a path to member funds. The contracts are now live on Arc, so this is no longer hypothetical: their code is what runs, permanently, and nobody holds the power to replace it."
+        "dd": "The contracts carry no proxy, no upgrade path and no pause, and the source declares no owner and no admin role. One privileged caller exists &mdash; the deploy key &mdash; and its entire power is wiring: three one-shot calls that write four registry-pointer slots and revert the second time each is tried. None of the four is a path to member funds. The contracts are now deployed on Arc, so this is no longer hypothetical: their code is what runs, permanently, and nobody holds the power to replace it."
       },
       {
         "dt": "Worst case",
