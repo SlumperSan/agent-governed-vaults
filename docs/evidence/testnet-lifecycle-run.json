@@ -35,7 +35,7 @@
     "exact": true,
     "settlementMode": "I",
     "evidence": "The deposit receipt carries exactly one USDC Transfer, 0x0f806... -> vault, 5000000 units. The exit receipt carries exactly one USDC Transfer, vault -> 0x0f806..., 5000000 units. Both decoded from the receipts named below.",
-    "feeNote": "No performance fee was taken, and that is arithmetic rather than a waiver: PERF_FEE_BPS applies to a gain, the no-op rebalance produced none, so the fee base was zero. A vault that gains DOES pay the 10% fee unconditionally - see docs/LAUNCH-READINESS.md and the fee discussion in docs/vault/fees-and-carry.md. Do not read this exact round trip as evidence that the fee can be waived."
+    "feeNote": "No performance fee was taken, and that is arithmetic rather than a waiver: PERF_FEE_BPS applies to a gain, the no-op rebalance produced none, so the fee base was zero. A vault that gains DOES pay the 10% fee unconditionally - see docs/LAUNCH-READINESS.md. Do not read this exact round trip as evidence that the fee can be waived."
   },
 
   "phases": [

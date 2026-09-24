@@ -60,8 +60,8 @@ const SRC = path.join(REPO, 'contracts', 'src');
 
 // A size claim is a size claim wherever it is written, so this walks PROSE as well as `.sol`.
 // Scoping it to `contracts/src` would have caught exactly one of the four sites that carried the
-// false EIP-170 claim on 2026-09-03: the other three were in docs/audit/walkthroughs/VaultFactory.md,
-// docs/vault/vaultfactory.md and docs/vault/contracts-index.md. Enumerated from the filesystem,
+// false EIP-170 claim on 2026-09-03; the other three were all in docs/, one of them
+// docs/audit/walkthroughs/VaultFactory.md. Enumerated from the filesystem,
 // never from a list — a negative guard that names its files cannot catch the file nobody added.
 const SIZE_EXT = new Set(['.sol', '.md', '.html', '.txt', '.json']);
 const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'out', 'cache', 'broadcast', 'coverage', 'artifacts']);

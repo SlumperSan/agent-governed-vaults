@@ -246,9 +246,9 @@ is untouched at 2,210 B.
 the same length: `contracts/src/VaultCore.sol` has an empty diff against main, under an unchanged
 `foundry.toml`. Measured on the rebased tree (`bab5ee90` merged in): **20,650 B, 3,926 B of EIP-170
 margin**, `sha256(deployedBytecode.object) = a5278797b781ea5a3888491da9933dab05999cbd678b4ca442208059ded7ceb4`.
-The `20,481 B / 4,095 B` this line carried until now was measured before #98 and is stale; the same
-stale pair is still shipped in `docs/LAUNCH-READINESS.md` and `docs/vault/contracts-index.md`, which
-are **not** this PR's to correct — flagged so they are not lost.
+The `20,481 B / 4,095 B` this line carried until now was measured before #98 and is stale. The same
+pair is still carried by `docs/LAUNCH-READINESS.md`, which was **not** this PR's to correct —
+flagged so it is not lost.
 
 ## Running it
 
