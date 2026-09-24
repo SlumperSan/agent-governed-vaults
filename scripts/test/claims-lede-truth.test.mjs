@@ -569,9 +569,9 @@ test('the operator\'s lack of power is enumerated, never claimed as a universal'
  * "Nothing is traded without a vote; deposits and exits are yours." — a TRUE sentence that scopes
  * the vote requirement to the one path where it holds and explicitly disclaims it for the rest.
  *
- * "one rule: nothing changes without a vote" (the old leg 3, the PR 305/306 lede shape) is now
- * just an instance of this structure — "nothing" + "changes" + "without a vote" all sit in one
- * sentence — so it needs no separate leg.
+ * The "one rule" leg below is KEPT, not folded in. The structural check needs a movement verb,
+ * and the PR 305/306 lede shape also comes verbless: "One rule: nothing without a vote." carries
+ * the same false blanket with no verb for the structure to find (Security, #429 review).
  */
 const UNIVERSAL_QUANTIFIER_VERB =
   /\b(?:nothing|no\s+\w+|every\s+\w+|all\s+\w+)\b(?:\s+\w+){0,4}?\s+\b(?:changes?|moves?|happens?|leaves?|enters?)\b/gi;
@@ -587,6 +587,9 @@ const isBlanketVoteSentence = (sentence) => {
 const BLANKET_VOTE_CLAIMS = [
   // "every change is decided by vote", "all changes require a vote"
   /\b(?:every|each|all)\s+(?:change|movement|action)s?\b[^.]{0,40}?\b(?:requires?|needs?|decided by|gated by)\s+(?:a\s+)?(?:vote|proposal)\b/gi,
+  // "one rule: nothing changes without a vote", and the verbless "one rule: nothing without a vote"
+  // — the PR 306 / PR 305 lede shape. Kept: the structural check needs a verb (see above).
+  /\bone rule\b[^.]{0,30}?\bnothing\b[^.]{0,40}?\bwithout\s+(?:a\s+)?vote\b/gi,
 ];
 
 /** The TRADE form. True today; guard 7b re-derives that from the contract rather than assuming. */
@@ -645,6 +648,10 @@ test('probe: the blanket-vote structural check catches the reorder card #71 foun
   // caught by BLANKET_VOTE_CLAIMS' surviving leg rather than the structural check — confirm the
   // combined guard still reds it.
   assert.match('Every change needs a vote.', BLANKET_VOTE_CLAIMS[0]);
+  // The verbless lede: no movement verb, so only the kept "one rule" leg can catch it.
+  const verbless = 'One rule: nothing without a vote.';
+  assert.equal(sentencesOf(verbless).some(isBlanketVoteSentence), false, 'premise: the structural check cannot see a verbless blanket');
+  assert.ok(BLANKET_VOTE_CLAIMS.some((re) => { re.lastIndex = 0; return re.test(verbless); }), `the combined guard no longer catches: ${verbless}`);
 
   // TRUE sentences the guard must leave alone.
   //
