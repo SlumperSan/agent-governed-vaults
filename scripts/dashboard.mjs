@@ -1007,8 +1007,8 @@ async function tick(){
     document.getElementById('err').innerHTML='<span class="nogo">stale — '+esc(e.message)+'</span>';
   }
 }
-const VIEW = document.body.dataset.view === 'sign' ? 'sign' : 'tasks';
-if (VIEW === 'tasks') { tick(); setInterval(tick, 1000); }
+const PAGE_VIEW = document.body.dataset.view === 'sign' ? 'sign' : 'tasks';
+if (PAGE_VIEW === 'tasks') { tick(); setInterval(tick, 1000); }
 
 // ---- launch checks -----------------------------------------------------------------------
 // Deliberately NOT part of tick()/render() and NOT on the 1s poll. This is the one panel on the
@@ -1160,7 +1160,7 @@ async function refreshSignQueue(){
 // Only on the Signatures tab, and never overlapping: the next check starts 5s after the last one
 // finished, so a slow chain read cannot stack requests behind it.
 async function signQueueLoop(){ await refreshSignQueue(); setTimeout(signQueueLoop, 5000); }
-if (VIEW === 'sign') signQueueLoop();
+if (PAGE_VIEW === 'sign') signQueueLoop();
 
 document.getElementById('sq-connect').addEventListener('click', async () => {
   if (!window.ethereum) { alert('MetaMask not found — install the extension first.'); return; }
@@ -1428,7 +1428,7 @@ const server = createServer((req, res) => {
     return;
   }
   // Two tabs over one page: / is the task board, /sign is the Sign queue alone. The view is a body
-  // attribute, so each tab polls only its own endpoint (see VIEW in the page script).
+  // attribute, so each tab polls only its own endpoint (see PAGE_VIEW in the page script).
   if (url.pathname === '/' || url.pathname === '/sign') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
     return res.end(url.pathname === '/sign' ? PAGE.replace('</head><body>', '</head><body data-view="sign">') : PAGE);
