@@ -1,6 +1,27 @@
 import { DISCLAIMERS_URL, FOOTER_LINKS, NAV, SITE_URL } from './nav';
 
 /**
+ * The Threshold mark, inline, ported from `apps/site/src/Shell.tsx`'s own `BrandMark` — same
+ * geometry, same reasoning: three courses, the middle one open at the centre, copied verbatim from
+ * Design/brand-threshold/mark.svg (owner-approved 2026-09-18,
+ * Agent-Governed Vaults/Decisions/the-mark-is-threshold-2026-09-18.md), viewBox cropped to the
+ * mark's own bounding box rather than the source file's padded 64x64 canvas. Inline rather than an
+ * `<img src>` because this app's CSP ships `img-src 'self'` with no `data:`.
+ */
+function BrandMark() {
+  return (
+    <svg className="brand-mark" viewBox="5 12.5 54 39" aria-hidden="true" focusable="false">
+      <g fill="#2f6bff">
+        <rect x="5" y="12.5" width="54" height="11" rx="3" />
+        <rect x="5" y="26.5" width="16" height="11" rx="3" />
+        <rect x="43" y="26.5" width="16" height="11" rx="3" />
+        <rect x="5" y="40.5" width="54" height="11" rx="3" />
+      </g>
+    </svg>
+  );
+}
+
+/**
  * The masthead, ported from `apps/site/src/Shell.tsx`.
  *
  * SAME CLASS NAMES, SAME MARKUP SHAPE, SAME TOKENS — deliberately, so the two surfaces are one
@@ -18,7 +39,7 @@ export function Header({ current }: { current?: string }) {
     <header className="nav">
       <div className="nav-inner">
         <a className="brand" href={SITE_URL} aria-label="RWAlly home">
-          <span className="brand-mark" aria-hidden="true" />
+          <BrandMark />
           <span className="brand-name">RWAlly</span>
         </a>
 
@@ -54,7 +75,7 @@ export function Footer() {
     <footer>
       <div className="foot-grid">
         <a className="brand" href={SITE_URL} aria-label="RWAlly home">
-          <span className="brand-mark" aria-hidden="true" />
+          <BrandMark />
           <span className="brand-name">RWAlly</span>
         </a>
         <nav className="foot-links" aria-label="Footer">

@@ -15,10 +15,12 @@
  * its refutation has no truth value, and the appended correction is the form that survives review
  * because it looks like diligence.
  *
- * WHAT CHANGED IN THAT SECOND PASS: the settlement token is USDC; nothing is deployed, so the
- * deployment paragraph, the vault capacity figures and the address ledger references say so; the
- * sequencer-gate entry states that the exemption Arc would need has NOT been granted rather than
- * describing one already given; and figures that came out of a configuration file which has since
+ * WHAT CHANGED IN THAT SECOND PASS: the settlement token is USDC; nothing was deployed then, so the
+ * deployment paragraph, the vault capacity figures and the address ledger references said so (all
+ * three were replaced again on 2026-09-24, when the first vault went live on Arc, from
+ * contracts/config/deployments/arc-mainnet.json and a chain read of the live oracle); the
+ * sequencer-gate entry records the Arc exemption, granted for chain 5042 on 2026-09-19, and what it
+ * costs at price time; and figures that came out of a configuration file which has since
  * been deleted were removed rather than carried forward as though still sourced.
  *
  * THE TWO DERIVED SENTENCES. RisksContents' heading ("All fifteen.") and its closing clause
@@ -80,7 +82,7 @@ export const HERO = {
     "Every warning, limit and unresolved question on this site is on this page. The rest of this site describes mechanism. This one describes what that mechanism costs you when it does not go your way.",
   bannerOffer: "Nothing on this site is an offer, a solicitation, or financial advice.",
   deploymentParagraph:
-    "Not deployed. No instance of this protocol exists on Arc or on any other mainnet, so there is no address ledger and nothing to read live. Every risk below describes what the contracts would do once deployed, which is a statement about code that has been written and tested rather than about anything currently holding value.",
+    "Deployed on Arc mainnet. The first vault, the cirBTC Vault, is at <code>0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6</code>, and every protocol address is recorded in <code>contracts/config/deployments/arc-mainnet.json</code>. Every risk below describes code that is now running on Arc and can hold real USDC, and none of that code can be changed.",
   licence: "Open source under the MIT licence.",
   jurisdictionParagraph:
     "Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.",
@@ -169,7 +171,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "The contracts carry no proxy, no upgrade path, no pause and no admin key. Nothing is deployed yet, so nothing is permanent yet &mdash; but the moment an instance is broadcast, what runs is what runs, permanently, and no party gains the power to change it afterwards."
+        "dd": "The contracts carry no proxy, no upgrade path and no pause, and the source declares no owner and no admin role. One privileged caller exists &mdash; the deploy key &mdash; and its entire power is wiring: three one-shot calls that write four registry-pointer slots and revert the second time each is tried. None of the four is a path to member funds. The contracts are now deployed on Arc, so this is no longer hypothetical: their code is what runs, permanently, and nobody holds the power to replace it."
       },
       {
         "dt": "Worst case",
@@ -215,7 +217,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "What is done",
-        "dd": "Three defences in the general case, and only two on Arc: a heartbeat and staleness bound per asset, a plausibility band per asset that rejects prices outside it, and the sequencer gate &mdash; mandatory wherever Chainlink publishes an L2 Sequencer Uptime Feed. Chainlink publishes none for Arc, which is an L1 rather than a rollup, so on Arc that gate would never run. The heartbeat and the band are per-deployment values that have not been chosen, bounded above by the 86,400 seconds the oracle constructor accepts; this page will print them when there is a deployment to print them from. A band is wide by nature: it rejects gross errors, and it does not reject an adverse but plausible price. The basket is limited to assets with a genuine Chainlink USD feed, rather than reaching for assets that would need a weaker price source."
+        "dd": "Three defences in the general case, and only two on Arc: a heartbeat and staleness bound per asset, a plausibility band per asset that rejects prices outside it, and the sequencer gate &mdash; mandatory wherever Chainlink publishes an L2 Sequencer Uptime Feed. Chainlink publishes none for Arc, which is an L1 rather than a rollup, so on Arc that gate would never run. The heartbeat and the band are per-deployment values, bounded above by the 90,000 seconds the oracle constructor accepts &mdash; deliberately an hour more than the 86,400-second cadence these feeds publish on, because a bound set at the cadence itself trips on a feed that is behaving normally. On the live Arc oracle, read from its <code>feedOf</code> entry for cirBTC: a staleness bound of 90,000 seconds and a band of $4,000 to $4,000,000 on the price read from the Chainlink BTC/USD feed at <code>0xa109B535C70C8Be9995be64Bb6751AcDB27e03De</code>. No sequencer feed is wired, as described above. A band is wide by nature: it rejects gross errors, and it does not reject an adverse but plausible price. The basket is limited to assets with a genuine Chainlink USD feed, rather than reaching for assets that would need a weaker price source."
       }
     ]
   },
@@ -240,7 +242,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
   },
   {
     "id": "r5",
-    "severityLabel": "Handled in code, never exercised",
+    "severityLabel": "Exempted on Arc, fails open",
     "heading": "5. Sequencer downtime",
     "rows": [
       {
@@ -249,11 +251,11 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "Worst case",
-        "dd": "A sequencer incident extends into a vault freeze that outlasts the incident itself, because the oracle will not price anything until the grace period has elapsed."
+        "dd": "On Arc the guard is exempted, so it fails open: while the chain is halted the oracle keeps serving the last answer for as long as that answer stays inside the heartbeat and the band. Where the guard does run, a sequencer incident can extend into a vault freeze that outlasts the incident, because the oracle will not price anything until the grace period has elapsed."
       },
       {
         "dt": "What is done",
-        "dd": "A Chainlink L2 Sequencer Uptime Feed is mandatory, enforced at deploy time rather than at price time. The deploy script refuses any chain it has no sequencer policy for, and a pre-deploy check fails a configuration that omits the feed. Chainlink publishes no L2 Sequencer Uptime Feed for Arc, so deploying there would require exempting it &mdash; an explicit weakening of a security gate, and one that has NOT been granted. If it ever is, the consequence is stated here rather than buried in the commit that grants it: on a chain with no feed the sequencer guard never runs at price time, and the per-feed heartbeat and the sane-price band carry this risk alone. Handed a zero address the oracle skips the gate silently rather than reverting, which is why the deploy-time refusal is the defence that carries the weight. Where a feed is wired, the oracle enforces a 3,600-second grace period after the sequencer returns, and the mitigation and the risk are then the same mechanism: protection from stale-sequencer pricing comes from being locked out for an hour longer than the outage. This path has never executed against a real sequencer feed anywhere."
+        "dd": "A Chainlink L2 Sequencer Uptime Feed is mandatory, enforced at deploy time rather than at price time. The deploy script refuses any chain it has no sequencer policy for, and a pre-deploy check fails a configuration that omits the feed. Chainlink publishes no L2 Sequencer Uptime Feed for Arc, so deploying there requires exempting it, and that exemption has been granted &mdash; for chain 5042 alone, on 19 September 2026. The consequence is stated here rather than left in the commit that granted it: on Arc the sequencer guard never runs at price time, and the per-feed heartbeat and the sane-price band carry this risk alone. What makes that defensible is that Arc is an L1 rather than a rollup, so there is no sequencer, and no sequencer outage for the gate to catch. What it costs is that the oracle serves prices straight through whatever Arc&rsquo;s equivalent of a halt turns out to be, and never refuses on that account. Handed a zero address the oracle skips the gate silently rather than reverting, which is why the deploy-time refusal is the defence that carries the weight on every chain that is not on the exempt list. Where a feed is wired, the oracle enforces a 3,600-second grace period after the sequencer returns, and the mitigation and the risk are then the same mechanism: protection from stale-sequencer pricing comes from being locked out for an hour longer than the outage. This path has never executed against a real sequencer feed anywhere."
       }
     ]
   },
@@ -283,7 +285,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "Voting is stake-weighted at five or more members, so a large enough holder can pass proposals. Below five members the vault takes a different branch: a proposal passes on either a majority of the members-at-creation revealing in favour while the favouring stake still clears the quorum, or an outright favouring stake majority. Both branches are stake-sensitive, so neither is a pure head count, and a rule change instead requires full consensus of eligible stake."
+        "dd": "Voting is stake-weighted at five or more members, and at that size quorum counts only stake a member revealed in person &mdash; an absent member&rsquo;s cranked weight can help decide a result but can never be what makes one countable. Below five members the vault takes a different branch: a proposal passes on either a majority of the members-at-creation revealing, whichever way they vote, while the FOR side&rsquo;s own stake &mdash; a member&rsquo;s revealed vote or their own standing default, never weight a delegate applied on an absent member&rsquo;s behalf &mdash; still clears the quorum, or an outright majority of that same own-directed FOR stake. Both branches exclude cranked weight from the stake test itself, so neither can be carried by voting on somebody else&rsquo;s behalf. A rule change instead requires full consensus of eligible stake, with every member revealing in person &mdash; delegation contributes none of it there."
       },
       {
         "dt": "Worst case",
@@ -606,7 +608,7 @@ export const SCOPE_ROWS: readonly ScopeRow[] = [
   {
     "key": "stock-index-needs-different-oracle",
     "term": "The stock index needs a different oracle",
-    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 86,400-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
+    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 90,000-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
   }
 ];
 
@@ -659,14 +661,14 @@ export const REFERENCES: readonly Reference[] = [
     "body": "H-8, M-7, M-8, M-10 and M-15: the open High at the launch configuration, the Mode-F recurrence, the opaque proposal payload, and the missing exit-side slippage floor."
   },
   {
-    "key": "base-mainnet-config",
-    "term": "<code>docs/evidence/arc-mainnet-survey.json</code>",
-    "body": "Every reference value quoted on this site: the governance durations, the quorum and threshold, the minimum deposit, the exit-fee schedule, the staleness bounds and the two price bands."
+    "key": "arc-mainnet-config",
+    "term": "<code>contracts/config/arc-mainnet.json</code>",
+    "body": "Every reference value quoted on this site: the governance durations, the quorum and threshold, the minimum deposit, the exit-fee schedule, the staleness bound and the price band. Each field carries a note recording how the number was arrived at. <code>docs/evidence/arc-mainnet-survey.json</code> is the raw chain survey it was built from; where the two disagree, the config is the one written against the contracts."
   },
   {
     "key": "deployment-record",
-    "term": "<code>docs/evidence/arc-deploy-runbook.md</code>",
-    "body": "What has to be resolved before a deploy on Arc is possible, and why Arc testnet cannot serve as the dry run. There is no address ledger, because there are no addresses."
+    "term": "<code>contracts/config/deployments/arc-mainnet.json</code>",
+    "body": "The address ledger: every contract deployed on Arc mainnet, the transactions that created them, and the first vault's creation and registration. Check any address here against the chain before you send it anything."
   },
   {
     "key": "contracts",
@@ -677,7 +679,7 @@ export const REFERENCES: readonly Reference[] = [
 
 export const ACTIONS: readonly Action[] = [
   {
-    "href": "index.html#live",
+    "href": "https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/arc-mainnet.json",
     "label": "The address ledger",
     "primary": true
   },

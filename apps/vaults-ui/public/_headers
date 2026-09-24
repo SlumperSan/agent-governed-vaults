@@ -55,16 +55,27 @@
 #   fonts.googleapis.com and no fonts.gstatic.com, and one request to either is a
 #   rejection.
 #
-# connect-src 'self'
-#   THIS SURFACE READS FIXTURES, NOT A CHAIN. `apps/web/src/fixtures.mjs` is
-#   bundled into the build; nothing is fetched at runtime and the page says so in
-#   words under its own title.
+# connect-src 'self' https://rpc.mainnet.arc.io
+#   PLAN ITEM 0.7, ADDED IN THE SAME COMMIT AS `src/lib/live-vaults.ts`. This surface now reads a
+#   chain through `apps/web/src/chain-reader.mjs` — see that module's header, and `live-vaults.ts`
+#   for the viem glue — rather than bundling `apps/web/src/fixtures.mjs`.
 #
-#   WHEN THE CHAIN READER IS WIRED UP, ADD THE ONE ENDPOINT HERE, IN THE SAME
-#   COMMIT AS THE CODE THAT CALLS IT, and nothing wider. `apps/web/src/chain-reader.mjs`
-#   exists on protocol/main and this app does not call it yet. A `connect-src`
-#   opened in advance of the call is a permission nobody reviewed against an
-#   endpoint nobody chose.
+#   THE ONE ORIGIN NAMED, NOTHING WIDER. `https://rpc.mainnet.arc.io` (chain 5042) is what
+#   `VITE_RPC_URL` resolves to as of the Arc mainnet cutover — `apps/vaults-ui/.env.example`,
+#   against the cirBTC Vault at `0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`, RWAlly's v1 vault, live
+#   on Arc mainnet since 2026-09-24 (firstVault.createdAt,
+#   contracts/config/deployments/arc-mainnet.json). `test/csp.test.mjs`'s `'the policy names every
+#   directive...'`
+#   test pins this exact string; widening it to a second origin, a wildcard, or back to bare
+#   `'self'` must fail that test, not quietly pass it.
+#
+#   BEFORE CHANGING THIS ORIGIN AGAIN: replace it with the production RPC `VITE_RPC_URL` will be set
+#   to, in the SAME COMMIT that changes the Cloudflare Pages build environment — never ahead of it.
+#   A `connect-src` opened in advance of the endpoint it names is a permission nobody reviewed
+#   against a chain nobody chose; a `connect-src` left behind after the endpoint changes is a page
+#   that refuses its own reads with no build-time warning. (This is exactly what happened moving
+#   from Base Sepolia to Arc mainnet: both this line and `.env.example`'s `VITE_RPC_URL` changed
+#   together, in this commit.)
 #
 # worker-src IS ABSENT, AND ITS ABSENCE IS THE ENTRY.
 #   The site permits a same-origin worker as headroom for moving WebGL work off
@@ -118,7 +129,7 @@
 #   to be found.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https://rpc.mainnet.arc.io; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex

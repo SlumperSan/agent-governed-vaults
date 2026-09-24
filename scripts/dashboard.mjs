@@ -16,9 +16,11 @@
  * remote listener -- do not "helpfully" change the bind address.
  */
 import { createServer } from 'node:http';
+import { Worker } from 'node:worker_threads';
 import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
-import { collect } from './lib/project-status.mjs';
+import { runLaunchChecks } from './lib/launch-checks.mjs';
+import { buildSignQueueResponse, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -44,11 +46,28 @@ let cache = { at: 0, data: null };
 // 9s of lag on a board he watches while departments work.
 const TTL_MS = 800;
 
-function snapshot(force = false) {
-  const now = Date.now();
-  if (!force && cache.data && now - cache.at < TTL_MS) return cache.data;
-  cache = { at: now, data: collect({ gh: !NO_GH }) };
-  return cache.data;
+// collect() runs in a worker (scripts/lib/project-status-worker.mjs has the measured reason): on
+// this thread its synchronous git/gh calls froze every other request, the Sign queue's chain reads
+// included. One collection at a time; a request never waits on one when a snapshot exists.
+let refreshing = null;
+function refreshSnapshot() {
+  if (refreshing) return refreshing;
+  refreshing = new Promise((resolve, reject) => {
+    const w = new Worker(new URL('./lib/project-status-worker.mjs', import.meta.url), { workerData: { gh: !NO_GH } });
+    w.once('message', (data) => { cache = { at: Date.now(), data }; resolve(data); });
+    w.once('error', reject);
+    w.once('exit', (code) => { if (code !== 0) reject(new Error(`status worker exited ${code}`)); });
+  }).finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+/** A fresh snapshot if one is cached, else the last one while a refresh runs in the background.
+ * Only the very first request (no snapshot yet) or a forced one waits for the worker. */
+async function getSnapshot(force = false) {
+  const fresh = cache.data && Date.now() - cache.at < TTL_MS;
+  if (fresh && !force) return cache.data;
+  if (cache.data && !force) { refreshSnapshot().catch(() => {}); return cache.data; }
+  return refreshSnapshot();
 }
 
 const esc = (s) =>
@@ -108,6 +127,30 @@ const PAGE = `<!doctype html>
   .pill{display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid currentColor;
         font-size:11px;font-family:var(--mono);white-space:nowrap}
   .scroll{overflow-x:auto}
+  /* --- launch checks. On-demand, never polled: every row starts idle and only changes when the
+     owner clicks Check. A row that silently went green on its own would be indistinguishable from
+     one he actually verified. */
+  #launchchecks{margin:0 0 16px}
+  .lchead{display:flex;align-items:baseline;gap:10px;margin-bottom:2px}
+  .lchead h2{margin:0}
+  #lc-check{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:6px 14px;
+             font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+  #lc-check:hover{filter:brightness(1.08)}
+  #lc-check:disabled{opacity:.6;cursor:default}
+  #lc-stamp{color:var(--dim);font-size:11.5px;font-family:var(--mono)}
+  .lcrow{padding:9px 0;border-bottom:1px solid var(--line)}
+  .lcrow:last-child{border-bottom:0}
+  .lcrow-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .lcname{font-weight:600;font-size:13px}
+  .lcdetail{color:var(--dim);font-size:12.5px;margin-top:4px;overflow-wrap:anywhere}
+  .lcremedy{margin-top:7px;display:flex;gap:8px;align-items:flex-start}
+  .lcremedy code{font-family:var(--mono);font-size:11.5px;background:var(--bg);color:var(--ink);
+                 border:1px solid var(--line);border-radius:6px;padding:7px 9px;flex:1;min-width:0;
+                 overflow-wrap:anywhere;user-select:all}
+  .lccopy{background:var(--panel);color:var(--dim);border:1px solid var(--line);border-radius:6px;
+          padding:6px 10px;font:inherit;font-size:11.5px;cursor:pointer;flex:none}
+  .lccopy:hover{color:var(--ink);border-color:var(--dim)}
+  .lc-pill{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
   table{border-collapse:collapse;width:100%;font-size:13px}
   td,th{padding:5px 8px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
   th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
@@ -130,6 +173,15 @@ const PAGE = `<!doctype html>
            background:var(--panel);border:1px solid var(--line)}
   .tile.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
   .tile.on .n{background:#ffffff26;border-color:transparent;color:#fff}
+  /* Card #42: nothing in this department's "In progress" column -- it is free, not busy, and
+     nothing else on the board says so until it messages. One filter (eff(x)==='doing'), no new
+     data. The amber border/text is suppressed on the selected tile (.on already carries its own
+     strong styling and the two would otherwise fight over color/border on the same element); the
+     "idle" text label still shows either way, so selecting an idle department does not hide it. */
+  .tile.idle:not(.on){border-color:var(--warn);color:var(--warn)}
+  .tile.idle:not(.on) .n{color:var(--warn)}
+  .tile .idle-tag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--warn)}
+  .tile.on .idle-tag{color:#fff}
   .tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   /* Department tag on a card, shown only in the merged All view. */
   .cdept{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);
@@ -371,14 +423,72 @@ const PAGE = `<!doctype html>
   #drawer .qskip{border-color:#ffffff2b}
   #drawer .qskip:hover{color:var(--t-ink);border-color:var(--t-dim)}
   #drawer .dfile{font-size:12px}
+
+  /* --- Sign queue --- */
+  #sq-account{font-family:var(--mono)}
+  #sq-connect{margin-left:auto}
+  .lchead{display:flex;align-items:center;gap:10px}
+  .sqitem{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:var(--bg)}
+  .sqitem .sqhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sqitem .sqorder{font-family:var(--mono);color:var(--dim);min-width:2.2em}
+  .sqitem .sqwhat{flex:1;min-width:200px}
+  .sqfields .row{padding:3px 0}
+  .sqitem details{margin-top:6px}
+  .sqitem details summary{cursor:pointer;color:var(--dim);font-size:12px}
+  .sqitem .sqdata{display:block;word-break:break-all;font-size:11.5px;background:var(--panel);
+    border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin:4px 0}
+  .sqblocked{color:var(--warn);font-size:12px;margin-top:6px}
+  .sqactions{display:flex;gap:8px;margin-top:8px}
+  .sqtx{font-size:12px;margin-top:6px;font-family:var(--mono)}
+  .sqitem.status-done{border-color:var(--go)}
+  .sqitem.status-failed{border-color:var(--nogo)}
+  .sqitem.status-sent{border-color:var(--warn)}
+  nav.tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid var(--line)}
+  nav.tabs .tab{padding:8px 14px;border:1px solid var(--line);border-bottom:none;border-radius:6px 6px 0 0;color:var(--dim);text-decoration:none;background:var(--bg)}
+  body:not([data-view="sign"]) .tab-tasks, body[data-view="sign"] .tab-sign{color:var(--ink);background:var(--panel);font-weight:600}
+  body:not([data-view="sign"]) #signqueue{display:none}
+  body[data-view="sign"] #launchchecks, body[data-view="sign"] #main, body[data-view="sign"] header{display:none}
 </style>
 </head><body>
+<nav class="tabs"><a href="/" class="tab tab-tasks">Tasks</a><a href="/sign" class="tab tab-sign">Signatures</a></nav>
 <header>
   <h1>Board</h1>
   <span class="meta" id="repo"></span>
   <span class="meta" id="stamp">loading…</span>
   <span class="meta" id="err" class="nogo"></span>
 </header>
+<section id="launchchecks" class="wide">
+  <div class="lchead">
+    <h2>Launch checks</h2>
+    <button id="lc-check" type="button">Check</button>
+    <span id="lc-stamp"></span>
+  </div>
+  <div id="lc-rows">
+    <!-- Filled by JS. Rows start idle — nothing here has been read yet — and this panel is never
+         driven by the 1s /api/status poll: it only runs when clicked, so a public RPC and two live
+         websites are not hit once a second for a page that may sit open all day. -->
+  </div>
+  <div class="note">Every row is a read — <code>eth_call</code>, <code>eth_getCode</code>,
+    <code>eth_chainId</code>, or a file/HTTP fetch. Nothing here signs or broadcasts. Where the fix
+    is a transaction, the exact command is shown below the row for you to copy and run yourself.</div>
+</section>
+<section id="signqueue" class="wide">
+  <div class="lchead">
+    <h2>Sign</h2>
+    <span id="sq-account" class="meta"></span>
+    <button id="sq-connect" type="button">Connect MetaMask</button>
+    <span id="sq-stamp" class="meta"></span>
+  </div>
+  <div id="sq-items">
+    <!-- Filled by JS, refreshed every 5s. Every item is a read on this end too: the server never
+         signs or broadcasts anything. Sign opens MetaMask in the browser; the server only records
+         the hash it reports and then confirms it by polling the chain for the receipt. -->
+  </div>
+  <div class="note">The server confirms every send itself by polling the chain for the receipt —
+    <code>status</code>, <code>from</code>/<code>to</code> (or the predicted <code>CREATE</code>
+    address) and <code>input</code> must all match what was actually shown here. A foreign or
+    mismatched hash changes nothing.</div>
+</section>
 <main id="main"></main>
 
 <!-- THE MODAL LIVES INSIDE THE SCRIM, which is what lets it centre and lets a tall card scroll
@@ -601,8 +711,15 @@ function render(d){
       + ['All',...DEPTS].map(t=>{
           const open=t==='All'? d.board.tasks.filter(x=>x.status!=='done').length
                               : d.board.tasks.filter(x=>x.department===t&&x.status!=='done').length;
-          return '<button class="tile'+(VIEW===t?' on':'')+'" data-view="'+esc(t)+'">'
-            +esc(t)+' <span class="n">'+open+'</span></button>';
+          // Card #42: this department's "In progress" column is empty -- it is waiting on an
+          // assignment, and nothing else on the board says so until it messages. 'All' is not a
+          // department and is never flagged. Uses the board's own in-progress bucket, eff(x)==='doing'
+          // (see eff() above), not a fresh status check invented for this tile.
+          const idle=t!=='All' && d.board.tasks.filter(x=>x.department===t&&eff(x)==='doing').length===0;
+          return '<button class="tile'+(VIEW===t?' on':'')+(idle?' idle':'')+'" data-view="'+esc(t)+'"'
+            +(idle?' title="nothing in progress — free for an assignment"':'')+'>'
+            +esc(t)+' <span class="n">'+open+'</span>'+(idle?'<span class="idle-tag">idle</span>':'')
+            +'</button>';
         }).join('')
       +'</div>'
       // SAID ONCE, HERE, AND NOWHERE ELSE. The board cannot drag, so the way to move a card is to
@@ -906,7 +1023,239 @@ async function tick(){
     document.getElementById('err').innerHTML='<span class="nogo">stale — '+esc(e.message)+'</span>';
   }
 }
-tick(); setInterval(tick, 1000);
+const PAGE_VIEW = document.body.dataset.view === 'sign' ? 'sign' : 'tasks';
+if (PAGE_VIEW === 'tasks') { tick(); setInterval(tick, 1000); }
+
+// ---- launch checks -----------------------------------------------------------------------
+// Deliberately NOT part of tick()/render() and NOT on the 1s poll. This is the one panel on the
+// page that reaches a public RPC and two live websites, so it runs only when clicked — a page
+// left open all day must not hammer either.
+const LC_ROWS = [
+  { id:'safe', name:'Creator Safe live on Arc mainnet' },
+  { id:'proposal', name:'Stale governance proposal blocking the soak' },
+  { id:'balance', name:'Deployer balance margin' },
+  { id:'arc-deploy', name:'Arc deployment' },
+  { id:'member-surface', name:'What app.rwally.com and rwally.com are serving' },
+];
+const LC_STATE_CLASS = { green:'go', amber:'warn', red:'nogo', unknown:'idle' };
+const LC_STATE_LABEL = { green:'PASS', amber:'CHECK', red:'FAIL', unknown:'UNKNOWN' };
+
+function renderLaunchChecks(byId){
+  // byId === null means "never checked" (the initial render). Any OTHER value means a check was
+  // just attempted — so a row missing from it (an empty/short rows array, not just a row that
+  // threw) must render as UNKNOWN, loudly, the same as a row whose own state came back 'unknown'.
+  // Falling through to "NOT CHECKED YET" here would be the same vanishing-disclosure defect one
+  // more layer out: a row a real response failed to cover reading as merely never clicked.
+  const attempted = byId !== null;
+  document.getElementById('lc-rows').innerHTML = LC_ROWS.map(meta => {
+    const r = byId && byId[meta.id];
+    const state = r ? r.state : (attempted ? 'unknown' : null);
+    const pillClass = state ? LC_STATE_CLASS[state] : 'idle';
+    const pillLabel = state ? LC_STATE_LABEL[state] : 'NOT CHECKED YET';
+    const detail = r ? esc(r.detail) : (attempted ? 'row missing from the check response — treat as unknown' : 'Click Check to run this read.');
+    const remedy = r && r.remedy
+      ? '<div class="lcremedy"><code id="lc-cmd-'+meta.id+'">'+esc(r.remedy)+'</code>'
+        + '<button class="lccopy" type="button" data-copy="lc-cmd-'+meta.id+'">Copy</button></div>'
+      : '';
+    return '<div class="lcrow">'
+      + '<div class="lcrow-top"><span class="pill lc-pill '+pillClass+'">'+pillLabel+'</span>'
+      + '<span class="lcname">'+esc(meta.name)+'</span></div>'
+      + '<div class="lcdetail">'+detail+'</div>'
+      + remedy
+      + '</div>';
+  }).join('');
+}
+renderLaunchChecks(null);
+
+document.getElementById('lc-check').addEventListener('click', async () => {
+  const btn = document.getElementById('lc-check');
+  btn.disabled = true; btn.textContent = 'checking…';
+  try{
+    const r = await fetch('/api/launch-checks');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data = await r.json();
+    const byId = Object.fromEntries((data.rows||[]).map(row => [row.id, row]));
+    renderLaunchChecks(byId);
+    document.getElementById('lc-stamp').textContent =
+      'checked '+new Date(data.at).toISOString().slice(0,19).replace('T',' ')+'Z';
+  }catch(e){
+    // A failed fetch/parse must not leave whatever pills were already on screen — a glance at a
+    // panel showing stale PASS from the last successful click is a false all-clear. Render every
+    // row as UNKNOWN, loudly, rather than leaving stale state or falling back to the "NOT CHECKED
+    // YET" idle look, which reads as pending rather than failed.
+    const byId = Object.fromEntries(LC_ROWS.map(meta =>
+      [meta.id, { id:meta.id, state:'unknown', detail:'check failed — '+e.message, remedy:null }]));
+    renderLaunchChecks(byId);
+    document.getElementById('lc-stamp').innerHTML = '<span class="nogo">check failed — '+esc(e.message)+'</span>';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Check';
+  }
+});
+
+document.getElementById('lc-rows').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-copy]');
+  if(!btn) return;
+  const text = document.getElementById(btn.dataset.copy)?.textContent || '';
+  try{
+    await navigator.clipboard.writeText(text);
+    const prev = btn.textContent; btn.textContent = 'copied';
+    setTimeout(() => { btn.textContent = prev; }, 1200);
+  }catch{
+    // Clipboard API can refuse (permissions, non-secure context edge cases). The command text is
+    // already selectable in the box above the button, so this is a convenience failing, not a
+    // dead end.
+    btn.textContent = 'select & copy';
+  }
+});
+
+// ─────────────────────────── Sign queue ───────────────────────────
+// NO BACKTICK TEMPLATE LITERALS BELOW. This whole <script> block lives inside scripts/dashboard.mjs's
+// OWN backtick template literal (the PAGE constant) — gate.mjs's own header explains why a stray
+// backtick here has twice taken the board down. String concatenation only, matching every other
+// renderer already in this file (see e.g. the lcremedy line above).
+var SQ_CHAINS = {
+  5042: { hex: '0x13b2', name: 'Arc', rpcUrls: ['https://rpc.mainnet.arc.io'],
+    nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+    blockExplorerUrls: ['https://explorer.arc.io'] },
+  84532: { hex: '0x14a34', name: 'Base Sepolia', rpcUrls: ['https://sepolia.base.org'],
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+    blockExplorerUrls: ['https://sepolia.basescan.org'] },
+};
+var sqItemsById = {};
+
+function sqPill(status){
+  if (status === 'done') return 'go';
+  if (status === 'failed') return 'nogo';
+  if (status === 'sent') return 'warn';
+  return 'idle';
+}
+
+function renderSignQueue(items){
+  sqItemsById = {};
+  var html = '';
+  for (var i = 0; i < items.length; i++){
+    var it = items[i];
+    sqItemsById[it.id] = it;
+    var dataId = 'sqd-' + it.id;
+    var dataText = it.resolvedData || it.data || '(unresolved — ' + (it.blockedReason || 'no data yet') + ')';
+    var toText = it.to === null ? '(contract creation)' : it.to;
+    html += '<div class="sqitem status-' + it.status + '" data-id="' + esc(it.id) + '">'
+      + '<div class="sqhead">'
+      +   '<span class="sqorder">#' + it.order + '</span>'
+      +   '<span class="pill">' + esc(it.chainName) + '</span>'
+      +   '<span class="sqwhat">' + esc(it.what) + '</span>'
+      +   '<span class="pill ' + sqPill(it.status) + '">' + esc(it.status) + '</span>'
+      + '</div>'
+      + '<div class="sqfields">'
+      +   (it.from ? '<div class="row"><span class="k">from</span><span class="v mono">' + esc(it.from) + '</span></div>' : '')
+      +   '<div class="row"><span class="k">to</span><span class="v mono">' + esc(toText) + '</span></div>'
+      +   '<div class="row"><span class="k">value</span><span class="v mono">' + esc(it.value) + '</span></div>'
+      + '</div>'
+      + '<details><summary>data</summary><code id="' + dataId + '" class="sqdata mono">' + esc(dataText) + '</code>'
+      +   (it.resolvedData || it.data ? ' <button type="button" data-copy="' + dataId + '">copy</button>' : '')
+      + '</details>'
+      + (it.status === 'pending' && it.blockedReason ? '<div class="sqblocked">blocked: ' + esc(it.blockedReason) + '</div>' : '')
+      + (it.txHash ? '<div class="sqtx">tx: ' + esc(it.txHash) + (it.verifyNote ? ' — ' + esc(it.verifyNote) : '') + '</div>' : '')
+      + (it.from ? '<div class="sqactions"><button type="button" class="sq-sign"' + (it.ready ? '' : ' disabled') + '>Sign</button></div>' : '')
+      + '</div>';
+  }
+  document.getElementById('sq-items').innerHTML = html;
+}
+
+async function refreshSignQueue(){
+  try{
+    var r = await fetch('/api/sign-queue');
+    var body = await r.json();
+    renderSignQueue(body.items);
+    document.getElementById('sq-stamp').textContent =
+      'checked ' + new Date(body.at).toISOString().slice(0,19).replace('T',' ') + 'Z';
+  }catch(e){
+    document.getElementById('sq-stamp').innerHTML = '<span class="nogo">check failed — ' + esc(e.message) + '</span>';
+  }
+}
+// Only on the Signatures tab, and never overlapping: the next check starts 5s after the last one
+// finished, so a slow chain read cannot stack requests behind it.
+async function signQueueLoop(){ await refreshSignQueue(); setTimeout(signQueueLoop, 5000); }
+if (PAGE_VIEW === 'sign') signQueueLoop();
+
+document.getElementById('sq-connect').addEventListener('click', async () => {
+  if (!window.ethereum) { alert('MetaMask not found — install the extension first.'); return; }
+  try{
+    var accts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    document.getElementById('sq-account').textContent = accts[0] || '';
+  }catch(e){
+    alert('Connect failed: ' + (e && e.message ? e.message : String(e)));
+  }
+});
+
+document.getElementById('sq-items').addEventListener('click', async (e) => {
+  var copyBtn = e.target.closest('[data-copy]');
+  if (copyBtn){
+    var text = document.getElementById(copyBtn.dataset.copy)?.textContent || '';
+    try{
+      await navigator.clipboard.writeText(text);
+      var prev = copyBtn.textContent; copyBtn.textContent = 'copied';
+      setTimeout(() => { copyBtn.textContent = prev; }, 1200);
+    }catch{ copyBtn.textContent = 'select & copy'; }
+    return;
+  }
+  var signBtn = e.target.closest('.sq-sign');
+  if (!signBtn) return;
+  var card = e.target.closest('.sqitem');
+  var id = card && card.dataset.id;
+  var item = id && sqItemsById[id];
+  if (!item) return;
+  var prevLabel = signBtn.textContent;
+  signBtn.disabled = true;
+  try{
+    if (!window.ethereum) throw new Error('MetaMask not found');
+    var accts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    var account = accts[0];
+    if (!account || account.toLowerCase() !== String(item.from).toLowerCase()){
+      throw new Error('connected account ' + account + ' does not match the required signer ' + item.from);
+    }
+    var chain = SQ_CHAINS[item.chainId];
+    if (!chain) throw new Error('unknown chain ' + item.chainId);
+    try{
+      await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chain.hex }] });
+    }catch(switchErr){
+      if (switchErr && switchErr.code === 4902){
+        await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{
+          chainId: chain.hex, chainName: chain.name, nativeCurrency: chain.nativeCurrency,
+          rpcUrls: chain.rpcUrls, blockExplorerUrls: chain.blockExplorerUrls,
+        }] });
+        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chain.hex }] });
+      } else { throw switchErr; }
+    }
+    var liveChainId = await window.ethereum.request({ method: 'eth_chainId' });
+    if (String(liveChainId).toLowerCase() !== chain.hex.toLowerCase()){
+      throw new Error('wallet is on chain ' + liveChainId + ', expected ' + chain.hex);
+    }
+    var data = item.resolvedData || item.data;
+    if (!data) throw new Error('no resolved data for this item yet');
+    var txParams = { from: item.from, value: '0x' + BigInt(item.value || '0').toString(16), data: data };
+    // Omit the 'to' key entirely for a CREATE — a present 'to: null' is not the same shape as an
+    // absent key to every wallet's own eth_sendTransaction validation.
+    if (item.to !== null) txParams.to = item.to;
+    // Gas = the node's own estimate x 1.25. An exact estimate has underrun a real activate() and
+    // run out of gas (#402, traced with gasUsed == gasLimit). Without a gas field MetaMask's estimate
+    // decides, and a revert still burns the gas (Security, #402). This buffers the limit only: the
+    // signed from/to/value/data are unchanged, and those are all the server's receipt check compares.
+    var gasEstimate = await window.ethereum.request({ method: 'eth_estimateGas', params: [txParams] });
+    txParams.gas = '0x' + (BigInt(gasEstimate) * 125n / 100n).toString(16);
+    var hash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [txParams] });
+    var resp = await fetch('/api/sign-queue/' + encodeURIComponent(id) + '/hash', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hash: hash, from: account }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    await refreshSignQueue();
+  }catch(err){
+    alert('Sign failed: ' + (err && err.message ? err.message : String(err)));
+  }finally{
+    signBtn.disabled = false; signBtn.textContent = prevLabel;
+  }
+});
 </script>
 </body></html>`;
 
@@ -926,8 +1275,7 @@ tick(); setInterval(tick, 1000);
  * Still bound to 127.0.0.1 with no auth, which is only acceptable because there is no remote
  * listener. Do not widen the bind address to "make it reachable from my phone".
  */
-function recordAnswer(id, answer, custom) {
-  const tasks = snapshot(true).board?.tasks ?? [];
+function recordAnswer(id, answer, custom, tasks) {
   const t = tasks.find((x) => x.id === id);
   if (!t) return { code: 404, msg: `no task ${id}` };
   // A listed option must match exactly; a free-text answer is accepted as written. The option list
@@ -978,13 +1326,16 @@ function recordAnswer(id, answer, custom) {
     );
   } catch (e) {
     // Say so rather than reporting a clean success: the decision IS saved, but nobody was told.
-    cache = { at: 0, data: null };
+    cache.at = 0; // stale, so the next poll refreshes; the last board still serves meanwhile
     return { code: 200, msg: `recorded, but NOT queued for routing: ${/** @type {Error} */ (e).message}` };
   }
 
-  cache = { at: 0, data: null };
+  cache.at = 0; // stale, so the next poll refreshes; the last board still serves meanwhile
   return { code: 200, msg: t.notify.length ? `recorded, routing to ${t.notify.join(', ')}` : 'recorded' };
 }
+
+/** @type {Promise<any>|null} */
+let signQueueInflight = null;
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
@@ -995,11 +1346,13 @@ const server = createServer((req, res) => {
       body += c;
       if (body.length > 4096) req.destroy(); // a decision is short; anything larger is not one
     });
-    req.on('end', () => {
+    req.on('end', async () => {
       let out;
       try {
         const { id, answer, custom } = JSON.parse(body);
-        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom));
+        // A fresh read of the board, as before: the task must exist and be unanswered NOW.
+        const snap = await getSnapshot(true);
+        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom), snap?.board?.tasks ?? []);
       } catch (e) {
         out = { code: 400, msg: String(/** @type {Error} */ (e).message) };
       }
@@ -1009,14 +1362,98 @@ const server = createServer((req, res) => {
     return;
   }
 
-  if (url.pathname === '/api/status') {
-    const body = JSON.stringify(snapshot(url.searchParams.has('force')));
-    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-    return res.end(body);
+  // Read-only, on demand, never cached: the owner clicked Check and wants THIS read, not a
+  // snapshot from up to TTL_MS ago. See scripts/lib/launch-checks.mjs's header for why every row
+  // here is an eth_call/eth_getCode/eth_chainId/file/HTTP read and never a signed transaction.
+  if (url.pathname === '/api/launch-checks') {
+    runLaunchChecks()
+      .then((rows) => {
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({ at: new Date().toISOString(), rows }));
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`launch-checks failed: ${/** @type {Error} */ (e).message}`);
+      });
+    return;
   }
-  if (url.pathname === '/') {
+
+  // Read-only on this server's end: every field is either a stored queue value or a live chain
+  // read. Nothing here signs or broadcasts — see scripts/lib/sign-queue-server.mjs's own header.
+  if (url.pathname === '/api/sign-queue' && req.method === 'GET') {
+    // Single-flight: concurrent polls share one build instead of stacking chain reads.
+    signQueueInflight ??= buildSignQueueResponse().finally(() => { signQueueInflight = null; });
+    signQueueInflight
+      .then((body) => {
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(body));
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`sign-queue failed: ${/** @type {Error} */ (e).message}`);
+      });
+    return;
+  }
+
+  // The ONLY endpoint that writes queue lifecycle state, and it can only ever move ONE item from
+  // pending to sent, recording a hash the browser reported — see recordSentHash's own header for
+  // every refusal this enforces (wrong signer, unmet dependency, already sent/done). It can never
+  // add, edit, or remove an item.
+  const signHashMatch = /^\/api\/sign-queue\/([a-zA-Z0-9_-]+)\/hash$/.exec(url.pathname);
+  if (signHashMatch && req.method === 'POST') {
+    // V-381-r1-8083f497 (Security): refuse anything that did not come from this dashboard's own
+    // page — Host/Origin/Content-Type, checked BEFORE the body is even read. See
+    // originGateRefusal's own header for exactly what each check stops.
+    const gateRefusal = originGateRefusal(
+      { host: req.headers.host, origin: req.headers.origin, 'content-type': req.headers['content-type'] },
+      PORT,
+    );
+    if (gateRefusal) {
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(`refused: ${gateRefusal}`);
+      return;
+    }
+    let body = '';
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 4096) req.destroy();
+    });
+    req.on('end', () => {
+      let parsed;
+      try { parsed = JSON.parse(body); } catch (e) {
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+        return res.end(`bad JSON: ${/** @type {Error} */ (e).message}`);
+      }
+      recordSentHash(signHashMatch[1], parsed)
+        .then((out) => {
+          res.writeHead(out.code, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end(out.msg);
+        })
+        .catch((e) => {
+          res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end(`sign-queue hash record failed: ${/** @type {Error} */ (e).message}`);
+        });
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/status') {
+    getSnapshot(url.searchParams.has('force'))
+      .then((snap) => {
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(snap));
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`status failed: ${/** @type {Error} */ (e).message}`);
+      });
+    return;
+  }
+  // Two tabs over one page: / is the task board, /sign is the Sign queue alone. The view is a body
+  // attribute, so each tab polls only its own endpoint (see PAGE_VIEW in the page script).
+  if (url.pathname === '/' || url.pathname === '/sign') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    return res.end(PAGE);
+    return res.end(url.pathname === '/sign' ? PAGE.replace('</head><body>', '</head><body data-view="sign">') : PAGE);
   }
   res.writeHead(404, { 'content-type': 'text/plain' });
   res.end('not found\n');
@@ -1035,5 +1472,5 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  Command center  ->  http://${HOST}:${PORT}`);
   console.log(`  refreshes every 5s · Ctrl+C to stop${NO_GH ? ' · --no-gh' : ''}\n`);
   // Warm the cache so the first page load is instant rather than waiting on git and gh.
-  snapshot(true);
+  refreshSnapshot().catch((e) => console.error(`status warm-up failed: ${e.message}`));
 });

@@ -58,6 +58,13 @@ const ENTRYPOINTS = [
   // once without being added here" until 2026-09-13; the file has never been on protocol/main, and
   // after a squash merge that sentence would have read as history about main that never happened.
   'scripts/build-rebalance-order.mjs',
+  // Added 2026-09-23, same reasoning as build-rebalance-order.mjs immediately above: this is run BY
+  // HAND against a live chain (the owner, importing its output at app.safe.global) once Arc 5042 is
+  // deployed, and nothing in CI executes the file directly — scripts/test/safe-tx-builder-fork.test.mjs
+  // and scripts/test/safe-tx-builder-refusals.test.mjs only ever SPAWN it as a child process with a
+  // controlled env, which parses it incidentally on whichever code path each test happens to reach,
+  // never the whole file up front the way `node --check` does.
+  'scripts/build-safe-tx-builder.mjs',
   // Added 2026-09-18, after a parse error took the board server down TWICE in one day. Its whole
   // page is one template literal, so a single stray backtick inside a comment in that literal
   // terminates the string and the file stops parsing — a class of defect no test here can reach,
@@ -178,6 +185,21 @@ const STEPS = [
     why: 'Backend + frontend logic suite. Needs `build`, `site-build` and `app-test` first (see above).',
   },
   {
+    id: 'vault-addresses',
+    title: 'vault-addresses-lint (apps/vaults-ui vs contracts/config/deployments)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-addresses-lint.mjs')],
+    cwd: REPO,
+    // BLOCKING, unlike vault-lint (a local machine path absent from CI) and deployment-currency
+    // (advisory because both recorded deployments are KNOWINGLY behind mainline -- a fact no PR can
+    // fix). Every input here -- apps/vaults-ui/.env* and contracts/config/deployments/*.json -- is
+    // checked into this repository, so there is no environment where this is expected to be red for
+    // a reason other than a real config error. VITE_VAULT_ADDRESSES is hand-edited on deploy day
+    // with zero prior cross-check against what is actually deployed; a typo, a stale address, or an
+    // address from the wrong chain would silently ship. Card A2.
+    why: 'Does VITE_VAULT_ADDRESSES name a real deployed vault, on the chain VITE_CHAIN_ID declares? Card A2.',
+  },
+  {
     id: 'deployment-currency',
     title: 'verify-deployment-currency (advisory)',
     cmd: process.execPath,
@@ -192,6 +214,19 @@ const STEPS = [
     // which `backend` already runs.
     advisory: true,
     why: 'Is each deployment record still current with contracts/src? Advisory: both records are knowingly behind.',
+  },
+  {
+    id: 'vault-lint',
+    title: 'vault-lint (advisory)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-lint.mjs')],
+    cwd: REPO,
+    // ADVISORY for one week from 2026-09-19, then blocking (card 189, Chairman directive 6). The
+    // vault is a local machine path outside this repo and outside CI's reach -- the script itself
+    // exits 0 with a notice when the vault is simply absent from this environment, which is why
+    // this step is safe to run unconditionally rather than gated on a path check here.
+    advisory: true,
+    why: 'Do Tasks/ cards carry a shell fragment, a value outside a closed set, or a truncated body? Card 135\'s post-mortem.',
   },
   {
     id: 'test',

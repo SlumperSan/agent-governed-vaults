@@ -4,14 +4,21 @@
  * VOICE, changed on 2026-09-18 by owner decision: marketing-forward and consumer-friendly. Short
  * sentences. Plain words. Say what it does for a person before saying how it works.
  *
- * WHAT THIS FILE DOES NOT DO, revised 2026-09-18 on the owner's point. It does not repeat that the
- * protocol is not deployed. There is no deposit button, no address and no wallet connect anywhere
- * on these pages, so a reader cannot act on a status line and the sentence only undercuts the copy.
+ * WHAT THIS FILE DOES NOT DO, revised 2026-09-18 on the owner's point and CONDITIONAL since
+ * 2026-09-19. It did not repeat that the protocol is not deployed, on the owner's stated ground
+ * that a reader could not act on a status line: no deposit button, no address, no wallet connect
+ * anywhere on these pages. **That ground expired the day connect-and-sign shipped in `apps/vaults-ui`
+ * and this site's "Open the app" button started leading somewhere a wallet can actually connect.**
+ * `steps.notice` below is the replacement. Until 2026-09-24 it said no vault was live and promised
+ * to name one when there was; the first vault went live on Arc that day, so it now keeps that
+ * promise. `apps/site/test/site.test.mjs` reads the vault's address out of
+ * `contracts/config/deployments/arc-mainnet.json` and fails if the page does not print it.
  *
- * WHERE THE MARKER STAYS, because this is a different thing: the app renders SAMPLE vaults with
- * figures that look like real ones, and those carry a visible label. Omitting a status line is
- * fine; presenting invented numbers as live is not. The disclaimers page keeps its precise
- * language for the same reason — it is the page a reader goes to for exactly that.
+ * REAL MONEY NOW. The app signs real deposits into that vault, so no sentence on these pages may
+ * describe it as a demo or a walkthrough with sample data — a reader who believes that could
+ * approve real USDC thinking nothing moves. Where the app still renders sample vaults, those carry
+ * their own visible label. The disclaimers page keeps its precise language for the same reason —
+ * it is the page a reader goes to for exactly that.
  *
  * Also still true and still worded carefully, because each is checkable and each was wrong once:
  *   - MEMBERS pool and vote. An AI operator proposes; it does not pool capital and does not govern.
@@ -41,7 +48,7 @@ export const HOME = {
   },
 
   proof: [
-    { k: 'Settles in', v: 'USDC' },
+    { k: 'Exits paid', v: 'In kind' },
     { k: 'Built for', v: 'Arc' },
     { k: 'Votes are', v: 'On-chain' },
     { k: 'Contracts are', v: 'Immutable' },
@@ -63,6 +70,10 @@ export const HOME = {
   steps: {
     eyebrow: 'Four steps',
     headline: 'Four steps, and the second one is yours to come back for.',
+    notice:
+      'The first RWAlly vault is deployed on Arc: the cirBTC Vault, at ' +
+      '0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6. Its contracts cannot be changed. A deposit ' +
+      'there is real USDC — read the risks before you put anything in.',
     items: [
       {
         n: '01',
@@ -110,7 +121,7 @@ export const HOME = {
       'position — and operatorship confers no authority to vote, execute, pause, reprice, or move ' +
       'member funds.',
     points: [
-      { t: 'No admin key', d: 'No owner, no proxy, no upgrade path, no pause switch. Once deployed, nobody can change the rules.' },
+      { t: 'One key, and all it does is wiring', d: 'No owner, no admin role, no proxy, no upgrade path, no pause switch. One deploy key exists and its entire power is pointing the registries at each other — three one-shot calls writing four address slots, each reverting the second time it is tried. That is the whole list of what any key can do here, and none of it is a path to your money.' },
       { t: 'No vetoed exits', d: 'Nobody can refuse, gate or veto your exit. It can be delayed — a live vote queues it, a stale feed freezes it — but a delay is a rule anyone can read, not a decision someone makes about you.' },
       { t: 'Every trade is on the record', d: 'Every trade is recorded on-chain, with the proposal and the votes that authorised it where there was one. Every rebalance needs a passed vote, and the orders are fixed before anyone votes on them.' },
       { t: 'No guessing on price', d: 'If a price feed goes stale the vault freezes rather than trading on bad data. That includes exits.' },
@@ -119,7 +130,8 @@ export const HOME = {
 
   cta: {
     headline: 'Have a look around.',
-    sub: 'Walk through a vault, a proposal and a vote. Nothing to connect, nothing to sign.',
+    sub: 'The cirBTC Vault is deployed on Arc. Connect a wallet to see it as it stands on-chain — and ' +
+      'read the risks before you put anything in.',
     label: 'Open the app',
   },
 } as const;
@@ -174,7 +186,7 @@ export const HOW = {
     headline: 'Two, and you can read both.',
     items: [
       { t: 'Performance fee', d: '10% of realised gains, paid to the vault operator. Charged when you exit, on the gain only, with a high-water mark so you are not charged twice for the same rise.' },
-      { t: 'Exit fee', d: 'Up to 1%, shrinking the longer you have been in. It goes to the members who stay, never to the operator. A sole holder pays nothing.' },
+      { t: 'Exit fee', d: 'Up to 1%, shrinking the longer you have been in. It stays in the vault, so it adds to the value of the shares every remaining member holds, including the operator if it holds a position. A sole holder pays nothing.' },
     ],
   },
 } as const;
@@ -217,11 +229,11 @@ export const ABOUT = {
   ],
   status: {
     eyebrow: 'Where it stands',
-    headline: 'Built, tested, and open to read.',
+    headline: 'Built, tested, and deployed on Arc.',
     body:
-      'The contracts are complete and a full test suite runs against them on every change, ' +
-      'alongside guards that check the claims on this site against the code. All of it is public. ' +
-      'The app walks through a vault end to end with sample data.',
+      'A full test suite runs against the contracts on every change, alongside guards that check ' +
+      'the claims on this site against the code. All of it is public. The first vault, the cirBTC ' +
+      'Vault, is deployed on Arc, and a deposit through the app moves real USDC.',
   },
 } as const;
 

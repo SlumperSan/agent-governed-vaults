@@ -108,6 +108,49 @@ test('the .env.example FEE_ENGINE_ADDRESS line does not suppress the warning', a
     'as shipped, .env.example must leave feeEngine unset so the indexer.feeEngine.unset warning fires');
 });
 
+// -- START_BLOCK left unset (0) on a fresh snapshot must never be silent --
+//
+// `if (fresh && cfg.startBlock > 0)` warned only when START_BLOCK was a POSITIVE number. When it
+// is unset (defaults to 0) or explicitly 0 — the case a soak run actually hit, and the shape
+// `.env.example`'s `START_BLOCK=0` placeholder produces on an un-edited `.env` — that condition is
+// false and nothing fired: the indexer silently started from genesis with no explanation in the
+// log. These pin the loud line that now fires instead.
+
+test('buildIndexer warns loudly when START_BLOCK is unset (0) on a fresh snapshot', async () => {
+  const path = join(tmpdir(), `runner-startblock0-${process.pid}-${Date.now()}.json`);
+  try {
+    const lines = [];
+    const client = { async getBlockNumber() { return 40n; }, async getLogs() { return []; } };
+    const cfg = resolveIndexerConfig({ ...FULL_ENV, STATE_PATH: path, CONFIRMATIONS: '0', BATCH_BLOCKS: '5000' });
+    assert.equal(cfg.startBlock, 0, 'precondition: START_BLOCK was not set in env, so it defaults to 0');
+    await buildIndexer(cfg, { log: (msg) => lines.push(msg), client });
+    assert.ok(
+      lines.some((l) => /START_BLOCK is 0 .*unset.* on a fresh snapshot/.test(l)),
+      `expected a loud warning about START_BLOCK=0 on a fresh snapshot, got: ${JSON.stringify(lines)}`,
+    );
+  } finally {
+    await rm(path, { force: true });
+  }
+});
+
+test('buildIndexer does not warn about START_BLOCK on a RESUMED (non-fresh) snapshot', async () => {
+  // The warning is a fresh-start signal only. A resumed run keeps its own cursor regardless of
+  // what START_BLOCK currently says, so warning there would fire on every restart for no reason.
+  const path = join(tmpdir(), `runner-startblock0-resumed-${process.pid}-${Date.now()}.json`);
+  try {
+    const seeded = applyAll([]);
+    seeded.lastBlock = 20;
+    await saveSnapshot(path, seeded);
+    const lines = [];
+    const client = { async getBlockNumber() { return 40n; }, async getLogs() { return []; } };
+    const cfg = resolveIndexerConfig({ ...FULL_ENV, STATE_PATH: path, CONFIRMATIONS: '0', BATCH_BLOCKS: '5000' });
+    await buildIndexer(cfg, { log: (msg) => lines.push(msg), client });
+    assert.ok(!lines.some((l) => /START_BLOCK is 0/.test(l)), `should not warn on a resumed snapshot, got: ${JSON.stringify(lines)}`);
+  } finally {
+    await rm(path, { force: true });
+  }
+});
+
 // -- ADAPTER_ADDRESSES (Review107 F2, strong form) --
 
 test('ADAPTER_ADDRESSES parses a comma-separated list and tolerates whitespace', () => {

@@ -12,6 +12,9 @@ Members pool USDC and ratify every rebalance by on-chain vote. Proposal rights f
 operatorship — the AI operator proposes as a member, from its own position, and operatorship
 confers no authority to vote, execute, pause, reprice, or move member funds.
 
+**Risks and legal disclaimers** — not an offer, total loss is possible, jurisdiction, licence, and
+the full risk register — are in one place: [`docs/DISCLAIMERS.md`](docs/DISCLAIMERS.md).
+
 Settlement is USDC on Arc, Circle's chain, where USDC is also the native gas asset. The basket is a
 single asset — **cirBTC**, a wrapped Bitcoin on Arc — priced from Chainlink's `BTC / USD` feed.
 There is no ETH leg: every ETH-named token with a Uniswap v3 pool on Arc holds under $452 of
@@ -19,9 +22,10 @@ depth. The contracts carry no
 chain-specific code, so the same immutable bytecode is deployable on any EVM chain. No centralised
 exchanges anywhere in the design.
 
-**Built for Arc, and not yet deployed there.** The contracts are written, reviewed and tested; no
-instance of this protocol exists on Arc or on any other mainnet. Read [Status](#status) before
-anything else in this file.
+**Deployed on Arc mainnet since 2026-09-24.** The address book is
+[`contracts/config/deployments/arc-mainnet.json`](contracts/config/deployments/arc-mainnet.json),
+and the first vault exists there. Read [Status](#status) before anything else in this file — a
+deploy does not by itself clear the launch verdict recorded there.
 
 ## Why it exists
 
@@ -87,13 +91,16 @@ exit fee.
 
 ## Status
 
-**Not deployed on any mainnet.** Arc is the target chain and the protocol is not on it yet. The
-Arc survey — chain binding, the USDC predeploy and the four Chainlink feeds, each read from chain
-5042 rather than copied from documentation — is
-[`docs/evidence/arc-mainnet-survey.json`](docs/evidence/arc-mainnet-survey.json). It is a survey
-and not a deployable configuration: the Uniswap router and the basket token addresses on Arc are
-still unresolved, and the file says so. The steps between here and a deploy are
-[`docs/evidence/arc-deploy-runbook.md`](docs/evidence/arc-deploy-runbook.md).
+**Deployed on Arc mainnet (chain 5042), 2026-09-24.** The address book is
+[`contracts/config/deployments/arc-mainnet.json`](contracts/config/deployments/arc-mainnet.json):
+every address in it was re-read independently from the chain and cross-checked on two RPC
+endpoints, rather than copied from documentation. The first vault exists there
+(`0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`), created and registered through the intended
+creator Safe. Re-verify any address you act on directly against the chain before transacting —
+this file is not authorization on its own. The Arc survey that preceded the deploy —
+[`docs/evidence/arc-mainnet-survey.json`](docs/evidence/arc-mainnet-survey.json) — remains the raw
+chain reads it was built from, and is superseded by the deployment record above where the two
+disagree.
 
 **Arc testnet is not a dry run, and that is measured rather than assumed.** Chain 5042002 carries
 the USDC predeploy, Permit2 and Multicall3 and nothing else this protocol needs: no Uniswap, no
@@ -254,7 +261,8 @@ sub-README, this table wins.
 | Surface | Directory | Domain | Status |
 | --- | --- | --- | --- |
 | Marketing site | `apps/site/` | `rwally.com` | **The only marketing site source in this repository.** `apps/site-next/` was deleted in [#304](https://github.com/SlumperSan/agent-governed-vaults/pull/304) and the site was rebuilt here; `scripts/gate.mjs` builds and tests this directory. **Which build `rwally.com` currently serves is not determinable from this repository** — confirm against the Cloudflare Pages project before any deploy. |
-| Vault explorer | `apps/app/` | `app.rwally.com` | **Live, and reading a chain the protocol is no longer on.** Cloudflare Pages project `rwally-app`, production branch `protocol/main`. Its live reads must be re-pointed at Arc before it describes anything again. |
+| Vault workspace | `apps/vaults-ui/` | `app.rwally.com` | **The member surface, and not deployed yet.** The owner decided 2026-09-19 that this takes the address and `apps/app` retires into it — one surface, one address. `wrangler.toml` here carries the EXISTING project `rwally-app`, so **the next deploy against it replaces the live explorer the instant it finishes**; the DNS is already pointed and there is no staging step. The cutover is the owner's. It reads a chain live via `src/lib/live-vaults.ts` (plan item 0.7); `connect-src` in `public/_headers` names that RPC origin, and the two must change together — see the workspace's own README. |
+| Vault explorer (retiring) | `apps/app/` | `app.rwally.com` until the workspace deploys | **Live, and reading a chain the protocol is no longer on.** Same Pages project, `rwally-app`. It is superseded rather than maintained: its live reads were never re-pointed at Arc, and the decision above means they will not be. [#303](https://github.com/SlumperSan/agent-governed-vaults/pull/303) rebuilds THIS directory and was opened 2026-09-16, before that decision — it is superseded by it, not competing with it. |
 | Allocator front end | `apps/web/` ("Vault Atlas") | Not yet assigned | **Not deployed.** No production domain decided. |
 | Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** x402 metering is implemented; no facilitator stood up and no public domain chosen yet. Its chain configuration targets Arc. |
 | Paid vault-snapshot endpoint | ~~`functions/api/vaults.js`~~ (removed from the repo) | `rwally.com/api/vaults` | **Removed from the repo, STILL LIVE in production.** PR #298 (owner-approved) deleted it and `functions/.well-known/x402.js`; the Pages project has not been redeployed, so the route returns **402** and the discovery document returns **200**, read 2026-09-16. **The next deploy of the marketing site removes both** — intended, but not by accident. It duplicated `apps/api` and settled on Base mainnet, conflicting with the single-chain direction. `docs/REVENUE.md` is kept for history, marked superseded. See below the table. |

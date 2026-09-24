@@ -27,8 +27,11 @@ included — carries zero weight.
 - `configOf[vault]` — the immutable-until-RuleChange `GovConfig` (phase durations, `quorumBps`,
   `proposalThresholdBps`, `concentrationCapBps`, `proposalCooldown`).
 - `proposals[pid]` — `Proposal` with `createdAt`, phase deadlines, `snapshotTotal`, `memberCount`,
-  `forWeight` / `againstWeight` (tally, includes defaults), `revealedWeight` /
-  `revealedVoterCount` (the **quorum numerator** — defaults never count).
+  `forWeight` / `againstWeight` (tally — includes applied defaults AND cranked delegations),
+  `revealedWeight` / `revealedVoterCount` (the **quorum numerator** — fed by SELF-reveals only:
+  neither defaults nor cranked delegations count, VO-2 / VO-2b).
+- `delegatedForWeight[pid]` — the cranked weight sitting on the FOR side, subtracted out of the
+  sub-five stake terms so a delegate cannot be the FOR majority by themselves (VO-2b).
 - `commitOf`, `revealedOf`, `revealedSupportOf`, `defaultApplied`, `delegateAccrued`.
 - `standingDefaultOf`, `delegateOf`, `lastProposalAt` (per-proposer).
 - `subVaultRegistry` — one-shot `wireSubVaultRegistry`, for SV-6 quorum-floor inheritance.
@@ -54,7 +57,12 @@ included — carries zero weight.
 - **Quorum regimes** (in `finalize`): `RuleChange` = full consensus (every unit of snapshot stake
   revealed FOR, CM-8 / K-2); `<5` members at creation = the H-8 signer regime (below); otherwise
   revealed stake >= `quorumBps` of `snapshotTotal` (VO-2).
-- **Defaults count toward the tally, never toward quorum** (VO-2 / K-3), expire `DEFAULT_TTL` (72h)
+- **Absentee weight counts toward the tally, never toward quorum.** That covers applied standing
+  defaults (VO-2 / K-3) and cranked delegations alike (VO-2b): an absent member's weight can change
+  which way a proposal goes and can never be what makes it decidable. Before VO-2b,
+  `revealDelegated` fed `revealedWeight`, and one member's reveal plus a permissionless stranger
+  cranking offline delegators passed AND executed at the shipped 2500/4000 — see
+  `contracts/test/audit/AuditDelegatedQuorum.t.sol`. Defaults additionally expire `DEFAULT_TTL` (72h)
   after being set (VO-3), and are structurally limited to `Rebalance` on-chain (VO-4 — not
   proposer-asserted text). The TTL is measured when the default is APPLIED, and `applyStandingDefault`
   is reveal-phase-only, so the commit phase consumes part of it: the **usable** window is
@@ -67,7 +75,7 @@ included — carries zero weight.
 
 **`commitDuration` and `revealDuration` are already at the contract minimum, so "shorten the
 governance windows" is not a configuration change.** `_validateConfig` requires each to be
-`>= 1 hours` (`contracts/src/Governance.sol:246-247`), and **both** shipped configs set both to 3600
+`>= 1 hours` (`contracts/src/Governance.sol:256-257`), and **both** shipped configs set both to 3600
 with `timelockDuration` 0 — `smoke.gov` in `contracts/config/base-mainnet.json` and
 `contracts/config/base-sepolia.json`, with `proposalThresholdBps` 500 and `proposalCooldown` 21600.
 No contract from this repository is deployed on Base mainnet, on Arc, or on any other mainnet, at
@@ -93,9 +101,9 @@ front-running:
 
   | # | branch | quorum test | who feeds it |
   |---|---|---|---|
-  | 1 | `RuleChange`, at any member count | `revealedWeight == snapshotTotal && forWeight >= snapshotTotal` | live reveals only — **full consensus**, so window length matters most here |
-  | 2 | otherwise, `memberCount < 5` | `headMajorityWithStake \|\| forStakeMajority` | `forWeight` — reveals, **plus** any applied standing defaults |
-  | 3 | otherwise, `memberCount >= 5` | revealed stake vs `quorumBps` | `revealedWeight`; defaults never count (VO-2 / K-3) |
+  | 1 | `RuleChange`, at any member count | `revealedWeight == snapshotTotal && forWeight >= snapshotTotal` | SELF-reveals only — **full consensus**, so every member must reveal; delegation cannot supply it (VO-2b) |
+  | 2 | otherwise, `memberCount < 5` | `headMajorityWithStake \|\| forStakeMajority` | `forWeight - delegatedForWeight[pid]` — self-reveals **plus** applied standing defaults, **minus** cranked delegations (VO-2b) |
+  | 3 | otherwise, `memberCount >= 5` | revealed stake vs `quorumBps` | `revealedWeight`; neither defaults nor cranked delegations count (VO-2 / K-3 / VO-2b) |
 
   (Rows 2 and 3 were the other way round in a previous draft, under this same bolded claim about
   order. The conditions are mutually exclusive so no outcome changed, but the sentence was false and
@@ -105,8 +113,8 @@ front-running:
   worth naming rather than waving at: standing defaults are **`Rebalance`-only** (VO-4, enforced by
   `require(p.ptype == ProposalType.Rebalance)`), `standingDefaultOf` is empty until a member
   affirmatively sets one, and the default must pre-date the proposal. With no defaults set, both
-  branches of that row are fed by reveals alone — delegated reveals included, which `revealDelegated`
-  gates on the delegate having actually revealed — and the round is exactly as window-sensitive as
+  branches of that row are fed by SELF-reveals alone — cranked delegations are subtracted out of both
+  stake terms (VO-2b), so they cannot carry a round either — and the round is exactly as window-sensitive as
   any other. So the case where phase length barely matters is: *a Rebalance, in a sub-five vault, where
   pre-existing FOR defaults already carry a majority* — narrow, not the regime's general behaviour.
 

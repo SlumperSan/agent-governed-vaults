@@ -6,10 +6,12 @@
    <style> block and every style="..." attribute in the document. There is
    therefore nothing to inline and nothing to move here later.
 
-   THE PALETTE IS apps/site-next/src/tokens.css, values as authored there, so
-   the app reads as the same product as the site. The contrast ratios in the
-   comments are that file's computed figures, carried across with the values
-   they describe; they are not re-estimated here.
+   THE PALETTE WAS apps/site-next/src/tokens.css, values as authored there, so
+   the app read as the same product as the site. apps/site-next was deleted in
+   #304; apps/site's current tokens.css uses a different palette (navy/blue
+   rather than this page's purple/dark), so the two no longer match. The
+   contrast ratios in the comments below are this page's own figures, carried
+   over unchanged from the original values; they are not re-estimated here.
 
    ONE GROUND. Dark only, deliberately, the same decision the site made. A
    second palette is a second set of ratios nobody re-measures.
@@ -173,12 +175,12 @@ a:hover { color: var(--ink); }
 .addr { font-family: var(--mono); font-feature-settings: 'tnum' 1; }
 
 /* ---------------------------------------------------------------------------
-   MASTHEAD. Same structure as apps/site-next/src/shell/Masthead.tsx and
-   masthead.module.css: a fixed, floating pill with the identity on the left,
-   a nav capsule centred, and the X icon plus the connect control on the
-   right. The class names below intentionally match the site's so the two
-   stylesheets read as one design decision made twice rather than two
-   different ones.
+   MASTHEAD. Was the same structure as apps/site-next/src/shell/Masthead.tsx
+   and masthead.module.css: a fixed, floating pill with the identity on the
+   left, a nav capsule centred, and the X icon plus the connect control on
+   the right. apps/site-next was deleted in #304; apps/site's current header
+   (Shell.tsx, class `.nav`) is a plain top bar with no floating pill, so the
+   class names below no longer match the site's: they are this page's own.
    --------------------------------------------------------------------------- */
 .masthead {
   position: fixed;
@@ -711,12 +713,13 @@ a.addr:hover { color: var(--accent); border-bottom-color: var(--accent); }
 }
 
 /* ---------------------------------------------------------------------------
-   FOOTER. Same structure as apps/site-next/src/shell/Footer.tsx and
+   FOOTER. Was the same structure as apps/site-next/src/shell/Footer.tsx and
    footer.module.css: a full-bleed mascot band with a scrim, the identity
    lockup repeated exactly as the masthead sets it, the door links, and the
-   licence line. No parallax: see the note above the markup in index.html for
-   why, this is a static, well-cropped band rather than the site's
-   scroll-driven one.
+   licence line. apps/site-next was deleted in #304; apps/site's current
+   footer (Shell.tsx's Footer) is a plain bordered footer with no mascot band
+   and no parallax, so this is now this page's own static, well-cropped band
+   rather than a mirror of the site's.
    --------------------------------------------------------------------------- */
 .footer {
   position: relative;
