@@ -26,6 +26,7 @@ import {
 import {
   PR_FIELDS, RUN_FIELDS, TRUSTED_ASSOCIATIONS, missingFields, trustedComments, validateGhPayloads,
 } from '../merge-preflight.mjs';
+import { BBB_SECTIONS, extractSection, isBlankSection, gradeSections } from '../lib/pr-body-sections.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const POLICY = JSON.parse(readFileSync(path.join(ROOT, 'scripts', 'lib', 'merge-policy.json'), 'utf8'));
@@ -35,6 +36,14 @@ const greenOn = (sha) => [{ headSha: sha, status: 'completed', conclusion: 'succ
 
 /** @param {import('../lib/verdicts.mjs').Blocker[]} bs */
 const ruleIds = (bs) => [...new Set(bs.map((b) => b.ruleId))].sort();
+
+/**
+ * A PR body that satisfies `buy-borrow-build-declared` (card 190), for `feat/` fixtures built to
+ * exercise an unrelated rule — without this, adding that rule would incidentally block every
+ * pre-existing `feat/` fixture below and break its `ruleIds`/`clear` assertions for a reason that
+ * has nothing to do with what each test is about.
+ */
+const BBB_OK_BODY = '## Buy / borrow / build\nNone found.\n\n## Standards\nNone applies.\n';
 
 // ---------------------------------------------------------------------------------------------
 // The four real merges
@@ -101,7 +110,7 @@ test('#98 at its merge instant: Mode B — one ACCEPT, one reviewer still out, R
 });
 
 test('#109 at its merge instant: Mode B at its worst — the PR merged before any verdict existed', () => {
-  const pr = { number: 109, state: 'OPEN', headRefOid: 'dddd4444', headRefName: 'feat/canary-tiered-sinks-deadman' };
+  const pr = { number: 109, state: 'OPEN', headRefOid: 'dddd4444', headRefName: 'feat/canary-tiered-sinks-deadman', body: BBB_OK_BODY };
   // No verdict, and no interval to measure from: the REJECT arrived 5.5 minutes AFTER the merge.
   const roster = [{ createdAt: '2026-09-01T22:10:00Z', body: '<!-- REVIEW-ROSTER reviewers=Review109 -->' }];
   const strict = evaluate({ pr, comments: roster, runs: greenOn('dddd4444'), mode: 'strict' });
@@ -123,7 +132,7 @@ test('#109 at its merge instant: Mode B at its worst — the PR merged before an
 
 test('Mode C: a MERGED PR blocks, and the message says open a new PR rather than push', () => {
   const d = evaluate({
-    pr: { number: 107, state: 'MERGED', headRefOid: 'eeee5555', headRefName: 'feat/indexer-exit-fee-governance-abis' },
+    pr: { number: 107, state: 'MERGED', headRefOid: 'eeee5555', headRefName: 'feat/indexer-exit-fee-governance-abis', body: BBB_OK_BODY },
     comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->\n<!-- REVIEW-VERDICT reviewer=R verdict=ACCEPT -->' }],
     runs: greenOn('eeee5555'),
     mode: 'strict',
@@ -408,7 +417,7 @@ test('the heuristics in verdicts.mjs are byte-identical to the ones merge-policy
 
 test('every rule the evaluator can emit is declared in merge-policy.json, and vice versa', () => {
   const declared = POLICY.rules.map((/** @type {any} */ r) => r.id).sort();
-  const emitted = ['base-current', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
+  const emitted = ['base-current', 'buy-borrow-build-declared', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
   assert.deepEqual(declared.sort(), emitted.sort(), 'a rule with no policy entry has no stated reason, and a policy entry with no rule is a promise nothing keeps');
 });
 
@@ -672,6 +681,7 @@ const okPr = () => ({
   baseRefName: 'protocol/main',
   comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->', author: { login: 'SlumperSan' }, authorAssociation: 'OWNER' }],
   commits: [{ oid: 'newhead0', committedDate: '2026-09-01T21:00:00Z' }],
+  body: '',
 });
 const okRuns = () => [{ headSha: 'newhead0', status: 'completed', conclusion: 'success', workflowName: 'CI' }];
 
@@ -713,6 +723,12 @@ test('validateGhPayloads fails CLOSED on every field whose absence would disarm 
   const { isDraft, ...noDraft } = okPr();
   assert.match(String(validateGhPayloads(noDraft, okRuns(), 0)), /isDraft/);
 
+  // `body` (card 190): absent means buy-borrow-build-declared cannot tell "the author never wrote a
+  // section" from "gh did not return one" -- refuse to judge rather than misreport the first as the
+  // second.
+  const { body, ...noBody } = okPr();
+  assert.match(String(validateGhPayloads(noBody, okRuns(), 0)), /body/);
+
   // `--jq` on a key that is not there prints `null` and gh exits 0, so the JSON.parse failure path
   // never sees it and Mode E just stops firing.
   assert.match(String(validateGhPayloads(okPr(), okRuns(), null)), /behind_by/);
@@ -752,7 +768,7 @@ test('parseRoster: a later roster naming a DIFFERENT reviewer fully replaces the
 });
 
 test('an empty roster clears roster-declared/roster-resolved in strict mode for a now-withdrawn seat', () => {
-  const pr = { number: 352, state: 'OPEN', headRefOid: 'feed0001', headRefName: 'feat/vault-addresses-lint' };
+  const pr = { number: 352, state: 'OPEN', headRefOid: 'feed0001', headRefName: 'feat/vault-addresses-lint', body: BBB_OK_BODY };
   const comments = [
     { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
     // Security's session ended with no verdict posted. Withdrawing the roster to empty must clear
@@ -1017,3 +1033,88 @@ test('evaluate(): omitting `reviews` entirely (every pre-existing caller/fixture
     assert.match(src, /const trusted = trustedComments\(pr\.data\.comments\);/);
   });
 }
+
+// ---------------------------------------------------------------------------------------------
+// Card 190 / Chairman directive 13 — `## Buy / borrow / build` and `## Standards` on `feat/` PRs
+// ---------------------------------------------------------------------------------------------
+
+test('extractSection: finds the heading loosely, bounds content at the next heading, and returns null when absent', () => {
+  const body = 'intro\n\n## Buy / borrow / build\nline one\nline two\n\n## Standards\nstandards line\n';
+  assert.equal(extractSection(body, BBB_SECTIONS[0].heading).trim(), 'line one\nline two');
+  assert.equal(extractSection(body, BBB_SECTIONS[1].heading).trim(), 'standards line');
+  assert.equal(extractSection('no such heading here', BBB_SECTIONS[0].heading), null);
+  // Spacing/slash variance the real skeleton and hand-written PRs both produce.
+  assert.equal(extractSection('## Buy/borrow/build\nx', BBB_SECTIONS[0].heading), 'x');
+  assert.equal(extractSection('##   Buy  /  borrow  /  build\nx', BBB_SECTIONS[0].heading), 'x');
+});
+
+test('MUTATION BAR — isBlankSection: the shapes that must fail, and the ones that must pass', () => {
+  // Must be caught (blank): whitespace only, HTML comment only, one unfilled placeholder token.
+  for (const blank of [
+    '', '   \n  \n', '<!-- fill this in -->', '<!-- one --><!-- two -->  ',
+    '<what you grepped in this repo, and what you found or did not>',
+    '[fill this in]', 'TBD', 'TODO', 'N/A', 'FILL-IN', 'PLACEHOLDER', 'xxx',
+  ]) {
+    assert.equal(isBlankSection(blank), true, `must read as blank: ${JSON.stringify(blank)}`);
+  }
+  // Must NOT be caught (real content) — "None found" above all, per the card's own acceptance line.
+  for (const real of [
+    'None found.',
+    '- **Searched:** grepped scripts/lib for an existing parser — none found\n- **Existing options:** none found\n- **Why we built:** narrow enough not to warrant a dependency',
+    'a placeholder token elsewhere does not blank real prose: we searched npm, found nothing <shrug>',
+    'None applies.',
+    'no deviation',
+  ]) {
+    assert.equal(isBlankSection(real), false, `must NOT read as blank: ${JSON.stringify(real)}`);
+  }
+});
+
+test('gradeSections: missing vs blank vs ok are three distinct, reported states', () => {
+  assert.deepEqual(
+    gradeSections('nothing relevant here').map((s) => s.state),
+    ['missing', 'missing'],
+  );
+  assert.deepEqual(
+    gradeSections('## Buy / borrow / build\n\n<!-- TODO -->\n\n## Standards\nnone applies').map((s) => s.state),
+    ['blank', 'ok'],
+  );
+  assert.deepEqual(gradeSections(BBB_OK_BODY).map((s) => s.state), ['ok', 'ok']);
+});
+
+test('evaluate(): a feat/ PR with no body at all is blocked, in both modes', () => {
+  const pr = { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'feat/new-thing' };
+  for (const mode of /** @type {const} */ (['advisory', 'strict'])) {
+    const d = evaluate({ pr, comments: [], runs: greenOn('a'), mode });
+    assert.ok(d.blockers.some((b) => b.ruleId === 'buy-borrow-build-declared'), `${mode}: missing body must block`);
+    assert.match(
+      d.blockers.find((b) => b.ruleId === 'buy-borrow-build-declared').detail,
+      /Buy \/ borrow \/ build/,
+    );
+  }
+});
+
+test('evaluate(): a feat/ PR whose sections are present but blank is blocked, and names which section', () => {
+  const blankBoth = '## Buy / borrow / build\n<!-- -->\n\n## Standards\nTBD\n';
+  const d = evaluate({
+    pr: { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'feat/new-thing', body: blankBoth },
+    comments: [], runs: greenOn('a'), mode: 'advisory',
+  });
+  const bbb = d.blockers.filter((b) => b.ruleId === 'buy-borrow-build-declared');
+  assert.equal(bbb.length, 2, 'both sections are blank, so both must be reported');
+  assert.ok(bbb.some((b) => b.detail.includes('Buy / borrow / build')));
+  assert.ok(bbb.some((b) => b.detail.includes('Standards')));
+});
+
+test('evaluate(): "None found" / "None applies" is real content and clears buy-borrow-build-declared', () => {
+  const pr = { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'feat/new-thing', body: BBB_OK_BODY };
+  const d = evaluate({ pr, comments: [], runs: greenOn('a'), mode: 'advisory' });
+  assert.ok(!d.blockers.some((b) => b.ruleId === 'buy-borrow-build-declared'), '"None found" must not block');
+});
+
+test('evaluate(): a non-feat/ PR with no body at all is NOT blocked by buy-borrow-build-declared', () => {
+  for (const branch of ['fix/x', 'test/x', 'docs/x', 'chore/x', 'x']) {
+    const pr = { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: branch };
+    const d = evaluate({ pr, comments: [], runs: greenOn('a'), mode: 'advisory' });
+    assert.ok(!d.blockers.some((b) => b.ruleId === 'buy-borrow-build-declared'), `${branch} must not be gated by this rule`);
+  }
+});
