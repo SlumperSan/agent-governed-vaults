@@ -447,7 +447,7 @@ can:
   response (residual register **row 14**), not a config edit:
   every vault priced by that oracle is now mis-scaled by a power of ten, no on-chain lever can fix
   it (the vault's oracle is `immutable` — row 12), and members should be told to exit. **On a vault with
-  no sub-vaults, exits are never frozen by drift** — `_settleExit` sizes the in-kind
+  no sub-vaults, drift does not change what an exit pays out in tokens** — `_settleExit` sizes the in-kind
   slice pro-rata from `assetBalance`, which is what `test_harmModel_driftDoesNotRobAnExitingMember`
   demonstrates — but the oracle still *values* that slice to set the performance fee, and the fee
   IS withheld from the member's actual tokens: drift costs a bounded, one-directional haircut of up
