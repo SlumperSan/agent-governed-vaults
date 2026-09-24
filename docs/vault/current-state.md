@@ -68,10 +68,9 @@ C-4/C-6 exploit evidence. See [[oracleaggregator]] and [[oracle-sources]].
 
 ## Deployment state
 
-- **No mainnet deployment exists today.** A deployment on a since-abandoned chain existed from
-  2026-09-05; both vaults it held were fully exited on 2026-09-18 and hold nothing. **No Base
-  mainnet deployment exists**, and none exists on Arc either — the protocol is built for Arc but
-  has not been deployed there.
+- **Deployed on Arc mainnet since 2026-09-24.** `contracts/config/deployments/arc-mainnet.json`,
+  one vault. A deployment on a since-abandoned chain existed from 2026-09-05; both vaults it held
+  were fully exited on 2026-09-18 and hold nothing. **No Base mainnet deployment exists.**
 - **Deployed on Base Sepolia** (a testnet trial, no real value at stake).
   **The committed address book now IS the current deployment**, as of 2026-09-03.
   `contracts/config/deployments/base-sepolia.json` records `sourceCommit 8a0e1155`, deploy block

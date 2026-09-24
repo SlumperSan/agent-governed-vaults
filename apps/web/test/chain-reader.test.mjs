@@ -17,9 +17,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  LEG_SAFETY_UNREAD,
   PROPOSAL_STATUS_BY_ORDINAL,
   PROPOSAL_TYPE_BY_ORDINAL,
   assembleLeg,
+  assembleLegSafety,
   assembleProposal,
   assembleVault,
   legValueWad,
@@ -27,14 +29,28 @@ import {
   planBasketAssets,
   planCore,
   planFeeds,
+  planLegSafety,
   planLegs,
   planPosition,
   planProposal,
   planProposalId,
   weightsBps,
+  planWiringLockCore,
+  planWiringLockSubVaultFactory,
+  assembleWiringLock,
+  planAllowSubVaults,
+  assembleAllowSubVaults,
+  planClaimableEscrow,
+  assembleClaimableEscrow,
+  planFactoryVaultCount,
+  planFactoryAllVaults,
+  assembleManifestCheck,
 } from '../src/chain-reader.mjs';
 import { MISSING_IN_LIVE } from '../src/live-adapter.mjs';
-import { VAULT_VIEWS, GOVERNANCE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS } from '../../../packages/canary/src/abis.mjs';
+import {
+  VAULT_VIEWS, GOVERNANCE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, TOKEN_SAFETY_VIEWS,
+  OPERATOR_REGISTRY_VIEWS, SUBVAULT_REGISTRY_VIEWS, VAULT_FACTORY_VIEWS,
+} from '../../../packages/canary/src/abis.mjs';
 
 const WAD = 10n ** 18n;
 const wad = (n) => BigInt(Math.round(n * 1e6)) * 10n ** 12n;
@@ -50,7 +66,28 @@ const TABLES = {
   GOVERNANCE_VIEWS,
   CHAINLINK_ORACLE_VIEWS,
   AGGREGATOR_V3_VIEWS,
+  TOKEN_SAFETY_VIEWS,
+  OPERATOR_REGISTRY_VIEWS,
+  SUBVAULT_REGISTRY_VIEWS,
+  VAULT_FACTORY_VIEWS,
 };
+
+// A self-verifying 40-hex-char address, so the wiring-lock tests below (which validate their inputs
+// with a strict /^0x[0-9a-fA-F]{40}$/ regex, same as assembleWiringLock itself) never fail on a
+// hand-counted placeholder string.
+const hexAddr = (suffix) => '0x' + suffix.padStart(40, '0');
+
+const OPERATOR_REGISTRY = '0x0perator000000000000000000000000000000'.padEnd(42, '0').slice(0, 42);
+const SUBVAULT_REGISTRY = '0xsubvault0000000000000000000000000000000'.padEnd(42, '0').slice(0, 42);
+const FACTORY = '0xfactory00000000000000000000000000000000'.padEnd(42, '0').slice(0, 42);
+const MEMBER = '0xmember00000000000000000000000000000001'.padEnd(42, '0').slice(0, 42);
+const USDC = hexAddr('5c6');
+// Four genuinely valid, distinct hex addresses for the wiring-lock success/failure cases.
+const OP_FACTORY_ADDR = hexAddr('a1');
+const OP_FEE_ENGINE_ADDR = hexAddr('a2');
+const GOV_SUBVAULT_REGISTRY_ADDR = hexAddr('a3');
+const SUBVAULT_FACTORY_ADDR = hexAddr('a4');
+const ZERO_ADDR_FOR_TESTS = hexAddr('0');
 
 // ── The planner names only functions that exist ────────────────────────────────────────────────
 
@@ -60,9 +97,16 @@ test('every planned call names a real fragment in the table it claims', () => {
     ...planBasketAssets(VAULT, 2),
     ...planProposalId(GOV, VAULT),
     ...planLegs(VAULT, ORACLE, [WETH]),
+    ...planLegSafety(VAULT, [WETH]),
     ...planProposal(GOV, 41),
     ...planFeeds(['0xfeed000000000000000000000000000000000001']),
     ...planPosition(VAULT, '0xmember00000000000000000000000000000001'.padEnd(42, '0').slice(0, 42)),
+    ...planWiringLockCore(OPERATOR_REGISTRY, GOV),
+    ...planWiringLockSubVaultFactory(SUBVAULT_REGISTRY),
+    ...planAllowSubVaults(FACTORY),
+    ...planClaimableEscrow(VAULT, MEMBER, [WETH, USDC]),
+    ...planFactoryVaultCount(FACTORY),
+    ...planFactoryAllVaults(FACTORY, 3),
   ];
   assert.ok(planned.length > 0);
 
@@ -83,6 +127,272 @@ test('planBasketAssets indexes every slot exactly once', () => {
   const calls = planBasketAssets(VAULT, 3);
   assert.deepEqual(calls.map((c) => c.args[0]), [0, 1, 2]);
   assert.equal(planBasketAssets(VAULT, 0).length, 0);
+});
+
+test('planLegSafety plans paused() and isBlacklisted(vault) for every leg, in order', () => {
+  const CBBTC = '0xcb00000000000000000000000000000000cb00';
+  const calls = planLegSafety(VAULT, [WETH, CBBTC]);
+  assert.equal(calls.length, 4);
+  assert.deepEqual(
+    calls.map((c) => [c.address, c.fn, c.args]),
+    [
+      [WETH, 'paused', []],
+      [WETH, 'isBlacklisted', [VAULT]],
+      [CBBTC, 'paused', []],
+      [CBBTC, 'isBlacklisted', [VAULT]],
+    ],
+  );
+  assert.equal(planLegSafety(VAULT, []).length, 0);
+});
+
+// ── Card #32: paused()/isBlacklisted() per leg — FAILURE DIRECTION FIRST ───────────────────────
+//
+// The whole point of this card: a failed read must render as 'unknown', NEVER as the safe-looking
+// boolean. Every shape a failure can take — a throw the caller catches into `null`, a timeout the
+// caller also catches into `null`, a revert (same), and a call that "succeeds" but the caller could
+// not decode into a strict boolean — is asserted here, BEFORE the happy path, and each assertion
+// names explicitly that the result is not the healthy value.
+
+test('a thrown call (caller passes null) renders paused as unknown, never active', () => {
+  const leg = assembleLegSafety({
+    address: WETH, pausedValue: null, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW,
+  });
+  assert.equal(leg.paused, 'unknown');
+  assert.notEqual(leg.paused, 'active', 'a failed read must never look like "not paused"');
+});
+
+test('a timed-out call (caller passes null) renders isBlacklisted as unknown, never clear', () => {
+  const leg = assembleLegSafety({
+    address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: null, blacklistedReadAt: NOW,
+  });
+  assert.equal(leg.blacklisted, 'unknown');
+  assert.notEqual(leg.blacklisted, 'clear');
+});
+
+test('a reverting call renders unknown for both reads, not a mix of unknown and healthy', () => {
+  const leg = assembleLegSafety({
+    address: WETH, pausedValue: null, pausedReadAt: NOW, blacklistedValue: null, blacklistedReadAt: NOW,
+  });
+  assert.equal(leg.paused, 'unknown');
+  assert.equal(leg.blacklisted, 'unknown');
+});
+
+test('a call returning data that is not a strict boolean renders unknown, not a coerced boolean', () => {
+  // A truthy non-boolean (an object, a numeric 1, a string) must not be treated as `true`, and a
+  // falsy non-boolean (0, '', undefined) must not be treated as `false` either — only the EXACT
+  // booleans the contract can actually return may resolve to a definite state.
+  for (const bogus of [1, 0, '', 'false', 'true', undefined, {}, [], NaN]) {
+    const leg = assembleLegSafety({
+      address: WETH, pausedValue: bogus, pausedReadAt: NOW, blacklistedValue: bogus, blacklistedReadAt: NOW,
+    });
+    assert.equal(leg.paused, 'unknown', `pausedValue ${JSON.stringify(bogus)} must render unknown`);
+    assert.equal(leg.blacklisted, 'unknown', `blacklistedValue ${JSON.stringify(bogus)} must render unknown`);
+  }
+});
+
+test('no assembled leg-safety state is ever "not paused" or "clear" from a failed read, across every failure shape', () => {
+  const failureShapes = [null, undefined, 0, 1, '', 'paused', NaN, {}, []];
+  for (const bogus of failureShapes) {
+    const leg = assembleLegSafety({
+      address: WETH, pausedValue: bogus, pausedReadAt: NOW, blacklistedValue: bogus, blacklistedReadAt: NOW,
+    });
+    assert.notEqual(leg.paused, 'active');
+    assert.notEqual(leg.blacklisted, 'clear');
+  }
+});
+
+// ── Now the happy path ──────────────────────────────────────────────────────────────────────────
+
+test('a clean read renders the real boolean, not unknown', () => {
+  const healthy = assembleLegSafety({
+    address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW,
+  });
+  assert.equal(healthy.paused, 'active');
+  assert.equal(healthy.blacklisted, 'clear');
+
+  const alarming = assembleLegSafety({
+    address: WETH, pausedValue: true, pausedReadAt: NOW, blacklistedValue: true, blacklistedReadAt: NOW,
+  });
+  assert.equal(alarming.paused, 'paused');
+  assert.equal(alarming.blacklisted, 'blacklisted');
+});
+
+// ── Each leg, and each call on a leg, carries its OWN read timestamp ───────────────────────────
+
+test('pausedReadAt and blacklistedReadAt are carried through unchanged, not stamped with a shared now', () => {
+  const leg = assembleLegSafety({
+    address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: true, blacklistedReadAt: NOW + 4,
+  });
+  assert.equal(leg.pausedReadAt, NOW);
+  assert.equal(leg.blacklistedReadAt, NOW + 4);
+  assert.notEqual(leg.pausedReadAt, leg.blacklistedReadAt, 'two calls read seconds apart are two facts, not one');
+});
+
+
+test('BLOCKER: a REORDERED safety array cannot hand one leg another leg\'s safety state', () => {
+  // THE FAILURE THIS CLOSES, in the shape it was demonstrated. The merge was `r.legSafety[i]`, so a
+  // caller that assembled the array in a different order than the basket rendered a PAUSED and
+  // BLACKLISTED asset as `active` / `clear` with a fresh timestamp. A confident wrong answer, which is
+  // strictly worse than the `unknown` the tri-state exists to preserve — and the ordered-array test
+  // beside this one could never see it, because index and identity agree there.
+  const legA = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const legB = assembleLeg({ address: '0xcb', assetUnit: 10n ** 8n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  // Leg B is the dangerous one: paused AND blacklisted.
+  const safetyA = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW - 10, blacklistedValue: false, blacklistedReadAt: NOW - 9 });
+  const safetyB = assembleLegSafety({ address: '0xcb', pausedValue: true, pausedReadAt: NOW - 4, blacklistedValue: true, blacklistedReadAt: NOW - 3 });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 2n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [legA, legB],
+    legSafety: [safetyB, safetyA], // REVERSED
+  });
+
+  assert.equal(v.basket[1].paused, 'paused', 'the paused leg must still read paused when the array order differs');
+  assert.equal(v.basket[1].blacklisted, 'blacklisted');
+  assert.equal(v.basket[1].pausedReadAt, NOW - 4, 'and it must keep its OWN timestamp, not the other leg\'s');
+  assert.equal(v.basket[0].paused, 'active');
+  assert.equal(v.basket[0].blacklisted, 'clear');
+  assert.equal(v.basket[0].pausedReadAt, NOW - 10);
+});
+
+test('a safety record for an address that is not in the basket reaches no leg at all', () => {
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const stranger = assembleLegSafety({ address: '0xdeadbeef', pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [stranger],
+  });
+  assert.equal(v.basket[0].paused, 'unknown', 'a record naming another asset must not clear this leg');
+  assert.equal(v.basket[0].blacklisted, 'unknown');
+  assert.equal(v.basket[0].pausedReadAt, null);
+});
+
+test('TWO records naming one address make it ambiguous, and ambiguity reads unknown', () => {
+  // Fails closed rather than picking one. "Two answers" about whether an asset is paused is not an
+  // answer, and the one thing that must never come out of this function is a clean bill of health
+  // nobody established.
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const first = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+  const second = assembleLegSafety({ address: WETH, pausedValue: true, pausedReadAt: NOW + 1, blacklistedValue: true, blacklistedReadAt: NOW + 1 });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [first, second],
+  });
+  assert.equal(v.basket[0].paused, 'unknown');
+  assert.equal(v.basket[0].blacklisted, 'unknown');
+});
+
+test('THREE OR MORE records naming one address stay ambiguous - two is the arity that proves nothing', () => {
+  // At exactly two records `safetyByAddress.has(key)` carries the whole check and the `ambiguous`
+  // SET never matters: deleting it leaves two-record ambiguity working. The set exists for the third
+  // record, which finds `has(key)` FALSE - the second one deleted the entry - and would re-insert,
+  // handing the leg a clean bill of health assembled from three contradictory reads. Every arity from
+  // 2 to 5 is checked, because "an odd number of duplicates re-inserts" is the shape of the bug.
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  for (const n of [2, 3, 4, 5]) {
+    const records = [];
+    for (let i = 0; i < n; ++i) {
+      records.push(assembleLegSafety({
+        address: i % 2 === 0 ? WETH : WETH.toUpperCase(), // and the duplicate may be checksummed
+        pausedValue: i % 2 === 0,
+        pausedReadAt: NOW + i,
+        blacklistedValue: i % 2 === 0,
+        blacklistedReadAt: NOW + i,
+      }));
+    }
+    const v = assembleVault({
+      address: VAULT,
+      core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+      legs: [leg],
+      legSafety: records,
+    });
+    assert.equal(v.basket[0].paused, 'unknown', `${n} records for one address must stay ambiguous`);
+    assert.equal(v.basket[0].blacklisted, 'unknown', `${n} records for one address must stay ambiguous`);
+    assert.equal(v.basket[0].pausedReadAt, null, `${n} records: an ambiguous leg must carry no timestamp either`);
+  }
+});
+
+test('a record with NO address is dropped, and an address-less leg does not collect it', () => {
+  // `if (!key) continue` in the merge. Without it the record is stored under the '' key, and
+  // `lcAddr` returns '' for any leg whose address is missing or not a string - so that leg LOOKS UP
+  // the address-less record and inherits its state. That is blocker 1 of this PR returning by a
+  // different door, and it needs a leg with no address to show, which no other test builds.
+  const namedLeg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const anonLeg = assembleLeg({ address: undefined, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  for (const missing of [undefined, null, '', '   ', 42, {}]) {
+    const orphan = assembleLegSafety({ address: missing, pausedValue: false, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+    const v = assembleVault({
+      address: VAULT,
+      core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+      legs: [namedLeg, anonLeg],
+      legSafety: [orphan],
+    });
+    const why = `address ${JSON.stringify(missing)}`;
+    // 'active'/'clear' is the DANGEROUS answer here: a clean bill of health nobody established.
+    assert.equal(v.basket[0].paused, 'unknown', `${why}: a named leg must not collect an unaddressed record`);
+    assert.equal(v.basket[1].paused, 'unknown', `${why}: an address-less leg must not collect it either`);
+    assert.equal(v.basket[1].blacklisted, 'unknown', `${why}: nor its blacklist state`);
+  }
+});
+
+test('address matching is case-insensitive, because a checksummed address is the same asset', () => {
+  const leg = assembleLeg({ address: WETH.toLowerCase(), assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const safety = assembleLegSafety({ address: WETH.toUpperCase(), pausedValue: true, pausedReadAt: NOW, blacklistedValue: false, blacklistedReadAt: NOW });
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    legSafety: [safety],
+  });
+  assert.equal(v.basket[0].paused, 'paused', 'a checksum difference must not silently lose a paused state');
+});
+
+test('assembleVault merges per-leg safety by ADDRESS, each leg keeping its own timestamps', () => {
+  const legA = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const legB = assembleLeg({ address: '0xcb', assetUnit: 10n ** 8n, balance: 1n, priceWad: 1n, feed: { feed: '0xf2', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const safetyA = assembleLegSafety({ address: WETH, pausedValue: false, pausedReadAt: NOW - 10, blacklistedValue: false, blacklistedReadAt: NOW - 9 });
+  const safetyB = assembleLegSafety({ address: '0xcb', pausedValue: null, pausedReadAt: NOW - 4, blacklistedValue: true, blacklistedReadAt: NOW - 3 });
+
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 2n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [legA, legB],
+    // REVERSED on purpose. With `[safetyA, safetyB]` the array is already in basket order, so the
+    // index merge this PR replaced produces the identical result and the test named "by ADDRESS"
+    // passes with the defect restored. The order has to disagree with the legs for the assertion to
+    // be about identity rather than about position.
+    legSafety: [safetyB, safetyA],
+  });
+
+  assert.equal(v.basket[0].paused, 'active');
+  assert.equal(v.basket[0].pausedReadAt, NOW - 10);
+  assert.equal(v.basket[1].paused, 'unknown', 'leg B\'s failed paused() read must not borrow leg A\'s healthy state');
+  assert.equal(v.basket[1].blacklisted, 'blacklisted');
+  assert.notEqual(
+    v.basket[0].pausedReadAt, v.basket[1].pausedReadAt,
+    'two legs read at different times are two distinct facts, not one shared timestamp',
+  );
+});
+
+test('a leg with no safety reads supplied at all defaults to LEG_SAFETY_UNREAD — unknown, never healthy', () => {
+  const leg = assembleLeg({ address: WETH, assetUnit: 10n ** 18n, balance: 1n, priceWad: 1n, feed: { feed: '0xf1', heartbeat: 1200n }, oracleUpdatedAt: NOW });
+  const v = assembleVault({
+    address: VAULT,
+    core: { navWad: 1n, totalShares: 1n, idleUsdc: 0n, usdcScalar: 10n ** 12n, totalPendingUsdc: 0n, oracle: ORACLE, governance: GOV, creator: VAULT },
+    legs: [leg],
+    // legSafety deliberately omitted
+  });
+  assert.equal(v.basket[0].paused, LEG_SAFETY_UNREAD.paused);
+  assert.equal(v.basket[0].paused, 'unknown');
+  assert.equal(v.basket[0].blacklisted, 'unknown');
+  assert.equal(v.basket[0].pausedReadAt, null);
 });
 
 // ── Arithmetic, against VaultCore's own formulas ────────────────────────────────────────────────
@@ -176,6 +486,31 @@ test('assembleVault leaves proposal null only when told, never by defaulting a r
   assert.equal(v.proposal, 'unknown');
 });
 
+test('the proposal round reads delegatedForWeight alongside the record (VO-2b)', () => {
+  const plan = planProposal(GOV, 41);
+  assert.equal(plan.length, 2, 'the cranked-FOR figure is a second call, not a Proposal field');
+  const fns = plan.map((c) => c.functionName ?? c.fn ?? c.name);
+  assert.ok(fns.includes('proposals'), `proposals missing from ${JSON.stringify(fns)}`);
+  assert.ok(fns.includes('delegatedForWeight'), `delegatedForWeight missing from ${JSON.stringify(fns)}`);
+  for (const c of plan) assert.deepEqual(c.args, [41], 'both calls are keyed by the same pid');
+});
+
+test('an absent delegatedForWeight stays undefined, and is never read as zero', () => {
+  const rec = {
+    ptype: 0n, proposer: GOV, createdAt: BigInt(NOW - 5 * 3600),
+    commitDeadline: BigInt(NOW - 3600), revealDeadline: BigInt(NOW + 2 * 3600),
+    executableAt: 0n, expiresAt: 0n, status: 1n, actionHash: '0xab',
+    snapshotTotal: wad(4_450_000), memberCount: 3n,
+    forWeight: wad(2_000), againstWeight: 0n, revealedWeight: wad(1_000), revealedVoterCount: 1n,
+  };
+  // 0n and undefined are DIFFERENT answers in the sub-five regime: one says "no cranked weight",
+  // the other says "not read". quorumReadout returns false for the first and null for the second.
+  assert.equal(assembleProposal(41, rec).delegatedForWeight, undefined);
+  assert.equal(assembleProposal(41, rec, null).delegatedForWeight, undefined);
+  assert.equal(assembleProposal(41, rec, 0n).delegatedForWeight, 0n);
+  assert.equal(assembleProposal(41, rec, wad(1_000)).delegatedForWeight, wad(1_000));
+});
+
 test('a live proposal decodes every deadline, and 0 deadlines become null not 1970', () => {
   const p = assembleProposal(41, {
     ptype: 0n,
@@ -251,6 +586,299 @@ test('assembled NAV equals idle plus every leg, the way VaultCore.navWad sums it
   assert.equal(v.basket.reduce((a, l) => a + l.weightBps, 0) < 10_000, true, 'idle cash holds the remainder');
   assert.equal(v.blockNumber, 1234n, 'freshness travels with the data');
   assert.equal(v.chainRead, true);
+});
+
+// ── Contract tab Row 4 (#182): wiring-lock reads ────────────────────────────────────────────────
+
+test('planWiringLockCore plans OperatorRegistry.factory()/feeEngine() and Governance.subVaultRegistry(), in order', () => {
+  const calls = planWiringLockCore(OPERATOR_REGISTRY, GOV);
+  assert.deepEqual(
+    calls.map((c) => [c.address, c.fn, c.args]),
+    [
+      [OPERATOR_REGISTRY, 'factory', []],
+      [OPERATOR_REGISTRY, 'feeEngine', []],
+      [GOV, 'subVaultRegistry', []],
+    ],
+  );
+});
+
+test('planWiringLockSubVaultFactory plans exactly one call, SubVaultRegistry.factory()', () => {
+  const calls = planWiringLockSubVaultFactory(SUBVAULT_REGISTRY);
+  assert.equal(calls.length, 1);
+  assert.deepEqual([calls[0].address, calls[0].fn, calls[0].args], [SUBVAULT_REGISTRY, 'factory', []]);
+});
+
+const wiringInput = (overrides = {}) => ({
+  operatorFactoryValue: OP_FACTORY_ADDR, operatorFactoryReadAt: NOW,
+  operatorFeeEngineValue: OP_FEE_ENGINE_ADDR, operatorFeeEngineReadAt: NOW + 1,
+  govSubVaultRegistryValue: GOV_SUBVAULT_REGISTRY_ADDR, govSubVaultRegistryReadAt: NOW + 2,
+  subVaultRegistryFactoryValue: SUBVAULT_FACTORY_ADDR, subVaultRegistryFactoryReadAt: NOW + 3,
+  ...overrides,
+});
+
+test('all four resolved: the wiring-lock record renders, each field with its own read timestamp', () => {
+  const r = assembleWiringLock(wiringInput());
+  assert.ok(r, 'all four latches nonzero must produce a record');
+  assert.equal(r.operatorFactory, OP_FACTORY_ADDR);
+  assert.equal(r.operatorFactoryReadAt, NOW);
+  assert.equal(r.operatorFeeEngine, OP_FEE_ENGINE_ADDR);
+  assert.equal(r.operatorFeeEngineReadAt, NOW + 1);
+  assert.equal(r.govSubVaultRegistry, GOV_SUBVAULT_REGISTRY_ADDR);
+  assert.equal(r.govSubVaultRegistryReadAt, NOW + 2);
+  assert.equal(r.subVaultRegistryFactory, SUBVAULT_FACTORY_ADDR);
+  assert.equal(r.subVaultRegistryFactoryReadAt, NOW + 3);
+});
+
+test('BLOCKER: any ONE of the four unread/failed suppresses the WHOLE live line, never 3-of-4', () => {
+  const fields = [
+    'operatorFactoryValue', 'operatorFeeEngineValue', 'govSubVaultRegistryValue', 'subVaultRegistryFactoryValue',
+  ];
+  for (const failedField of fields) {
+    for (const bogus of [null, undefined, 0]) {
+      const r = assembleWiringLock(wiringInput({ [failedField]: bogus }));
+      assert.equal(
+        r, null,
+        `${failedField} failing as ${JSON.stringify(bogus)} must omit the whole record, not show the other three`,
+      );
+    }
+  }
+});
+
+test('a genuinely UNSET latch (the real zero address) also suppresses the record, not just an unread call', () => {
+  const r = assembleWiringLock(wiringInput({ operatorFeeEngineValue: ZERO_ADDR_FOR_TESTS }));
+  assert.equal(r, null, 'the zero address is a real "not wired yet" fact, and Row 4 has no partial-wiring sentence for it');
+});
+
+test('total failure: all four unread produces the same omission as a partial failure', () => {
+  const r = assembleWiringLock(wiringInput({
+    operatorFactoryValue: null, operatorFeeEngineValue: undefined,
+    govSubVaultRegistryValue: null, subVaultRegistryFactoryValue: undefined,
+  }));
+  assert.equal(r, null);
+});
+
+test('a malformed value (wrong shape, not a decode failure the caller null-ed) is also treated as unread', () => {
+  for (const bogus of [42, '', 'notanaddress', {}, [], OP_FACTORY_ADDR.toUpperCase().replace('0X', '0x-')]) {
+    const r = assembleWiringLock(wiringInput({ operatorFactoryValue: bogus }));
+    assert.equal(r, null, `${JSON.stringify(bogus)} must not be treated as a resolved latch`);
+  }
+});
+
+// ── Contract tab Row 5 (#182): allowSubVaults() ─────────────────────────────────────────────────
+
+test('planAllowSubVaults plans exactly one call, VaultFactory.allowSubVaults(), against the vault\'s OWN factory', () => {
+  const calls = planAllowSubVaults(FACTORY);
+  assert.equal(calls.length, 1);
+  assert.deepEqual([calls[0].address, calls[0].fn, calls[0].args], [FACTORY, 'allowSubVaults', []]);
+});
+
+test('assembleAllowSubVaults resolves only the exact booleans the contract can return', () => {
+  assert.equal(assembleAllowSubVaults(true), true);
+  assert.equal(assembleAllowSubVaults(false), false);
+  for (const bogus of [null, undefined, 0, 1, '', 'true', 'false', {}, []]) {
+    assert.equal(assembleAllowSubVaults(bogus), undefined, `${JSON.stringify(bogus)} must read as unread, not coerced`);
+  }
+});
+
+test('NEVER inferred from a deploy script: assembleAllowSubVaults only ever echoes what it is GIVEN, so a caller must actually read the chain', () => {
+  // Read straight from the two deploy scripts' own literals (contracts/script/Deploy.s.sol:79 passes
+  // `false` for mainnet root-only launch; contracts/script/DeployTestnet.s.sol:157 hardcodes `true`
+  // so the SV soak drills can run) — the two disagree with each other, which is exactly why neither
+  // is a source of truth for what a SPECIFIC deployed vault's factory holds on-chain.
+  const DEPLOY_S_SOL_LITERAL = false;
+  const DEPLOY_TESTNET_S_SOL_LITERAL = true;
+  assert.notEqual(
+    DEPLOY_S_SOL_LITERAL, DEPLOY_TESTNET_S_SOL_LITERAL,
+    'the two scripts must keep disagreeing, or this test stops proving anything',
+  );
+  // A caller that hardcoded/inferred the value from either script, instead of calling the chain,
+  // would pass one of these two literals in place of a genuine `eth_call` answer. The function must
+  // not have any special-cased branch for either: it can only echo an EXACT boolean it was handed.
+  assert.equal(assembleAllowSubVaults(DEPLOY_S_SOL_LITERAL), false);
+  assert.equal(assembleAllowSubVaults(DEPLOY_TESTNET_S_SOL_LITERAL), true);
+  // The failure mode this guards: a caller that skipped the read and defaulted to "undefined means
+  // mainnet, so assume Deploy.s.sol's false" — or the testnet mirror of that mistake. Neither may
+  // ever happen; an unread call must stay unread.
+  assert.notEqual(assembleAllowSubVaults(undefined), DEPLOY_S_SOL_LITERAL);
+  assert.notEqual(assembleAllowSubVaults(undefined), DEPLOY_TESTNET_S_SOL_LITERAL);
+  assert.equal(assembleAllowSubVaults(undefined), undefined);
+});
+
+// ── Contract tab Row 6b (#182): per-token claimable escrow ─────────────────────────────────────
+
+test('planClaimableEscrow plans claimable(member, asset) once per asset, and nothing at all with no member', () => {
+  const calls = planClaimableEscrow(VAULT, MEMBER, [WETH, USDC]);
+  assert.deepEqual(
+    calls.map((c) => [c.address, c.fn, c.args]),
+    [
+      [VAULT, 'claimable', [MEMBER, WETH]],
+      [VAULT, 'claimable', [MEMBER, USDC]],
+    ],
+  );
+  for (const noMember of [null, undefined, '']) {
+    assert.equal(planClaimableEscrow(VAULT, noMember, [WETH, USDC]).length, 0, 'no wallet ⇒ no calls planned at all');
+  }
+});
+
+test('a zero-balance token produces zero entries in either list, never a placeholder row', () => {
+  const out = assembleClaimableEscrow([{ asset: WETH, value: 0n, readAt: NOW }]);
+  assert.deepEqual(out.claimable, []);
+  assert.deepEqual(out.unread, [], 'a confirmed real zero is not an unread token either');
+});
+
+test('an unread/failed token read never produces a claimable row — it surfaces in `unread` instead, never silently identical to a zero', () => {
+  for (const bogus of [null, undefined, 'reverted', 0]) {
+    const out = assembleClaimableEscrow([{ asset: WETH, value: bogus, readAt: NOW }]);
+    assert.deepEqual(out.claimable, [], `${JSON.stringify(bogus)} must not render a claimable row`);
+    assert.deepEqual(out.unread, [{ asset: WETH, readAt: NOW }], `${JSON.stringify(bogus)} must surface in unread, not vanish`);
+  }
+});
+
+test('a single nonzero token produces exactly one claimable entry with the correct fields, and nothing unread', () => {
+  const out = assembleClaimableEscrow([{ asset: WETH, value: 12_345n, readAt: NOW }]);
+  assert.equal(out.claimable.length, 1);
+  assert.deepEqual(out.claimable[0], { asset: WETH, amount: 12_345n, readAt: NOW });
+  assert.deepEqual(out.unread, []);
+});
+
+test('multiple nonzero tokens — basket asset AND usdc both escrowed — produce one claimable entry EACH, never combined', () => {
+  const out = assembleClaimableEscrow([
+    { asset: WETH, value: 500n, readAt: NOW },
+    { asset: USDC, value: 250_000n, readAt: NOW + 5 },
+    { asset: '0xzero000000000000000000000000000000zero0', value: 0n, readAt: NOW }, // a third, zero-balance token
+  ]);
+  assert.equal(out.claimable.length, 2, 'the zero-balance third token must not appear at all, and the two nonzero ones must not merge into one');
+  assert.deepEqual(out.claimable.find((e) => e.asset === WETH), { asset: WETH, amount: 500n, readAt: NOW });
+  assert.deepEqual(out.claimable.find((e) => e.asset === USDC), { asset: USDC, amount: 250_000n, readAt: NOW + 5 });
+  assert.deepEqual(out.unread, []);
+});
+
+// ── Security's review of PR #361, round 3: ONE door — a caller cannot reach `claimable` without ──
+// ── also being handed `unread` on the very same object, so the round-2 gap (a caller who only ────
+// ── knew to call the obvious function) no longer exists as a possible shape at all. ──────────────
+
+test('assembleClaimableEscrow returns exactly one object with BOTH `claimable` and `unread` — there is no variant that omits either', () => {
+  const out = assembleClaimableEscrow([{ asset: WETH, value: 500n, readAt: NOW }]);
+  assert.deepEqual(Object.keys(out).sort(), ['claimable', 'unread'], 'the return shape must always carry both lists together, structurally, not by convention');
+});
+
+test('the three claimable states each survive to the SAME call\'s output — real zero, confirmed positive, unread/failed', () => {
+  const entries = [
+    { asset: WETH, value: 0n, readAt: NOW }, // confirmed real zero
+    { asset: USDC, value: 12_345n, readAt: NOW }, // confirmed positive
+    { asset: '0xreverted00000000000000000000000000000001', value: null, readAt: NOW }, // reverted
+    { asset: '0xreverted00000000000000000000000000000002', value: undefined, readAt: NOW }, // never answered
+  ];
+  const { claimable, unread } = assembleClaimableEscrow(entries);
+
+  // Confirmed positive: in claimable, not in unread.
+  assert.deepEqual(claimable, [{ asset: USDC, amount: 12_345n, readAt: NOW }]);
+  assert.ok(!unread.some((e) => e.asset === USDC));
+
+  // Confirmed real zero: in NEITHER list — a genuine "you have nothing", not a failure.
+  assert.ok(!claimable.some((e) => e.asset === WETH));
+  assert.ok(!unread.some((e) => e.asset === WETH));
+
+  // Unread/failed: in unread, NEVER in claimable — this is the fix. Distinct from a confirmed zero.
+  assert.deepEqual(unread, [
+    { asset: '0xreverted00000000000000000000000000000001', readAt: NOW },
+    { asset: '0xreverted00000000000000000000000000000002', readAt: NOW },
+  ]);
+  assert.ok(!claimable.some((e) => e.asset.startsWith('0xreverted')));
+});
+
+test('MUTATION: an unread token silently disappearing from BOTH lists must be caught', () => {
+  // Reintroducing the pre-fix collapse (treating "not bigint" as "confirmed zero" everywhere)
+  // would make this entry vanish rather than surface in `unread`. Assert it does not.
+  const { unread } = assembleClaimableEscrow([{ asset: WETH, value: 'reverted', readAt: NOW }]);
+  assert.equal(unread.length, 1, 'an unread token must appear SOMEWHERE — this list exists so it is never silently lost');
+  assert.equal(unread[0].asset, WETH);
+});
+
+test('unread never reports a resolved token, positive or zero', () => {
+  const { unread } = assembleClaimableEscrow([
+    { asset: WETH, value: 0n, readAt: NOW },
+    { asset: USDC, value: 999_999n, readAt: NOW },
+  ]);
+  assert.deepEqual(unread, [], 'both tokens resolved — neither belongs in the unread list');
+});
+
+// ── A2 (card 211): calldata vs deployment manifest ──────────────────────────────────────────────
+
+test('planFactoryVaultCount plans exactly one call, VaultFactory.vaultCount()', () => {
+  const planned = planFactoryVaultCount(FACTORY);
+  assert.equal(planned.length, 1);
+  assert.equal(planned[0].fn, 'vaultCount');
+  assert.equal(planned[0].address, FACTORY);
+});
+
+test('planFactoryAllVaults plans one allVaults(i) call per index, in order', () => {
+  const planned = planFactoryAllVaults(FACTORY, 3);
+  assert.equal(planned.length, 3);
+  assert.deepEqual(planned.map((c) => c.args), [[0], [1], [2]]);
+  for (const c of planned) assert.equal(c.fn, 'allVaults');
+});
+
+test('planFactoryAllVaults(factory, 0) plans nothing', () => {
+  assert.deepEqual(planFactoryAllVaults(FACTORY, 0), []);
+});
+
+test("assembleManifestCheck: the vault address is one of the factory's own entries — verified", () => {
+  const state = assembleManifestCheck(VAULT, 2n, [hexAddr('99'), VAULT]);
+  assert.equal(state, 'verified');
+});
+
+test('assembleManifestCheck is case-insensitive on the address comparison', () => {
+  const mixedCase = '0x' + hexAddr('a5').slice(2).toUpperCase();
+  const state = assembleManifestCheck(mixedCase, 1n, [hexAddr('a5').toLowerCase()]);
+  assert.equal(state, 'verified');
+});
+
+test("assembleManifestCheck: a complete, successful read that does NOT name this address — not-found", () => {
+  const state = assembleManifestCheck(VAULT, 2n, [hexAddr('99'), hexAddr('98')]);
+  assert.equal(state, 'not-found');
+});
+
+test('assembleManifestCheck: vaultCount() itself failed to decode — unknown, never not-found', () => {
+  assert.equal(assembleManifestCheck(VAULT, undefined, []), 'unknown');
+  assert.equal(assembleManifestCheck(VAULT, 'not-a-bigint', []), 'unknown');
+});
+
+test('assembleManifestCheck: ONE allVaults(i) entry failed to decode — unknown, never not-found', () => {
+  // Two entries expected (count says 2n), but only one resolved — the missing one is exactly the
+  // one that could have matched, so this must NOT report a confident negative.
+  const state = assembleManifestCheck(VAULT, 2n, [hexAddr('99'), undefined]);
+  assert.equal(state, 'unknown');
+});
+
+test('assembleManifestCheck: a malformed entry (wrong shape, not a clean decode failure) is also unknown', () => {
+  const state = assembleManifestCheck(VAULT, 1n, ['not-an-address']);
+  assert.equal(state, 'unknown');
+});
+
+test('assembleManifestCheck: fewer resolved entries than count claims — unknown, not a silent short scan', () => {
+  // If the caller ever mis-plans round 2 (fewer calls than `count`), this must not quietly treat
+  // "what I happened to read" as "the whole manifest" — see this function's own header.
+  const state = assembleManifestCheck(VAULT, 3n, [hexAddr('99'), VAULT]);
+  assert.equal(state, 'unknown');
+});
+
+test('MUTATION: reporting not-found on ANY unread entry (rather than unknown) is caught by the tests above', () => {
+  // The defect this reintroduces: a version of assembleManifestCheck that skipped the per-entry
+  // decode check and only inspected the entries that DID resolve. Reintroducing that shape here,
+  // inline, and confirming the earlier assertions would have failed against it.
+  function buggyAssemble(vaultAddress, countValue, allVaultsValues) {
+    if (typeof countValue !== 'bigint') return 'unknown';
+    const resolved = allVaultsValues
+      .filter((v) => typeof v === 'string' && /^0x[0-9a-fA-F]{40}$/.test(v))
+      .map((v) => v.toLowerCase());
+    return resolved.includes(vaultAddress.toLowerCase()) ? 'verified' : 'not-found';
+  }
+  // Same input as "ONE allVaults(i) entry failed to decode" above — the real function says
+  // 'unknown'; the buggy one says 'not-found', which is the false confident-negative this guard
+  // exists to prevent.
+  assert.equal(buggyAssemble(VAULT, 2n, [hexAddr('99'), undefined]), 'not-found');
+  assert.equal(assembleManifestCheck(VAULT, 2n, [hexAddr('99'), undefined]), 'unknown');
 });
 
 // ── The two lists stay complements of each other ────────────────────────────────────────────────

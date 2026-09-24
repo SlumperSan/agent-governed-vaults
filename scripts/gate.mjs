@@ -58,6 +58,13 @@ const ENTRYPOINTS = [
   // once without being added here" until 2026-09-13; the file has never been on protocol/main, and
   // after a squash merge that sentence would have read as history about main that never happened.
   'scripts/build-rebalance-order.mjs',
+  // Added 2026-09-23, same reasoning as build-rebalance-order.mjs immediately above: this is run BY
+  // HAND against a live chain (the owner, importing its output at app.safe.global) once Arc 5042 is
+  // deployed, and nothing in CI executes the file directly — scripts/test/safe-tx-builder-fork.test.mjs
+  // and scripts/test/safe-tx-builder-refusals.test.mjs only ever SPAWN it as a child process with a
+  // controlled env, which parses it incidentally on whichever code path each test happens to reach,
+  // never the whole file up front the way `node --check` does.
+  'scripts/build-safe-tx-builder.mjs',
   // Added 2026-09-18, after a parse error took the board server down TWICE in one day. Its whole
   // page is one template literal, so a single stray backtick inside a comment in that literal
   // terminates the string and the file stops parsing — a class of defect no test here can reach,
@@ -178,6 +185,21 @@ const STEPS = [
     why: 'Backend + frontend logic suite. Needs `build`, `site-build` and `app-test` first (see above).',
   },
   {
+    id: 'vault-addresses',
+    title: 'vault-addresses-lint (apps/vaults-ui vs contracts/config/deployments)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-addresses-lint.mjs')],
+    cwd: REPO,
+    // BLOCKING, unlike vault-lint (a local machine path absent from CI) and deployment-currency
+    // (advisory because both recorded deployments are KNOWINGLY behind mainline -- a fact no PR can
+    // fix). Every input here -- apps/vaults-ui/.env* and contracts/config/deployments/*.json -- is
+    // checked into this repository, so there is no environment where this is expected to be red for
+    // a reason other than a real config error. VITE_VAULT_ADDRESSES is hand-edited on deploy day
+    // with zero prior cross-check against what is actually deployed; a typo, a stale address, or an
+    // address from the wrong chain would silently ship. Card A2.
+    why: 'Does VITE_VAULT_ADDRESSES name a real deployed vault, on the chain VITE_CHAIN_ID declares? Card A2.',
+  },
+  {
     id: 'deployment-currency',
     title: 'verify-deployment-currency (advisory)',
     cmd: process.execPath,
@@ -192,6 +214,19 @@ const STEPS = [
     // which `backend` already runs.
     advisory: true,
     why: 'Is each deployment record still current with contracts/src? Advisory: both records are knowingly behind.',
+  },
+  {
+    id: 'vault-lint',
+    title: 'vault-lint (advisory)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-lint.mjs')],
+    cwd: REPO,
+    // ADVISORY for one week from 2026-09-19, then blocking (card 189, Chairman directive 6). The
+    // vault is a local machine path outside this repo and outside CI's reach -- the script itself
+    // exits 0 with a notice when the vault is simply absent from this environment, which is why
+    // this step is safe to run unconditionally rather than gated on a path check here.
+    advisory: true,
+    why: 'Do Tasks/ cards carry a shell fragment, a value outside a closed set, or a truncated body? Card 135\'s post-mortem.',
   },
   {
     id: 'test',
@@ -425,8 +460,52 @@ function verdictFor(results) {
 }
 
 /**
- * Persist the run for `npm run cc`. Untracked (see .gitignore) -- it describes THIS machine's last
- * run, not a property of the branch, so committing it would just create merge conflicts.
+ * Where the run is recorded. `.gate-state.json` at the repo root by default, which is the file
+ * `npm run cc` reads; untracked (see .gitignore), because it describes THIS machine's last run
+ * rather than a property of the branch.
+ *
+ * `GATE_STATE_PATH` OVERRIDES IT, AND THE REASON IS A RACE THAT WAS REAL. The path is repo-global,
+ * so two gates running at once on one checkout overwrite each other's record — and a test that
+ * spawns a gate and then reads the file gets whichever run finished last. That happened: a gate
+ * spawned by one test file was read by another as if it were its own, producing
+ * `caveats did not say the run checked nothing: ["was --only fmt"]` on an unrelated head, twice,
+ * intermittently. Any caller that runs gates concurrently should point each at its own file; tests
+ * that assert on a run's record MUST, or they are asserting on whatever else the machine is doing.
+ */
+const STATE_PATH = process.env.GATE_STATE_PATH
+  ? path.resolve(process.env.GATE_STATE_PATH)
+  : path.join(REPO, '.gate-state.json');
+
+// ENFORCED HERE, BY THE WRITER, BECAUSE A STATIC WALK FOR SPAWNERS CANNOT BE MADE TO WORK.
+//
+// The first attempt at making the isolation construction was a guard that walked the repo for files
+// spawning this script and required each to set GATE_STATE_PATH. A review found its floor could never
+// fire -- the input set contained this file and the guard's own source, whose regex literal matched
+// the pattern it searched for -- and that four spawn shapes evaded it entirely: `npm run gate`,
+// spawning gate-logged.mjs instead, a path assembled from a variable, and a `.js` file. It was also
+// per-file, so a second unisolated spawn inside a compliant file was invisible.
+//
+// So the check lives where it cannot be walked around: in the process that writes the record. Node's
+// test runner sets NODE_TEST_CONTEXT in the test process and children inherit it, so any gate whose
+// ancestry is a test -- through npm, through the wrapper, however the path was assembled, whatever the
+// caller's file extension -- arrives here with that variable set. If it did not also isolate its
+// record, it would write the file `npm run cc` reads and could read another run as its own. Refuse.
+//
+// Exit 2 is this script's code for "the gate could not run" rather than for a defect, which is what
+// this is: a harness mistake, not a failing check.
+if (process.env.NODE_TEST_CONTEXT && !process.env.GATE_STATE_PATH) {
+  console.error(
+    `\n${C.r}refusing to run under a test without GATE_STATE_PATH.${C.x}\n` +
+      `This gate would write ${path.relative(REPO, STATE_PATH) || '.gate-state.json'}, which is the record\n` +
+      `\`npm run cc\` reads and which every other gate on this checkout also writes -- so a test that\n` +
+      `spawns a gate and then reads that file can get another run's record. Point this child at its own\n` +
+      `file:\n\n  env: { ...process.env, GATE_STATE_PATH: <a temp path> }\n`,
+  );
+  process.exit(2);
+}
+
+/**
+ * Persist the run for `npm run cc`.
  */
 function writeGateState(results, totalMs) {
   const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' });
@@ -445,7 +524,7 @@ function writeGateState(results, totalMs) {
     steps: results.map((r) => ({ id: r.s.id, state: r.state, ms: r.ms })),
   };
   try {
-    writeFileSync(path.join(REPO, '.gate-state.json'), JSON.stringify(state, null, 2) + '\n');
+    writeFileSync(STATE_PATH, JSON.stringify(state, null, 2) + '\n');
   } catch {
     // Never let bookkeeping fail the gate -- the verdict on the console is the real product.
   }
@@ -563,6 +642,11 @@ ${C.d}(see --list)${C.x}
     const first = results.find((r) => r.state === 'fail');
     console.log(`\n${C.r}${C.b}GATE FAILED${C.x} on ${C.b}${first?.s.id}${C.x} ${C.d}(${total})${C.x}`);
     console.log(`${C.d}Re-run just that step: npm run gate -- --only ${first?.s.id}${C.x}`);
+    // A red nobody captured cannot be attributed OR dismissed. On 2026-09-19 a backend failure was
+    // followed by six clean runs with no record of the failing test, which left the red
+    // untrustworthy in both directions. gate:log tees this whole stream to a file.
+    console.log(`${C.d}Capture the full output next time: npm run gate:log${ONLY ? ` -- --only ${[...ONLY].join(',')}` : ''}${C.x}`);
+    console.log(`${C.d}  (it writes outside the repo and prints the path; a log in the tree is read as prose by the claims guards)${C.x}`);
     if (first?.s.id === 'test' || first?.s.id === 'snapshot') {
       // Do not let a genuine finding get filed as "the gate is flaky".
       console.log(

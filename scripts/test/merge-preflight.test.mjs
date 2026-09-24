@@ -18,11 +18,15 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, runsForHead,
+  evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, parseRoster, runsForHead,
+  parseUnparseableVerdicts, unreadableLatestVerdicts, reviewObjectVerdicts,
   LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN, SELF_WORKFLOW_NAME,
 } from '../lib/verdicts.mjs';
 // Importing the adapter is safe: its bottom guard runs `main()` only when it is `process.argv[1]`.
-import { PR_FIELDS, RUN_FIELDS, missingFields, validateGhPayloads } from '../merge-preflight.mjs';
+import {
+  PR_FIELDS, RUN_FIELDS, TRUSTED_ASSOCIATIONS, missingFields, trustedComments, validateGhPayloads,
+} from '../merge-preflight.mjs';
+import { BBB_SECTIONS, extractSection, isBlankSection, gradeSections } from '../lib/pr-body-sections.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const POLICY = JSON.parse(readFileSync(path.join(ROOT, 'scripts', 'lib', 'merge-policy.json'), 'utf8'));
@@ -32,6 +36,14 @@ const greenOn = (sha) => [{ headSha: sha, status: 'completed', conclusion: 'succ
 
 /** @param {import('../lib/verdicts.mjs').Blocker[]} bs */
 const ruleIds = (bs) => [...new Set(bs.map((b) => b.ruleId))].sort();
+
+/**
+ * A PR body that satisfies `buy-borrow-build-declared` (card 190), for `feat/` fixtures built to
+ * exercise an unrelated rule — without this, adding that rule would incidentally block every
+ * pre-existing `feat/` fixture below and break its `ruleIds`/`clear` assertions for a reason that
+ * has nothing to do with what each test is about.
+ */
+const BBB_OK_BODY = '## Buy / borrow / build\nNone found.\n\n## Standards\nNone applies.\n';
 
 // ---------------------------------------------------------------------------------------------
 // The four real merges
@@ -98,7 +110,7 @@ test('#98 at its merge instant: Mode B — one ACCEPT, one reviewer still out, R
 });
 
 test('#109 at its merge instant: Mode B at its worst — the PR merged before any verdict existed', () => {
-  const pr = { number: 109, state: 'OPEN', headRefOid: 'dddd4444', headRefName: 'feat/canary-tiered-sinks-deadman' };
+  const pr = { number: 109, state: 'OPEN', headRefOid: 'dddd4444', headRefName: 'feat/canary-tiered-sinks-deadman', body: BBB_OK_BODY };
   // No verdict, and no interval to measure from: the REJECT arrived 5.5 minutes AFTER the merge.
   const roster = [{ createdAt: '2026-09-01T22:10:00Z', body: '<!-- REVIEW-ROSTER reviewers=Review109 -->' }];
   const strict = evaluate({ pr, comments: roster, runs: greenOn('dddd4444'), mode: 'strict' });
@@ -120,7 +132,7 @@ test('#109 at its merge instant: Mode B at its worst — the PR merged before an
 
 test('Mode C: a MERGED PR blocks, and the message says open a new PR rather than push', () => {
   const d = evaluate({
-    pr: { number: 107, state: 'MERGED', headRefOid: 'eeee5555', headRefName: 'feat/indexer-exit-fee-governance-abis' },
+    pr: { number: 107, state: 'MERGED', headRefOid: 'eeee5555', headRefName: 'feat/indexer-exit-fee-governance-abis', body: BBB_OK_BODY },
     comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->\n<!-- REVIEW-VERDICT reviewer=R verdict=ACCEPT -->' }],
     runs: greenOn('eeee5555'),
     mode: 'strict',
@@ -405,7 +417,7 @@ test('the heuristics in verdicts.mjs are byte-identical to the ones merge-policy
 
 test('every rule the evaluator can emit is declared in merge-policy.json, and vice versa', () => {
   const declared = POLICY.rules.map((/** @type {any} */ r) => r.id).sort();
-  const emitted = ['base-current', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
+  const emitted = ['base-current', 'buy-borrow-build-declared', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
   assert.deepEqual(declared.sort(), emitted.sort(), 'a rule with no policy entry has no stated reason, and a policy entry with no rule is a promise nothing keeps');
 });
 
@@ -667,8 +679,9 @@ test('missingFields answers on key PRESENCE, not truthiness', () => {
 const okPr = () => ({
   number: 1, state: 'OPEN', isDraft: false, headRefName: 'b', headRefOid: 'newhead0',
   baseRefName: 'protocol/main',
-  comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->' }],
+  comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->', author: { login: 'SlumperSan' }, authorAssociation: 'OWNER' }],
   commits: [{ oid: 'newhead0', committedDate: '2026-09-01T21:00:00Z' }],
+  body: '',
 });
 const okRuns = () => [{ headSha: 'newhead0', status: 'completed', conclusion: 'success', workflowName: 'CI' }];
 
@@ -710,6 +723,12 @@ test('validateGhPayloads fails CLOSED on every field whose absence would disarm 
   const { isDraft, ...noDraft } = okPr();
   assert.match(String(validateGhPayloads(noDraft, okRuns(), 0)), /isDraft/);
 
+  // `body` (card 190): absent means buy-borrow-build-declared cannot tell "the author never wrote a
+  // section" from "gh did not return one" -- refuse to judge rather than misreport the first as the
+  // second.
+  const { body, ...noBody } = okPr();
+  assert.match(String(validateGhPayloads(noBody, okRuns(), 0)), /body/);
+
   // `--jq` on a key that is not there prints `null` and gh exits 0, so the JSON.parse failure path
   // never sees it and Mode E just stops firing.
   assert.match(String(validateGhPayloads(okPr(), okRuns(), null)), /behind_by/);
@@ -721,4 +740,381 @@ test('validateGhPayloads fails CLOSED on every field whose absence would disarm 
   assert.match(String(validateGhPayloads(noState, okRuns(), 0)), /state/);
   assert.ok(validateGhPayloads(okPr(), [{ status: 'completed', conclusion: 'success', workflowName: 'CI' }], 0));
   assert.ok(validateGhPayloads(okPr(), 'not an array', 0));
+});
+
+// ---------------------------------------------------------------------------------------------
+// Card #352 — the latest roster token wins, INCLUDING an empty one (the dead-seat bug)
+// ---------------------------------------------------------------------------------------------
+// Real incident: a roster was declared for a reviewer whose session ended, and posting a fresh
+// `<!-- REVIEW-ROSTER reviewers= -->` to withdraw it had no effect — the gate kept reading the
+// dead seat, because `parseRoster` silently dropped every empty match. The only working remedy
+// was reassigning to a DIFFERENT live reviewer, which may not exist (Security/Product/Finance/
+// Design all dark the same day). Fixed: every roster token, empty or not, is the new declaration.
+
+test('parseRoster: a later EMPTY roster overrides an earlier non-empty one', () => {
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
+  ];
+  assert.deepEqual(parseRoster(comments), { reviewers: [], at: '2026-09-21T14:00:00Z' });
+});
+
+test('parseRoster: a later roster naming a DIFFERENT reviewer fully replaces the old one (not a union)', () => {
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security2 -->' },
+  ];
+  assert.deepEqual(parseRoster(comments), { reviewers: ['Security2'], at: '2026-09-21T14:00:00Z' });
+});
+
+test('an empty roster clears roster-declared/roster-resolved in strict mode for a now-withdrawn seat', () => {
+  const pr = { number: 352, state: 'OPEN', headRefOid: 'feed0001', headRefName: 'feat/vault-addresses-lint', body: BBB_OK_BODY };
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    // Security's session ended with no verdict posted. Withdrawing the roster to empty must clear
+    // both roster-declared (a roster WAS declared) and roster-resolved (nobody is now required).
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
+  ];
+  const strict = evaluate({ pr, comments, runs: greenOn('feed0001'), mode: 'strict' });
+  assert.deepEqual(ruleIds(strict.blockers), []);
+  assert.equal(strict.clear, true);
+});
+
+test('CRITICAL: a standing REJECT still blocks after its reviewer is dropped from the roster — the roster fix must not launder a REJECT', () => {
+  const pr = { number: 999, state: 'OPEN', headRefOid: 'feed0002', headRefName: 'feat/whatever' };
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    { createdAt: '2026-09-21T11:00:00Z', body: '## Adversarial review — VERDICT\n\n<!-- REVIEW-VERDICT reviewer=Security verdict=REJECT -->' },
+    // Security's session ends; the roster is withdrawn to empty so the PR is not stuck forever...
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
+  ];
+  for (const mode of /** @type {const} */ (['advisory', 'strict'])) {
+    const d = evaluate({ pr, comments, runs: greenOn('feed0002'), mode });
+    assert.equal(d.clear, false, `${mode}: withdrawing the roster must NOT clear Security's standing REJECT`);
+    assert.ok(
+      d.blockers.some((b) => b.ruleId === 'no-standing-reject'),
+      `${mode}: no-standing-reject must still fire`,
+    );
+  }
+  // And posting a FRESH roster (even reassigning to nobody, or to a new reviewer) still does not
+  // launder it -- only a newer REVIEW-VERDICT token can, per the invariant this asserts.
+  const withNewRoster = [
+    ...comments,
+    { createdAt: '2026-09-21T15:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=SomeoneElse -->' },
+  ];
+  const d2 = evaluate({ pr, comments: withNewRoster, runs: greenOn('feed0002'), mode: 'strict' });
+  assert.ok(d2.blockers.some((b) => b.ruleId === 'no-standing-reject'), 'a fresh roster must not clear a standing REJECT');
+});
+
+test('MUTATION: reverting parseRoster to drop empty matches (the #352 bug) is caught', () => {
+  const comments = [
+    { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
+    { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
+  ];
+  // Simulate the pre-fix behaviour directly (the bug this test must catch if reintroduced):
+  // an empty match must be SKIPPED, so `found` stays on the last non-empty roster.
+  const preFixParseRoster = (cs) => {
+    const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]*)\s*-->/g;
+    let found = null;
+    for (const c of cs) {
+      ROSTER_RE.lastIndex = 0;
+      let m;
+      while ((m = ROSTER_RE.exec(c.body)) !== null) {
+        const reviewers = m[1].split(',').map((s) => s.trim()).filter(Boolean);
+        if (reviewers.length > 0) found = { reviewers, at: c.createdAt }; // the bug
+      }
+    }
+    return found;
+  };
+  assert.deepEqual(preFixParseRoster(comments), { reviewers: ['Security'], at: '2026-09-21T10:00:00Z' }, 'RED: the pre-fix shape must keep reading the dead seat');
+  assert.notDeepEqual(parseRoster(comments), preFixParseRoster(comments), 'the real parseRoster must differ from the reintroduced bug on this exact input');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Card #59: report-only surfacing of verdict tokens that reach the gate silently unparsed
+// ---------------------------------------------------------------------------------------------
+
+test('parseUnparseableVerdicts: an invalid verdict= value is reported; the standard values are not', () => {
+  const invalid = [{ createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=REQUEST_CHANGES -->' }];
+  const found = parseUnparseableVerdicts(invalid);
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0], { reviewer: 'Finance', value: 'REQUEST_CHANGES', at: '2026-09-19T00:00:00Z' });
+
+  // MUTATION direction 1: fixing the value to ACCEPT must make it disappear from this report AND
+  // start counting as a real verdict.
+  const fixed = [{ createdAt: '2026-09-19T00:05:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' }];
+  assert.deepEqual(parseUnparseableVerdicts(fixed), []);
+  const d = evaluate({ pr: { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'x' }, comments: fixed, runs: greenOn('a') });
+  assert.ok(Object.keys(d.latestVerdicts).includes('Finance'), 'the fixed token must count as a real verdict');
+
+  assert.deepEqual(parseUnparseableVerdicts([]), []);
+});
+
+test('evaluate(): an unparseable verdict token is reported as a note, never clears, and (card 216) blocks as the reviewer\'s newest word', () => {
+  const pr = { number: 307, state: 'OPEN', headRefOid: 'feed0059', headRefName: 'x' };
+  const comments = [
+    { createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Finance -->' },
+    { createdAt: '2026-09-19T00:05:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=REQUEST_CHANGES -->' },
+  ];
+  const d = evaluate({ pr, comments, runs: greenOn('feed0059'), mode: 'strict' });
+  // Still blocked: the malformed token counts as no verdict, so the roster is unresolved, and it is
+  // Finance's newest token, so it blocks in its own right (card 216).
+  assert.equal(d.clear, false);
+  assert.deepEqual(ruleIds(d.blockers).sort(), ['no-standing-reject', 'roster-resolved']);
+  assert.ok(
+    d.notes.some((n) => n.includes('verdict token found but not parsed') && n.includes('REQUEST_CHANGES')),
+    'the report must name the unparsed value',
+  );
+
+  // MUTATION direction 2: the fixed value clears the note AND resolves the roster.
+  const fixed = [
+    comments[0],
+    { createdAt: '2026-09-19T00:05:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' },
+  ];
+  const d2 = evaluate({ pr, comments: fixed, runs: greenOn('feed0059'), mode: 'strict' });
+  assert.equal(d2.clear, true);
+  assert.ok(!d2.notes.some((n) => n.includes('verdict token found but not parsed')));
+});
+
+test('reviewObjectVerdicts: a rostered reviewer\'s token in a REVIEW OBJECT is reported only while comments carry none from them', () => {
+  const reviews = [{ author: 'Finance', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' }];
+  // Rostered, no comment-verdict yet: reported.
+  assert.deepEqual(reviewObjectVerdicts(reviews, {}, ['Finance']), ['Finance']);
+  // Not on the roster: not reported -- this channel-mismatch report is scoped to reviewers who are
+  // actually expected to post, same as roster-resolved itself.
+  assert.deepEqual(reviewObjectVerdicts(reviews, {}, ['SomeoneElse']), []);
+  // MUTATION direction: once the SAME verdict also exists in `comments` (re-posted correctly), the
+  // report must go quiet.
+  assert.deepEqual(reviewObjectVerdicts(reviews, { Finance: { verdict: 'ACCEPT', at: 'now' } }, ['Finance']), []);
+  // A review object with no parseable token at all is not reported (prose review summary, etc).
+  assert.deepEqual(reviewObjectVerdicts([{ author: 'Finance', body: 'Looks good to me' }], {}, ['Finance']), []);
+});
+
+test('evaluate(): a verdict posted only as a review object is a NOTE, never counted, never clears', () => {
+  const pr = { number: 308, state: 'OPEN', headRefOid: 'feed0058', headRefName: 'x' };
+  const comments = [{ createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Finance -->' }];
+  const reviews = [{ author: 'Finance', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' }];
+  const d = evaluate({ pr, comments, runs: greenOn('feed0058'), reviews, mode: 'strict' });
+  assert.equal(d.clear, false, 'a review-object token must never clear roster-resolved');
+  assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
+  assert.ok(d.notes.some((n) => n.includes('Finance posted a verdict as a review object')));
+
+  // MUTATION direction: re-posting the SAME token as a comment (the correct channel) clears both
+  // the blocker and the note.
+  const reposted = [...comments, { createdAt: '2026-09-19T00:10:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' }];
+  const d2 = evaluate({ pr, comments: reposted, runs: greenOn('feed0058'), reviews, mode: 'strict' });
+  assert.equal(d2.clear, true);
+  assert.ok(!d2.notes.some((n) => n.includes('posted a verdict as a review object')));
+});
+
+test('evaluate(): omitting `reviews` entirely (every pre-existing caller/fixture) is unaffected', () => {
+  const pr = { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'x' };
+  const comments = [{ createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' }];
+  const d = evaluate({ pr, comments, runs: greenOn('a'), mode: 'strict' });
+  assert.equal(d.clear, true);
+  assert.deepEqual(d.notes, []);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Card 216: a reviewer's NEWEST token being unreadable blocks, whatever their older verdict says
+// ---------------------------------------------------------------------------------------------
+
+{
+  const pr = { number: 216, state: 'OPEN', headRefOid: 'feed0216', headRefName: 'x' };
+  const roster = { createdAt: '2026-09-24T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' };
+  const tok = (at, v) => ({ createdAt: at, body: `<!-- REVIEW-VERDICT reviewer=Security verdict=${v} -->` });
+
+  test('card 216: ACCEPT then a malformed verdict=Reject BLOCKS, in both modes', () => {
+    const comments = [roster, tok('2026-09-24T01:00:00Z', 'ACCEPT'), tok('2026-09-24T02:00:00Z', 'Reject')];
+    for (const mode of /** @type {const} */ (['advisory', 'strict'])) {
+      const d = evaluate({ pr, comments, runs: greenOn('feed0216'), mode });
+      assert.equal(d.clear, false, `${mode}: a newer unreadable token must not merge on the older ACCEPT`);
+      assert.deepEqual(ruleIds(d.blockers), ['no-standing-reject']);
+      assert.ok(d.blockers.some((b) => /unreadable \(verdict=Reject/.test(b.detail) && /Repost/.test(b.detail)));
+    }
+  });
+
+  test('card 216: ACCEPT, malformed, then a valid ACCEPT clears', () => {
+    const comments = [roster, tok('2026-09-24T01:00:00Z', 'ACCEPT'), tok('2026-09-24T02:00:00Z', 'Reject'), tok('2026-09-24T03:00:00Z', 'ACCEPT')];
+    const d = evaluate({ pr, comments, runs: greenOn('feed0216'), mode: 'strict' });
+    assert.equal(d.clear, true);
+    assert.deepEqual(unreadableLatestVerdicts(comments), []);
+  });
+
+  test('card 216: a malformed token OLDER than a valid verdict does not block', () => {
+    const comments = [roster, tok('2026-09-24T01:00:00Z', 'Reject'), tok('2026-09-24T02:00:00Z', 'ACCEPT')];
+    assert.equal(evaluate({ pr, comments, runs: greenOn('feed0216'), mode: 'strict' }).clear, true);
+  });
+
+  test('card 216: same timestamp, same comment — the token that comes LAST in the body decides', () => {
+    const at = '2026-09-24T01:00:00Z';
+    const accLast = [roster, { createdAt: at, body: '<!-- REVIEW-VERDICT reviewer=Security verdict=Reject --> fixed: <!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT -->' }];
+    const badLast = [roster, { createdAt: at, body: '<!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT --> then <!-- REVIEW-VERDICT reviewer=Security verdict=Reject -->' }];
+    assert.equal(evaluate({ pr, comments: accLast, runs: greenOn('feed0216'), mode: 'strict' }).clear, true);
+    assert.equal(evaluate({ pr, comments: badLast, runs: greenOn('feed0216'), mode: 'strict' }).clear, false);
+  });
+
+  test('card 216: same timestamp, separate comments — comment order decides', () => {
+    const at = '2026-09-24T01:00:00Z';
+    assert.equal(evaluate({ pr, comments: [roster, tok(at, 'ACCEPT'), tok(at, 'Reject')], runs: greenOn('feed0216'), mode: 'strict' }).clear, false);
+    assert.equal(evaluate({ pr, comments: [roster, tok(at, 'Reject'), tok(at, 'ACCEPT')], runs: greenOn('feed0216'), mode: 'strict' }).clear, true);
+  });
+
+  test('card 216: another reviewer\'s malformed token does not touch Security, and blocks for its own author', () => {
+    const comments = [roster, tok('2026-09-24T01:00:00Z', 'ACCEPT'), { createdAt: '2026-09-24T02:00:00Z', body: '<!-- REVIEW-VERDICT reviewer=Product verdict=LGTM -->' }];
+    assert.deepEqual(unreadableLatestVerdicts(comments), [{ reviewer: 'Product', value: 'LGTM', at: '2026-09-24T02:00:00Z' }]);
+    const d = evaluate({ pr, comments, runs: greenOn('feed0216'), mode: 'strict' });
+    assert.equal(d.clear, false);
+    assert.ok(d.blockers.every((b) => !b.detail.startsWith('Security')));
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Only collaborators speak to the gate (Security, Findings/2026-09-24-merge-gate-counts-anyones-
+// comments.md): the repo is public, and a token names its reviewer in its own text.
+// ---------------------------------------------------------------------------------------------
+
+{
+  const pr = { number: 417, state: 'OPEN', headRefOid: 'feed0417', headRefName: 'x' };
+  const by = (assoc, login, at, body) => ({ createdAt: at, body, author: { login }, authorAssociation: assoc });
+  const real = [
+    by('OWNER', 'SlumperSan', '2026-09-24T01:00:00Z', '<!-- REVIEW-ROSTER reviewers=Security -->'),
+    by('OWNER', 'SlumperSan', '2026-09-24T02:00:00Z', '<!-- REVIEW-VERDICT reviewer=Security verdict=REJECT -->'),
+  ];
+
+  test('trusted commenters: a forged ACCEPT from a NONE-association account does not clear a real REJECT', () => {
+    const raw = [...real, by('NONE', 'mallory', '2026-09-24T03:00:00Z', '<!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT -->')];
+    const t = trustedComments(raw);
+    assert.deepEqual(t.dropped, ['mallory (NONE)']);
+    for (const mode of /** @type {const} */ (['advisory', 'strict'])) {
+      const d = evaluate({ pr, comments: t.comments, runs: greenOn('feed0417'), mode });
+      assert.equal(d.clear, false, `${mode}: the forged ACCEPT must not supersede the REJECT`);
+      assert.deepEqual(ruleIds(d.blockers), ['no-standing-reject']);
+    }
+    // Non-vacuity: the same forged comment, if trusted, WOULD clear — so the filter is what blocks.
+    const untrusted = evaluate({ pr, comments: raw.map((c) => ({ createdAt: c.createdAt, body: c.body })), runs: greenOn('feed0417'), mode: 'strict' });
+    assert.equal(untrusted.clear, true);
+  });
+
+  test('trusted commenters: a forged re-roster plus self-ACCEPT from a CONTRIBUTOR is ignored', () => {
+    const raw = [
+      by('OWNER', 'SlumperSan', '2026-09-24T01:00:00Z', '<!-- REVIEW-ROSTER reviewers=Security -->'),
+      by('CONTRIBUTOR', 'mallory', '2026-09-24T02:00:00Z', '<!-- REVIEW-ROSTER reviewers=Mallory --> <!-- REVIEW-VERDICT reviewer=Mallory verdict=ACCEPT -->'),
+    ];
+    const d = evaluate({ pr, comments: trustedComments(raw).comments, runs: greenOn('feed0417'), mode: 'strict' });
+    assert.equal(d.clear, false);
+    assert.deepEqual(d.roster, ['Security']);
+    assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
+  });
+
+  test('trusted commenters: OWNER, MEMBER and COLLABORATOR are read; every other association is not', () => {
+    assert.deepEqual([...TRUSTED_ASSOCIATIONS].sort(), ['COLLABORATOR', 'MEMBER', 'OWNER']);
+    for (const assoc of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
+      assert.equal(trustedComments([by(assoc, 'a', 't', 'x')]).comments.length, 1, assoc);
+    }
+    for (const assoc of ['NONE', 'CONTRIBUTOR', 'FIRST_TIMER', 'FIRST_TIME_CONTRIBUTOR', 'MANNEQUIN', '', 'owner']) {
+      assert.equal(trustedComments([by(assoc, 'a', 't', 'x')]).comments.length, 0, assoc);
+    }
+    // An untrusted comment with no token is dropped silently; only token-bearing ones are named.
+    assert.deepEqual(trustedComments([by('NONE', 'a', 't', 'nice PR')]).dropped, []);
+  });
+
+  test('validateGhPayloads fails CLOSED on a comment with no authorAssociation', () => {
+    const noAssoc = { ...okPr(), comments: [{ createdAt: 't', body: 'x', author: { login: 'SlumperSan' } }] };
+    assert.match(String(validateGhPayloads(noAssoc, okRuns(), 0)), /authorAssociation/);
+    assert.match(String(validateGhPayloads({ ...okPr(), comments: [null] }, okRuns(), 0)), /authorAssociation/);
+  });
+
+  test('main() feeds evaluate the TRUSTED comments, not the raw payload', () => {
+    const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'merge-preflight.mjs'), 'utf8');
+    const call = src.slice(src.indexOf('const decision = evaluate({'), src.indexOf('mode: opts.mode,'));
+    assert.match(call, /comments: trusted\.comments,/);
+    assert.doesNotMatch(call, /pr\.data\.comments/);
+    assert.match(src, /const trusted = trustedComments\(pr\.data\.comments\);/);
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Card 190 / Chairman directive 13 — `## Buy / borrow / build` and `## Standards` on `feat/` PRs
+// ---------------------------------------------------------------------------------------------
+
+test('extractSection: finds the heading loosely, bounds content at the next heading, and returns null when absent', () => {
+  const body = 'intro\n\n## Buy / borrow / build\nline one\nline two\n\n## Standards\nstandards line\n';
+  assert.equal(extractSection(body, BBB_SECTIONS[0].heading).trim(), 'line one\nline two');
+  assert.equal(extractSection(body, BBB_SECTIONS[1].heading).trim(), 'standards line');
+  assert.equal(extractSection('no such heading here', BBB_SECTIONS[0].heading), null);
+  // Spacing/slash variance the real skeleton and hand-written PRs both produce.
+  assert.equal(extractSection('## Buy/borrow/build\nx', BBB_SECTIONS[0].heading), 'x');
+  assert.equal(extractSection('##   Buy  /  borrow  /  build\nx', BBB_SECTIONS[0].heading), 'x');
+});
+
+test('MUTATION BAR — isBlankSection: the shapes that must fail, and the ones that must pass', () => {
+  // Must be caught (blank): whitespace only, HTML comment only, one unfilled placeholder token.
+  for (const blank of [
+    '', '   \n  \n', '<!-- fill this in -->', '<!-- one --><!-- two -->  ',
+    '<what you grepped in this repo, and what you found or did not>',
+    '[fill this in]', 'TBD', 'TODO', 'N/A', 'FILL-IN', 'PLACEHOLDER', 'xxx',
+  ]) {
+    assert.equal(isBlankSection(blank), true, `must read as blank: ${JSON.stringify(blank)}`);
+  }
+  // Must NOT be caught (real content) — "None found" above all, per the card's own acceptance line.
+  for (const real of [
+    'None found.',
+    '- **Searched:** grepped scripts/lib for an existing parser — none found\n- **Existing options:** none found\n- **Why we built:** narrow enough not to warrant a dependency',
+    'a placeholder token elsewhere does not blank real prose: we searched npm, found nothing <shrug>',
+    'None applies.',
+    'no deviation',
+  ]) {
+    assert.equal(isBlankSection(real), false, `must NOT read as blank: ${JSON.stringify(real)}`);
+  }
+});
+
+test('gradeSections: missing vs blank vs ok are three distinct, reported states', () => {
+  assert.deepEqual(
+    gradeSections('nothing relevant here').map((s) => s.state),
+    ['missing', 'missing'],
+  );
+  assert.deepEqual(
+    gradeSections('## Buy / borrow / build\n\n<!-- TODO -->\n\n## Standards\nnone applies').map((s) => s.state),
+    ['blank', 'ok'],
+  );
+  assert.deepEqual(gradeSections(BBB_OK_BODY).map((s) => s.state), ['ok', 'ok']);
+});
+
+test('evaluate(): a feat/ PR with no body at all is blocked, in both modes', () => {
+  const pr = { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'feat/new-thing' };
+  for (const mode of /** @type {const} */ (['advisory', 'strict'])) {
+    const d = evaluate({ pr, comments: [], runs: greenOn('a'), mode });
+    assert.ok(d.blockers.some((b) => b.ruleId === 'buy-borrow-build-declared'), `${mode}: missing body must block`);
+    assert.match(
+      d.blockers.find((b) => b.ruleId === 'buy-borrow-build-declared').detail,
+      /Buy \/ borrow \/ build/,
+    );
+  }
+});
+
+test('evaluate(): a feat/ PR whose sections are present but blank is blocked, and names which section', () => {
+  const blankBoth = '## Buy / borrow / build\n<!-- -->\n\n## Standards\nTBD\n';
+  const d = evaluate({
+    pr: { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'feat/new-thing', body: blankBoth },
+    comments: [], runs: greenOn('a'), mode: 'advisory',
+  });
+  const bbb = d.blockers.filter((b) => b.ruleId === 'buy-borrow-build-declared');
+  assert.equal(bbb.length, 2, 'both sections are blank, so both must be reported');
+  assert.ok(bbb.some((b) => b.detail.includes('Buy / borrow / build')));
+  assert.ok(bbb.some((b) => b.detail.includes('Standards')));
+});
+
+test('evaluate(): "None found" / "None applies" is real content and clears buy-borrow-build-declared', () => {
+  const pr = { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'feat/new-thing', body: BBB_OK_BODY };
+  const d = evaluate({ pr, comments: [], runs: greenOn('a'), mode: 'advisory' });
+  assert.ok(!d.blockers.some((b) => b.ruleId === 'buy-borrow-build-declared'), '"None found" must not block');
+});
+
+test('evaluate(): a non-feat/ PR with no body at all is NOT blocked by buy-borrow-build-declared', () => {
+  for (const branch of ['fix/x', 'test/x', 'docs/x', 'chore/x', 'x']) {
+    const pr = { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: branch };
+    const d = evaluate({ pr, comments: [], runs: greenOn('a'), mode: 'advisory' });
+    assert.ok(!d.blockers.some((b) => b.ruleId === 'buy-borrow-build-declared'), `${branch} must not be gated by this rule`);
+  }
 });

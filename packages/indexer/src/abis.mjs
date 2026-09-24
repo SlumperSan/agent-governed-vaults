@@ -71,7 +71,7 @@ export const CONTRACT_ABIS = Object.freeze({
     ev('Committed', [u256('pid', true), addr('voter', true)]),
     ev('Revealed', [u256('pid', true), addr('voter', true), { name: 'support', type: 'bool', indexed: false }, u256('weight')]),
     ev('DefaultApplied', [u256('pid', true), addr('member', true), { name: 'support', type: 'bool', indexed: false }, u256('weight')]),
-    ev('DelegatedRevealed', [u256('pid', true), addr('delegator', true), addr('delegate', true), u256('weight')]),
+    ev('DelegatedRevealed', [u256('pid', true), addr('delegator', true), addr('delegate', true), { name: 'support', type: 'bool', indexed: false }, u256('weight')]),
     ev('Finalized', [u256('pid', true), { name: 'status', type: 'uint8', indexed: false }]),
     ev('Executed', [u256('pid', true)]),
     ev('ProposalExpired', [u256('pid', true)]),

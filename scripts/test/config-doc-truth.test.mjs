@@ -30,7 +30,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,14 +54,40 @@ const sepolia = JSON.parse(read('contracts', 'config', 'base-sepolia.json'));
  * it is added, without an edit here. `base-sepolia.json` is still named, because it is the ONLY
  * testnet config and a glob for it would be a glob of one.
  */
-const mainnetConfigs = () =>
-  readdirSync(path.join(REPO, 'contracts', 'config'))
+const mainnetConfigs = () => {
+  const found = readdirSync(path.join(REPO, 'contracts', 'config'))
     .filter((f) => f.endsWith('-mainnet.json'))
-    .sort()
-    .map((f) => [f, JSON.parse(read('contracts', 'config', f))]);
+    .sort();
+  // THE FLOOR IS ON THE FILTERED SET, NOT ON THE DIRECTORY. `contracts/config/` holds plenty of
+  // files that are not mainnet configs, so a count of the directory stays healthy while this
+  // filter yields nothing -- which is the state that makes every loop below pass over zero
+  // configs. Measured, not argued: with this function returning `[]`, all 20 tests in this file
+  // stayed green, including the one asserting every mainnet `chainlinkOracle.assets` satisfies the
+  // ChainlinkOracle constructor bounds. That guard is what stands between a bad `heartbeatSeconds`
+  // and a broadcast, and it is not hypothetical that this directory changes: 4663's config was
+  // removed from the repository on 2026-09-18.
+  //
+  // TWO, not the exact names: arc-mainnet and base-mainnet are the shipped pair today, and naming
+  // them would turn a deliberate chain retirement into an unrelated red in whatever PR does it.
+  // This is a collapse detector, and that is ALL it is -- it cannot tell you that a THIRD mainnet
+  // config stopped being enumerated.
+  assert.ok(
+    found.length >= 2,
+    `only ${found.length} *-mainnet.json in contracts/config; every per-config assertion in this ` +
+      'file iterates this set, so an empty or collapsed filter makes them all pass over nothing.',
+  );
+  return found.map((f) => [f, JSON.parse(read('contracts', 'config', f))]);
+};
 
 /** Mainnet configs plus the one testnet config: the full set the shared assertions apply to. */
-const allConfigs = () => [...mainnetConfigs(), ['base-sepolia.json', sepolia]];
+const allConfigs = () => {
+  const all = [...mainnetConfigs(), ['base-sepolia.json', sepolia]];
+  // Inherits the floor above, and re-asserts it rather than relying on that: the coupling is a
+  // call, and a future edit that stops building this set from `mainnetConfigs()` would silently
+  // take the floor with it.
+  assert.ok(all.length >= 3, `only ${all.length} configs in the shared set`);
+  return all;
+};
 
 // Positive-requirement list ONLY (see the header): the launch-parameter docs that must state the
 // values. Never used to scope a negative guard.
@@ -87,6 +113,11 @@ const SKIP_DIRS = new Set([
   'cache',
   'broadcast',
   'coverage',
+  // Build output. apps/vaults-ui's ui-smoke writes and deletes dist-ssr/ui-smoke-<port>/ WHILE this
+  // suite runs, so walking it raced a concurrent test: ENOENT on a 404.html that existed at readdir
+  // time (CI flake on #399). The source prose is what is guarded; its built copy is not.
+  'dist',
+  'dist-ssr',
 ]);
 
 const withCommas = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -304,10 +335,10 @@ test('no live markdown file states an exit-fee maximum other than the one the co
 //
 // It asserted that `apps/site/test/site.test.mjs` pinned the exit-fee decay row on
 // how-it-works.html to `config.smoke.exitFeeDecayPeriod`, so the published figure could not drift
-// from the configuration. Both the page and the whole `apps/site` tree were deleted when that site
-// was retired, so there is no longer a published exit-fee decay figure anywhere to keep fresh:
-// `apps/site-next` ships index and disclaimers only, and pins `smoke.gov` and `smoke.minDepositUsdc`
-// rather than this field.
+// from the configuration. Both the page and the whole `apps/site` tree of that era were deleted
+// when that site was retired, so there is no longer a published exit-fee decay figure anywhere to
+// keep fresh. `apps/site-next` was in turn deleted in #304; the current `apps/site` (the rebuild)
+// ships six static pages and pins no `smoke.*` field in its tests at all.
 //
 // It is DELETED rather than re-pointed because re-pointing it at the live site would have asserted
 // a pin that does not exist, and softening it to "some config field is pinned" would have been a
@@ -414,7 +445,22 @@ function proseFiles() {
       }
     }
   })(REPO);
-  return found.map((f) => path.relative(REPO, f).split(path.sep).join('/'));
+  // Both consumers of this walk are NEGATIVE guards -- "no live prose says X" -- and a negative
+  // guard over an empty corpus is the purest form of a pass that checked nothing. With this
+  // function returning `[]`, the sequencer-fails-closed guard ran in 0.18 ms against a 64 ms
+  // baseline and the allowSubVaults-universal guard in 0.12 ms against 59 ms, both green.
+  //
+  // 151 files today. The floor is loose for the same reason `test-wiring-truth`'s is: tightening it
+  // makes every legitimate deletion an unrelated red, and buys nothing this comment does not
+  // already disclaim. It detects a COLLAPSE -- a SKIP_DIRS entry that swallows the repository, a
+  // walk rooted at the wrong directory -- and it does not detect one directory going missing.
+  const files = found.map((f) => path.relative(REPO, f).split(path.sep).join('/'));
+  assert.ok(
+    files.length >= 50,
+    `the prose walk found only ${files.length} file(s); the negative guards that iterate it would ` +
+      'report "no offending prose" without having read any.',
+  );
+  return files;
 }
 
 /**
@@ -968,4 +1014,17 @@ test('ChainlinkOracle still fails OPEN on a zero sequencer feed, which is what a
       + 'an oracle with a zero feed serves prices through an outage and never reverts on that '
       + 'account is now false; rewrite them before this change lands.'
   );
+});
+
+test('proseFiles() never walks build output (dist, dist-ssr), which a concurrent test creates and deletes mid-run', () => {
+  const probeDir = path.join(REPO, 'apps', 'vaults-ui', 'dist-ssr', '__config_doc_truth_probe__');
+  mkdirSync(probeDir, { recursive: true });
+  writeFileSync(path.join(probeDir, 'probe.md'), 'probe');
+  try {
+    const walked = proseFiles();
+    assert.ok(!walked.includes('apps/vaults-ui/dist-ssr/__config_doc_truth_probe__/probe.md'), 'proseFiles() walked into dist-ssr');
+    assert.ok(!walked.some((p) => p.split("/").some((seg) => seg === "dist" || seg === "dist-ssr")), "proseFiles() returned a path under a build-output directory");
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
 });

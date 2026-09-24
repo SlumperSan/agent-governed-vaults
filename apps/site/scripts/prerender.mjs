@@ -43,6 +43,7 @@ const FLOORS = {
   'about.html': 2000,
   'docs.html': 2500,
   'disclaimers.html': 28400,
+  'terms.html': 6000,
   '404.html': 1100,
 }
 const DEFAULT_FLOOR = 2000;

@@ -49,15 +49,20 @@ paragraph will say so when it is true.
 - The security-review attestation paragraph: byte-identical across every page that carries it.
 - The launch-status paragraph naming the open High: byte-identical across pages.
 - The operator capital obligation sentence (2,500 USDC, 5%, both mechanisms named).
-- Every occurrence of the word **deployed** must sit inside a sentence that negates it, **unless the
-  sentence names Robinhood Chain and cites the record**: the chain id `4663` or
-  `contracts/config/deployments/robinhood-mainnet.json`. This changed on 2026-09-04 and the reason
-  matters more than the rule: the protocol IS deployed, on Robinhood Chain mainnet, so a contract
-  that permits "deployed" only inside a negation is a contract that requires writing falsehoods.
-  The replacement is not a loosening: a positive "deployed" must now be CHECKABLE, which the
-  absolute it replaced never was. Base mainnet sentences still take the negation, because there is
-  still no Base mainnet deployment. Pinned by the "every deployed" test in
-  `apps/site/test/site.test.mjs`, in lockstep with this bullet.
+- **deployed** may be stated positively about **Arc** and nothing else, and only where the reader
+  can check it. Since 2026-09-24 the protocol is deployed on Arc mainnet (chain 5042) and its record
+  is `contracts/config/deployments/arc-mainnet.json`. A positive sentence names Arc, and its page
+  carries the anchor that makes it checkable: the first vault's address (`firstVault.address` in that
+  record) or a link to the record itself. About any other chain, "deployed" is still negated or
+  conditioned. This bullet is pinned in lockstep with the `apps/site/test/site.test.mjs` test "the
+  site states the deployment status the deployment record gives it", which reads the record, requires
+  the address on the homepage and the disclaimers page, and fails any page that still says it is not
+  deployed.
+
+  *Why the rule was negation-only until then, kept because it will matter again for the next chain:
+  a positive "deployed" is only safe while the record it points at exists. An earlier exemption for a
+  chain that was later abandoned outlived that chain by a day, because nobody who retired the chain
+  retired the exemption. Whoever retires a deployment retires this bullet's permission with it.*
 - No page may imply a live deployment in the OUTCOME or INVITATION sense: "is live", "mainnet is
   up", "launched on", "now trading", "goes live". That guard was kept intact through the 2026-09-04
   rewrite; stating a deployment and citing its record is not the same act as promising one.
@@ -99,17 +104,26 @@ the comments, and the owner is who decides a claim.
   to prevent: the guard over that claim tests for one exact sentence, and this bullet was a
   paraphrase of it, so the sweep that enumerated files from the guard could not see it. Write a
   claim so that a reader can check it, not so that a string match passes.
-- **A bare answer to "is it deployed?"** Name the chain, and say what is deployed. Robinhood Chain
-  mainnet (4663): the seven contracts are, since 2026-09-05, with gates 3 and 6 unrun there or
-  anywhere; two vaults exist there and both hold real funds, so "deployed" there now DOES mean
-  member funds are at stake. `smokeVault` and `secondVault` in that chain's record name them and
-  `verifiedWiring["factory.vaultCount()"]` reads 2, and all of those are chain reads. Say also that
-  both were created by the deployer EOA rather than the creator Safe the record named, because
-  `creator` is immutable and that identity cannot be rotated. Base Sepolia
-  (84532): yes, a testnet trial with no value at stake. No other chain: no. Settlement is USDG (6 dp)
-  on 4663, and since the owner's decision of 2026-09-15 `apps/api` meters reads on 4663 too — but
-  **no facilitator is deployed for 4663 and `apps/api` is not deployed anywhere**, so a sentence
-  about metered reads on that chain is about a configuration, never about a running service.
+- **A bare answer to "is it deployed?"** Name the chain, and say what is deployed.
+  **The protocol is deployed on no mainnet.** Arc (5042) is the target and nothing is on it. Base
+  is paused. Base Sepolia (84532): a testnet trial with no value at stake.
+
+  **Robinhood Chain (4663) is abandoned** — owner decision 2026-09-18. The seven contracts remain
+  deployed and immutable there and cannot be removed, but **no vault holds value**: both read zero
+  across `totalShares`, `navWad`, `holderCount` and `idleUsdc`, and zero of every basket token,
+  re-read on-chain at block 66,743,764 (Engineering, PR 316). The chain's config and both deployment
+  records are out of this repository.
+
+  **Two sentences that are NOT the same, and copy must not merge them:** "no funds are at stake" is
+  true; "nothing exists there" is false. Nothing prevents a deposit into either vault, and the first
+  one would make the first sentence false. Say the end state, never the mechanism — how the vaults
+  came to be empty is not something this contract has verified.
+
+  *Corrected 2026-09-19. This bullet instructed copy to say "two vaults exist there and both hold
+  real funds, so 'deployed' there now DOES mean member funds are at stake". That was the same false
+  claim Engineering removed from `docs/INCIDENTS.md`, `SECURITY.md` and `LAUNCH-READINESS.md` §0 —
+  sitting in the document that governs what public copy may assert. A claims contract that has gone
+  stale does not merely fail to catch a falsehood; it licenses one.*
 - **"Guarantee"**: only inside the permitted fragments `no guarantee of any outcome` and
   `a good-faith measure and not a guarantee`.
 - **'Reverts without a sequencer feed.'** `ChainlinkOracle._requireSequencerUp` returns early on
@@ -117,8 +131,10 @@ the comments, and the owner is who decides a claim.
   `DeployChainlinkOracle.requiresSequencerUptimeFeed` covers, which is an enumeration and not all of
   them.** A local node, Base Sepolia and Robinhood Chain 4663 are exempt, so on chain
   4663 there is no deploy-time refusal either and nothing enforces the feed at all. "Mandatory,
-  enforced at deploy time" unqualified is now a false claim about the chain the protocol is deployed
-  on,
+  enforced at deploy time" unqualified is a false claim about any exempt chain — and **Arc is
+  exempt in substance for a different reason: Chainlink publishes no L2 Sequencer Uptime Feed for
+  Arc at all, because Arc is an L1.** So on Arc the gate never runs at price time and only the
+  heartbeat and the sane-price band carry that risk,
   and `config-doc-truth`'s deploy-time exemption will wave it straight through: the leg that
   catches it is in `scripts/test/claims-robinhood-deployment.test.mjs`.
 - **Uniqueness → existence.** "The one thing that stays reclaimable during a freeze" is a

@@ -80,15 +80,16 @@
 #   NARROWED ON 2026-09-18, AND THIS IS THE ENTRY FOR IT. It used to permit exactly one external
 #   origin — a public JSON-RPC endpoint — because the homepage read protocol state from a chain in
 #   the reader's own browser, so a claim on the page was checkable by the reader rather than taken
-#   on the server's word. This site makes NO chain reads: the protocol is not deployed, there is no
-#   address to read, and the page states that in words instead.
+#   on the server's word. This site makes NO chain reads. That was because nothing was deployed; since
+#   2026-09-24 the first vault is live on Arc, and the site prints its address as static text, taken
+#   from contracts/config/deployments/arc-mainnet.json at build time, rather than reading it live.
 #
 #   SO THE PERMISSION IS REMOVED RATHER THAN LEFT POINTING AT AN ENDPOINT NOTHING CALLS. A standing
 #   allowance for an origin the site does not contact is a permission the next person inherits
 #   without a review — the same argument this file already makes for deleting `media-src` when the
 #   last video went. Every fetch to any other host is now refused by the browser.
 #
-#   TO PUT ONE BACK when there is a deployment to read: add the one endpoint here, in the same
+#   TO PUT ONE BACK if the site ever reads the chain itself: add the one endpoint here, in the same
 #   commit as the code that calls it, and nothing wider.
 #
 # worker-src 'self'

@@ -16,7 +16,10 @@
     "noEmit": true,
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@rwally/terms": ["./src/terms-modules/terms-text.d.ts"]
+    }
   },
   "include": ["src"]
 }

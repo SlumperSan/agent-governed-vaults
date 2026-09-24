@@ -16,8 +16,23 @@ import { defineConfig } from 'vite';
 
 const entry = (name: string) => fileURLToPath(new URL(`./${name}`, import.meta.url));
 
+/**
+ * `@rwally/terms` resolves to `packages/terms/src/terms-text.mjs` — the ONE Terms of Use string
+ * this app and `apps/vaults-ui` both import, so a text change can never reach one and not the
+ * other. Same alias-over-npm-dependency convention `apps/vaults-ui/vite.config.ts` uses for
+ * `@atlas/*`/`@chain/*`: nothing declares this as a package.json dependency, the path is resolved
+ * directly. `src/terms-modules/terms-text.d.ts` (see `tsconfig.json`'s matching `paths` entry)
+ * supplies the types tsc needs for this untyped ESM source.
+ */
+const pkg = (path: string) => fileURLToPath(new URL(`../../packages/${path}`, import.meta.url));
+
 export default defineConfig(({ isSsrBuild }) => ({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@rwally/terms': pkg('terms/src/terms-text.mjs'),
+    },
+  },
   build: isSsrBuild
     ? {
         ssr: true,
@@ -36,6 +51,7 @@ export default defineConfig(({ isSsrBuild }) => ({
             about: entry('about.html'),
             docs: entry('docs.html'),
             disclaimers: entry('disclaimers.html'),
+            terms: entry('terms.html'),
             notFound: entry('404.html'),
           },
         },
