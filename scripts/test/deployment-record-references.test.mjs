@@ -106,9 +106,13 @@ function proseFiles() {
   return out.sort();
 }
 
-/** Has this path EVER existed in this repository? A `git log` over every ref, not over the tree. */
+/** Has this path EVER existed in the history of the commit under test? A `git log` over HEAD's
+ * ancestry, not over the tree. NOT `--all`: every ref includes other people's unmerged branches, so
+ * one pushed branch that adds a record (#390, arc-mainnet.json) made every other PR's CI treat that
+ * never-merged file as "deleted" and fail a citation of it. CI checks out with fetch-depth 0, so
+ * HEAD's ancestry is complete there. */
 function everExisted(repoPath) {
-  const r = spawnSync('git', ['log', '--all', '--diff-filter=A', '--format=%h', '--', repoPath], {
+  const r = spawnSync('git', ['log', 'HEAD', '--diff-filter=A', '--format=%h', '--', repoPath], {
     cwd: REPO,
     encoding: 'utf8',
   });
