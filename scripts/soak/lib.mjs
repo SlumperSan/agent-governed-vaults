@@ -19,7 +19,7 @@
  * Env: SOAK_RPC (or BASE_SEPOLIA_RPC), SOAK_DEPLOYMENT, SOAK_SIGNER_ARGS, CAST, and per-drill
  *      state paths.
  */
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -93,23 +93,43 @@ export const eq = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 export const clean = (line) => line.replace(/\s+\[[^\]]*\]$/, '').trim();
 
 export function cast(args, { interactive = false } = {}) {
-  // `interactive` exists so a keystore PASSWORD PROMPT can reach a human at a terminal. But
-  // inheriting stderr also throws cast's error text away, and an unattended run
-  // (--password-file, output redirected to a log file) has no human to prompt and badly needs
-  // that text. So inherit only when there is actually a TTY to inherit from; otherwise pipe and
-  // keep the diagnostics. Getting this wrong cost a debugging round: every failure in the first
-  // unattended launch read as a bare "Command failed" with the reason discarded.
+  // `interactive` exists so a keystore PASSWORD PROMPT can reach a human at a terminal. Only
+  // STDIN needs that: it is 'inherit' when there is a real TTY to prompt, 'ignore' otherwise, so
+  // an unattended run (--password-file, output redirected to a log file) never blocks waiting on
+  // input nobody can supply.
+  //
+  // STDERR IS ALWAYS PIPED, NEVER INHERITED — deliberately, since issue #280. It used to inherit
+  // alongside stdin whenever `passThrough` was true, which threw the subprocess's stderr straight
+  // at the terminal but also past Node entirely: a stream that was never piped is never captured,
+  // so a failing `cast` on an attended TTY run left the thrown error's stderr empty and `detail`
+  // below fell back to the generic "Command failed" message. `send()`'s estimation-retry (issue
+  // #214) matches a literal marker against that `detail` text, so on every attended run the retry
+  // it exists to provide was silently inert — and nothing ever reported that either. Piping
+  // always fixes both: the caller gets the real `cast` error text to match against, and this
+  // function tees it to the terminal itself (below) so an attended operator still sees it exactly
+  // as before.
+  //
+  // `spawnSync`, not `execFileSync`: only `spawnSync` hands back stdout/stderr on a SUCCESSFUL
+  // exit too, not just on the thrown error of a failed one — using `execFileSync` here would have
+  // re-introduced a narrower version of the same bug for any future caller that needed a
+  // successful call's stderr.
   const passThrough = interactive && Boolean(process.stdin.isTTY);
-  try {
-    return execFileSync(CAST, args, {
-      encoding: 'utf8',
-      stdio: [passThrough ? 'inherit' : 'ignore', 'pipe', passThrough ? 'inherit' : 'pipe'],
-      windowsHide: true,
-    }).trim();
-  } catch (e) {
-    const detail = e.stderr ? String(e.stderr).trim() : e.message;
+  const result = spawnSync(CAST, args, {
+    encoding: 'utf8',
+    stdio: [passThrough ? 'inherit' : 'ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  // Tee stderr to the terminal on an attended run, exactly as `inherit` used to show it live.
+  // `spawnSync` is synchronous — nothing else can print while `cast` runs — so writing the
+  // captured text immediately after it returns is indistinguishable, from the terminal's point of
+  // view, from having inherited the stream.
+  if (passThrough && result.stderr) process.stderr.write(result.stderr);
+  if (result.error) throw result.error; // e.g. the `cast` binary itself was not found (ENOENT)
+  if (result.status !== 0) {
+    const detail = result.stderr ? String(result.stderr).trim() : `exited with status ${result.status}`;
     throw new Error(`cast ${args.slice(0, 3).join(' ')} failed: ${detail}`);
   }
+  return String(result.stdout).trim();
 }
 
 /**
