@@ -235,6 +235,21 @@ function build(tokensCss, stylesCss, chromeCss) {
     ['.vault-row-meta selected', { sel: '.vault-row-meta', prop: 'color' }, SELECTED, 12.5, false],
     ['.tag label', { sel: '.tag', prop: 'color' }, SURFACE2, 12, false],
     ['.tag-warn label', { sel: '.tag-warn', prop: 'color' }, SURFACE2, 12, false],
+    // THE SIGNING SURFACE — MemberActions, ProposalPanel, WalletConnect, Holdings. Added
+    // 2026-09-23: until then the guard covered the ported chrome and none of the controls a
+    // member signs from. Both grounds a button's label sits on are read from the rule.
+    ['.btn label on its own fill', { sel: '.btn', prop: 'color' }, rgbOf({ sel: '.btn', prop: 'background' }), 14, true],
+    ['.btn-ghost label on a panel', { sel: '.btn-ghost', prop: 'color' }, SURFACE, 14, true],
+    ['.dim on a panel', { sel: '.dim', prop: 'color' }, SURFACE, 13, false],
+    ['.proposal-title on a panel', { sel: '.proposal-title', prop: 'color', inherit: true }, SURFACE, 15, false],
+    ['.act-row label on a panel', { sel: '.act-row label', prop: 'color', inherit: true }, SURFACE, 13, false],
+    [
+      '.act-row input text on its own fill',
+      { sel: ".act-row input[type='text']", prop: 'color' },
+      rgbOf({ sel: ".act-row input[type='text']", prop: 'background' }),
+      14,
+      false,
+    ],
   ];
 
   /** Visual information REQUIRED to identify a component or its state: 3:1. */
@@ -243,6 +258,10 @@ function build(tokensCss, stylesCss, chromeCss) {
     [':focus-visible ring on the page', { sel: 'a:focus-visible', prop: 'outline' }, BG],
     [':focus-visible ring on a panel', { sel: 'a:focus-visible', prop: 'outline' }, SURFACE],
     ['.bar-for fill against its track', { sel: '.bar-for', prop: 'background' }, SURFACE2],
+    // A text input's edge is what identifies it as a field at all (WCAG 2.2 1.4.11); its fill
+    // is --surface-2 on a --surface panel, a step no reader can see.
+    ['.act-row input boundary on a panel', { sel: ".act-row input[type='text']", prop: 'border' }, SURFACE],
+    ['.btn boundary on a panel', { sel: '.btn', prop: 'border' }, SURFACE],
   ];
 
   return { text, nonText, rgbOf, solid, declared };
