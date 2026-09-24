@@ -219,3 +219,20 @@ test('ContractTab is mounted OUTSIDE the manifestVerified write gate — reading
   assert.ok(gateStart >= 0, 'the manifest-verified write gate was not found — did App.tsx change shape?');
   assert.ok(contractTabIdx >= 0 && contractTabIdx < gateStart, 'ContractTab must mount before the manifest-verified write gate, not inside it');
 });
+
+// ─────── Product's corrected copy (#434 review, 2026-09-24) ───────
+
+test('Row 3 never claims nothing can halt deposits or exits; it names the stale-feed stop', () => {
+  const flat = SRC.replace(/\s+/g, ' ');
+  assert.doesNotMatch(flat, /Nothing in the protocol can halt/, 'false: navWad reverts on a stale feed and deposits/exits revert with it (#388)');
+  assert.match(flat, /No contract has a pause function, and no address — ours included — can halt deposits, exits or voting\./);
+  assert.match(flat, /The contracts do stop on their own when the price feed goes stale: deposits and exits revert until it answers again\./);
+});
+
+test('Row 6 confirmed states and Row 6b unread use the copy-doc lines, and never name the issuer', () => {
+  const flat = SRC.replace(/\s+/g, ' ');
+  assert.match(flat, /Read now: cirBTC is paused by its issuer\./);
+  assert.match(flat, /Read now: this vault&rsquo;s address is blacklisted on cirBTC\./);
+  assert.match(flat, /That is not the same as having nothing to claim\. Reload to check again\./);
+  assert.doesNotMatch(flat, /\bCircle\b/, 'copy-doc hard constraint: "its issuer", never the issuer by name');
+});
