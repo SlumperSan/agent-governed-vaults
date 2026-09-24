@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Page } from './Shell';
+import { EscrowClaims } from './components/EscrowClaims';
 import { Holdings } from './components/Holdings';
 import { MemberActions } from './components/MemberActions';
 import { ProposalPanel } from './components/ProposalPanel';
@@ -154,7 +155,28 @@ function AppShell() {
 
               <ProposalPanel vault={vault} nowSec={nowSec} />
               <Holdings vault={vault} nowSec={nowSec} />
-              <MemberActions vault={vault} />
+              {vault.manifestVerified === 'verified' ? (
+                <>
+                  <MemberActions vault={vault} />
+                  <EscrowClaims vault={vault} />
+                </>
+              ) : (
+                <section className="panel">
+                  <h2>Actions</h2>
+                  {/* Card 211 (A2, frontend security pass). This address is `VITE_VAULT_ADDRESSES`
+                   * build-time config, not itself proof the contract at it was ever created by
+                   * `VaultFactory` — a bad build (wrong env, a typo, a copy from another
+                   * deployment) could point here at a contract the manifest never named. Refuse
+                   * to offer Sign rather than trust an unverified address with a member's
+                   * signature; `'unknown'` (the manifest could not be read) gets the SAME refusal
+                   * as `'not-found'`, never the benefit of the doubt `'verified'` gets. */}
+                  <p className="note tag-warn">
+                    {vault.manifestVerified === 'not-found'
+                      ? 'This address is not on the VaultFactory deployment manifest. Deposit, vote and exit are disabled until that is resolved.'
+                      : 'This vault could not be verified against the VaultFactory deployment manifest. Deposit, vote and exit are disabled until it can be checked.'}
+                  </p>
+                </section>
+              )}
             </div>
           ) : (
             <div className="detail">

@@ -36,6 +36,11 @@ export {
   assembleLegSafety,
   assembleProposal,
   navPerShareWad,
+  planFactoryVaultCount,
+  planFactoryAllVaults,
+  assembleManifestCheck,
+  planClaimableEscrow,
+  assembleClaimableEscrow,
 } from '@atlas/chain-reader';
 export type {
   PlannedCall,
@@ -46,6 +51,9 @@ export type {
   AssembledLeg,
   AssembledProposal,
   AssembledVault,
+  ManifestState,
+  ClaimableEscrowEntry,
+  UnreadEscrowEntry,
 } from '@atlas/chain-reader';
 export { loading, empty, failed, ready, describeError } from '@atlas/freshness';
 export type { Fetched } from '@atlas/freshness';
@@ -217,6 +225,13 @@ export interface Vault {
   readonly basket: readonly BasketLeg[];
   readonly proposal: Proposal | null;
   readonly governanceConfig?: Record<string, unknown> | null;
+  /**
+   * Card 211 (A2, frontend security pass) — is THIS address actually on `VaultFactory.allVaults`,
+   * not merely a well-formed address configured in `VITE_VAULT_ADDRESSES`. `'unknown'` when the
+   * manifest could not be read (including when `VITE_FACTORY_ADDRESS` is unset) — treated the same
+   * as `'not-found'` everywhere Sign is gated, never the same as `'verified'`.
+   */
+  readonly manifestVerified: 'verified' | 'not-found' | 'unknown';
 }
 
 export interface WalletPosition {

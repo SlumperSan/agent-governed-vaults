@@ -30,7 +30,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -113,6 +113,11 @@ const SKIP_DIRS = new Set([
   'cache',
   'broadcast',
   'coverage',
+  // Build output. apps/vaults-ui's ui-smoke writes and deletes dist-ssr/ui-smoke-<port>/ WHILE this
+  // suite runs, so walking it raced a concurrent test: ENOENT on a 404.html that existed at readdir
+  // time (CI flake on #399). The source prose is what is guarded; its built copy is not.
+  'dist',
+  'dist-ssr',
 ]);
 
 const withCommas = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -1009,4 +1014,17 @@ test('ChainlinkOracle still fails OPEN on a zero sequencer feed, which is what a
       + 'an oracle with a zero feed serves prices through an outage and never reverts on that '
       + 'account is now false; rewrite them before this change lands.'
   );
+});
+
+test('proseFiles() never walks build output (dist, dist-ssr), which a concurrent test creates and deletes mid-run', () => {
+  const probeDir = path.join(REPO, 'apps', 'vaults-ui', 'dist-ssr', '__config_doc_truth_probe__');
+  mkdirSync(probeDir, { recursive: true });
+  writeFileSync(path.join(probeDir, 'probe.md'), 'probe');
+  try {
+    const walked = proseFiles();
+    assert.ok(!walked.includes('apps/vaults-ui/dist-ssr/__config_doc_truth_probe__/probe.md'), 'proseFiles() walked into dist-ssr');
+    assert.ok(!walked.some((p) => p.split("/").some((seg) => seg === "dist" || seg === "dist-ssr")), "proseFiles() returned a path under a build-output directory");
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
 });
