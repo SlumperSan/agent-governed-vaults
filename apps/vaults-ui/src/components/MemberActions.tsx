@@ -504,6 +504,11 @@ export function MemberActions({ vault }: Props) {
       {addrErr ? <p className="note tag-warn">Could not read this vault&rsquo;s USDC/governance addresses: {addrErr}</p> : null}
 
       <h3>Deposit</h3>
+      {/* Card 218: the most important disclosure on this page. Always rendered, never behind a
+       * wallet, freeze or deposit state; test/btc-exposure-disclosure.test.mjs asserts that.
+       * "cirBTC" is literal because this app serves one vault (its basket is cirBTC); the same
+       * test pins .env.example to that one vault, so serving another vault reds it first. */}
+      <p className="note"><strong>What your USDC becomes.</strong> This vault invests members&rsquo; USDC in cirBTC, a wrapped Bitcoin token, and only when a member vote passes. The part of the vault held in cirBTC rises and falls with Bitcoin&rsquo;s price, so your shares do too. USDC the vault has not invested does not.</p>
       {connected ? (
         <TermsClickwrap
           checked={termsAccepted}
