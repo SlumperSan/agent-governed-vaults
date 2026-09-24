@@ -78,15 +78,6 @@ const PROSE_ROOTS = ['.', 'docs', 'skills'];
  * unnecessary fails the suite rather than sitting here.
  */
 const ROUTED_ELSEWHERE = Object.freeze([
-  {
-    file: 'skills/rwally-claims-contract/SKILL.md',
-    owner: 'Marketing',
-    why: 'the claims contract for public copy: it licenses positive "deployed" sentences on the premise '
-      + 'that the protocol IS deployed on chain 4663, and cites the deleted record as the checkable '
-      + 'evidence. Retiring that premise is a copy-policy change, and the bullet is pinned in lockstep '
-      + 'with the "every deployed" test in apps/site/test/site.test.mjs, so the site copy has to move in '
-      + 'the same change.',
-  },
 ]);
 const ROUTED_FILES = new Set(ROUTED_ELSEWHERE.map((r) => r.file));
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-ssr', 'out', 'cache', 'lib', 'broadcast', '.wrangler']);

@@ -24,7 +24,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 const APP = fileURLToPath(new URL('..', import.meta.url));
 const DIST = join(APP, 'dist');
@@ -151,11 +151,12 @@ test('the policy names every directive this app depends on, and widens none of t
   // Plan item 0.7: this surface reads a chain now (src/lib/live-vaults.ts), so connect-src carries
   // exactly one RPC origin alongside 'self' — pinned to the exact string, not `.includes()`, so
   // widening it to a second origin or a wildcard fails this test rather than passing it quietly.
-  // See _headers's own comment on the directive for why THIS origin (Base Sepolia, provable today)
-  // rather than an Arc mainnet address nothing is deployed at yet.
+  // See _headers's own comment on the directive: this is the Arc mainnet RPC, live since
+  // 2026-09-24 (firstVault.createdAt) — the cirBTC Vault, RWAlly's v1 vault, is a real deployment
+  // on chain 5042.
   assert.equal(
     directives.get('connect-src'),
-    "'self' https://sepolia.base.org",
+    "'self' https://rpc.mainnet.arc.io",
     "connect-src must be exactly 'self' plus the one configured RPC origin",
   );
   // Absent by design: each falls back to default-src 'none'. See _headers for why.
@@ -170,9 +171,9 @@ test('the policy names every directive this app depends on, and widens none of t
 
 test('connect-src names the SAME origin VITE_RPC_URL actually resolves to for the provable config', () => {
   // Mechanical coupling, not a comment someone has to remember to update. `.env.example` is the
-  // one live-read path this repository can currently prove (Base Sepolia; nothing is deployed on
-  // Arc mainnet yet — contracts/config/arc-mainnet.json's own `status` field says so), and it is
-  // also the config `npm run dev` actually exercises. If it ever names a different RPC than
+  // live-read path this repository builds against by default — Arc mainnet, chain 5042, live since
+  // 2026-09-24 (firstVault.createdAt) — and it is also the config `npm run dev` actually exercises.
+  // If it ever names a different RPC than
   // `_headers` allows, `npm run dev` would 200 the page and refuse every read in the browser with
   // no build-time warning — the exact hazard the coordinator's brief for this task named.
   const env = readFileSync(join(APP, '.env.example'), 'utf8');
@@ -472,6 +473,129 @@ test('mutation: EVERY sentinel individually fires, including the numeric ones �
   // this section closed (the header claims "no fixture NUMBER", and the list had none).
   const numeric = FIXTURE_SENTINELS.filter((s) => /^[\d.]+$/.test(s));
   assert.ok(numeric.length >= 3, `too few numeric sentinels (${numeric.length}) to back the header's own claim`);
+});
+
+// ── The deployed vault's address and its display name must reach a Pages-shaped build ───────────
+//
+// Design (checked against the live bundle, 2026-09-23): app.rwally.com's build reads
+// VITE_VAULT_ADDRESSES and VITE_VAULT_NAME, but a build that never actually inlined either value —
+// a typo in the var name, a build that ran before .env.example was updated, `readLiveConfig`
+// silently swallowing one of them, or Cloudflare Pages' own build-environment vars going stale —
+// would still pass every OTHER test in this file.
+//
+// THIS CANNOT REUSE THE SHARED `dist/` FROM `before()` ABOVE. That build runs with NO env set at
+// all, deliberately, so the "not configured" honest-empty state is what a checkout with nothing
+// configured actually renders — confirmed by hand: `vite build` with no `.env.production.local`
+// and none of the three required vars in `process.env` never reaches `readLiveConfig`'s happy path.
+// Cloudflare Pages does not read `.env.example` either — it sets `VITE_*` as real process
+// environment variables ahead of `npm run build`, and Vite inlines those into `import.meta.env`
+// the same way it would inline a `.env` file's values. Confirmed by hand, 2026-09-23:
+// `VITE_VAULT_NAME="cirBTC Vault" ... npx vite build` with NO `.env` file present at all produced a
+// bundle containing that exact string. So this test reproduces THAT mechanism — process env, not a
+// file — building its own separate bundle into a THROWAWAY OS TEMP DIRECTORY, outside this repo
+// entirely, rather than touching the shared `dist/` or nesting under `dist-ssr/` the way
+// `ui-smoke.test.mjs`'s `buildHarnessOnce` does. `buildHarnessOnce` has to stay inside the repo:
+// its SSR build externalizes `node_modules` deps rather than bundling them, so the emitted script
+// only resolves `viem`/`react` when run from somewhere Node's own resolution can still find this
+// repo's `node_modules`. This test's build is a plain CLIENT bundle — fully self-contained, only
+// ever grepped, never executed — so that constraint does not apply, and keeping it out of the repo
+// removes it from every `.md`/`.html`-scanning walk entirely rather than relying on that walk's own
+// `SKIP_DIRS` to exclude it. `csp.test.mjs`'s own `before()` above documents a MEASURED race (1 in
+// 25 batched runs) between two files independently rebuilding into the SAME `dist/`; a second,
+// concurrently-written build tree under this repo — even a different directory — is exactly the
+// shape of exposure that race warns about, so it is written somewhere no repo-wide walk ever looks.
+
+/**
+ * Pure check, used identically by the real test below and by its own mutation test via
+ * `assert.throws` — the same non-circularity shape `testnet-masthead.test.mjs`'s `checkChainClaim`
+ * uses. A version that only planted a probe string and asserted `.includes()` on it directly (an
+ * earlier draft of this file did exactly that) never called the real assertion at all, so it could
+ * not have caught a regression in it.
+ */
+function assertInlined(text, address, vaultName) {
+  assert.ok(
+    text.toLowerCase().includes(address.toLowerCase()),
+    `VITE_VAULT_ADDRESSES (${address}) does not reach the built bundle — Cloudflare Pages would serve a page with no configured vault`,
+  );
+  assert.ok(
+    text.includes(vaultName),
+    `VITE_VAULT_NAME ("${vaultName}") does not reach the built bundle — the vault would render shortAddress() instead of its name`,
+  );
+}
+
+test('the deployed vault address and its display name (owner decision #353) reach a Cloudflare-Pages-shaped build', () => {
+  const env = readFileSync(join(APP, '.env.example'), 'utf8');
+  const value = (name) => {
+    const m = new RegExp(`^${name}\\s*=\\s*(.+?)\\s*$`, 'm').exec(env);
+    assert.ok(m, `apps/vaults-ui/.env.example has no ${name}`);
+    return m[1];
+  };
+  const rpcUrl = value('VITE_RPC_URL');
+  const chainId = value('VITE_CHAIN_ID');
+  const address = value('VITE_VAULT_ADDRESSES');
+  const vaultName = value('VITE_VAULT_NAME');
+
+  const outDir = mkdtempSync(join(tmpdir(), 'vaults-ui-env-check-'));
+  // Same .cmd-wrapper dodge as `before()` above and `ui-smoke.test.mjs`'s `buildHarnessOnce`: run
+  // vite's own JS entrypoint through this process's node binary, so nothing here needs `shell: true`.
+  const viteJs = join(APP, 'node_modules', 'vite', 'bin', 'vite.js');
+  if (!existsSync(viteJs)) {
+    throw new Error(`csp.test.mjs: vite entrypoint not found at ${viteJs} — run npm ci first`);
+  }
+  // `--emptyOutDir`: vite DOES write outside the project root without complaint, but it warns
+  // ("outside of root and will not be emptied") on every build unless this is passed. `mkdtempSync`
+  // already hands back an empty directory, so the flag is here only to silence that warning, not
+  // to unlock the write.
+  const r = spawnSync(process.execPath, [viteJs, 'build', '--outDir', outDir, '--emptyOutDir'], {
+    cwd: APP,
+    encoding: 'utf8',
+    windowsHide: true,
+    env: {
+      ...process.env,
+      VITE_RPC_URL: rpcUrl,
+      VITE_CHAIN_ID: chainId,
+      VITE_VAULT_ADDRESSES: address,
+      VITE_VAULT_NAME: vaultName,
+    },
+  });
+  try {
+    if (r.status !== 0) {
+      throw new Error(`env-configured vite build failed (exit ${r.status}):\n${r.stdout}\n${r.stderr}`);
+    }
+    const assetsDir = join(outDir, 'assets');
+    assert.ok(existsSync(assetsDir), `${assetsDir} was not produced`);
+    const jsFiles = readdirSync(assetsDir).filter((f) => f.endsWith('.js'));
+    assert.ok(jsFiles.length > 0, 'no .js emitted into the env-check build — nothing to scan');
+    const text = jsFiles.map((f) => readFileSync(join(assetsDir, f), 'utf8')).join('\n');
+    assertInlined(text, address, vaultName);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('mutation: assertInlined reds on text missing the address, reds on text missing the name, greens on text with both', () => {
+  // Calls the SAME `assertInlined` the real test above calls, via `assert.throws` — not a
+  // re-implementation, and not a probe string checked with a bare `.includes()` that never
+  // exercises the real assertion at all (the shape an earlier draft of this file used).
+  const address = '0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6';
+  const vaultName = 'cirBTC Vault';
+  assert.throws(
+    () => assertInlined('export const v = "nothing relevant here";', address, vaultName),
+    'RED: text containing neither value must fail assertInlined',
+  );
+  assert.throws(
+    () => assertInlined(`export const v = "${vaultName}";`, address, vaultName),
+    'RED: text with the name but not the address must still fail assertInlined',
+  );
+  assert.throws(
+    () => assertInlined(`export const v = "${address}";`, address, vaultName),
+    'RED: text with the address but not the name must still fail assertInlined',
+  );
+  // Non-vacuity in the other direction: text carrying both must NOT throw.
+  assert.doesNotThrow(
+    () => assertInlined(`export const v = "${address}"; export const n = "${vaultName}";`, address, vaultName),
+    'text containing both values must pass assertInlined cleanly',
+  );
 });
 
 test('no import of apps/web/src/fixtures.mjs (or the @atlas/fixtures alias) exists anywhere under src/', () => {

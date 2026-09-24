@@ -15,11 +15,13 @@
  * of it. A typed list of paths is a guard that stops covering things the moment somebody adds one.
  * This enumerates from git, so a seventh SVG is covered on the commit that adds it.
  *
- * WHAT THIS DOES **NOT** COVER, stated so the green is not over-read: the DRAWN letterforms. The
- * casing in `rwally-wordmark.svg` lives in its vector paths and still reads "Rwally"; correcting
- * that means redrawing the artwork, which is held behind an open owner decision about whether
- * letterforms may be used at all. This guard is about the string, and nothing here should be taken
- * as evidence about the picture.
+ * WHAT THIS DOES **NOT** COVER, stated so the green is not over-read: the DRAWN letterforms. A
+ * traced logo's casing lives in its vector paths, not in text, and this guard reads only text.
+ * The site's traced wordmark, lockup and comic mark drew "Rwally" and were referenced by nothing;
+ * they were deleted on 2026-09-23 rather than redrawn, because pictorial marks and letterforms are
+ * banned (Design/mark-elimination-record-2026-09-18). The same comic artwork survives only in
+ * `apps/app`, which is retiring into `apps/vaults-ui` and is not what app.rwally.com serves. This
+ * guard is about the string, and nothing here should be taken as evidence about the picture.
  *
  * SECOND GUARD, ADDED 2026-09-21: the SVG allowlist above is an ADJACENT property, not the whole
  * one. It caught a retired name ("Vault Atlas") in a favicon's `aria-label` while the SAME string
@@ -81,9 +83,14 @@ test('every tracked SVG that names itself announces RWAlly', () => {
     if (m[1] !== BRAND) wrong.push(`${rel} announces "${m[1]}"`);
   }
 
+  // THE FLOOR IS A WALK CHECK, NOT A QUOTA. Six SVGs carried a label when this was written; on
+  // 2026-09-23 three of them — the site's traced wordmark, lockup and comic mark — were deleted as
+  // retired, unreferenced artwork (see the header), leaving four: two favicons in apps/app and
+  // apps/site, the vaults-ui favicon, and apps/app's comic mark. Lower it again only by deleting an
+  // SVG, and say which.
   assert.ok(
-    labelled.length >= 6,
-    `only ${labelled.length} SVG(s) carry an aria-label — six did when this guard was written, so ` +
+    labelled.length >= 4,
+    `only ${labelled.length} SVG(s) carry an aria-label — four did after the 2026-09-23 deletions, so ` +
       'either labels were removed (an accessibility regression of its own) or the walk stopped working',
   );
   assert.deepEqual(wrong, [], `the capitals are RWA, real-world assets:\n  ${wrong.join('\n  ')}`);

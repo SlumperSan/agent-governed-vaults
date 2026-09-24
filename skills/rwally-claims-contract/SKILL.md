@@ -49,30 +49,20 @@ paragraph will say so when it is true.
 - The security-review attestation paragraph: byte-identical across every page that carries it.
 - The launch-status paragraph naming the open High: byte-identical across pages.
 - The operator capital obligation sentence (2,500 USDC, 5%, both mechanisms named).
-- Every occurrence of the word **deployed** must sit inside a sentence that **negates or
-  conditions** it. There is no exemption. Negation: "not deployed", "not yet deployed". Condition:
-  "once deployed", "the moment an instance is broadcast" — a statement about what the code would do,
-  never about something currently holding value.
+- **deployed** may be stated positively about **Arc** and nothing else, and only where the reader
+  can check it. Since 2026-09-24 the protocol is deployed on Arc mainnet (chain 5042) and its record
+  is `contracts/config/deployments/arc-mainnet.json`. A positive sentence names Arc, and its page
+  carries the anchor that makes it checkable: the first vault's address (`firstVault.address` in that
+  record) or a link to the record itself. About any other chain, "deployed" is still negated or
+  conditioned. This bullet is pinned in lockstep with the `apps/site/test/site.test.mjs` test "the
+  site states the deployment status the deployment record gives it", which reads the record, requires
+  the address on the homepage and the disclaimers page, and fails any page that still says it is not
+  deployed.
 
-  *Restored 2026-09-19. Between 2026-09-04 and this date the rule carried an exemption: a positive
-  "deployed" was permitted if the sentence named **Robinhood Chain** and cited
-  `contracts/config/deployments/robinhood-mainnet.json`, on the reasoning that the protocol WAS
-  deployed there and a negation-only contract "requires writing falsehoods". Every premise of that
-  exemption is now gone — chain 4663 was **abandoned** by owner decision on 2026-09-18, both its
-  vaults read zero across every view, **the cited record was deleted** in `60f33a95`, and the
-  protocol is deployed on no mainnet at all. The exemption did not become wrong gradually; it
-  inverted, and a permission to assert a deployment is the most expensive kind to leave standing.*
-
-  *The 2026-09-04 reasoning is worth keeping rather than deleting, because it was sound at the time
-  and the same argument will be made again on the day Arc deploys: a contract that permits
-  "deployed" only inside a negation does require writing falsehoods **once there is a deployment**.
-  The lesson is not that the exemption was a mistake — it is that an exemption keyed to a specific
-  chain and a specific file must be retired by whoever retires the chain. Nobody did, for a day.*
-
-  **When Arc deploys, re-open this deliberately** — a positive "deployed" must be CHECKABLE, so the
-  replacement names the chain and cites a record that exists, and it lands in the same change as the
-  site copy and the `apps/site/test/site.test.mjs` "every deployed" test, which this bullet is
-  pinned to in lockstep.
+  *Why the rule was negation-only until then, kept because it will matter again for the next chain:
+  a positive "deployed" is only safe while the record it points at exists. An earlier exemption for a
+  chain that was later abandoned outlived that chain by a day, because nobody who retired the chain
+  retired the exemption. Whoever retires a deployment retires this bullet's permission with it.*
 - No page may imply a live deployment in the OUTCOME or INVITATION sense: "is live", "mainnet is
   up", "launched on", "now trading", "goes live". That guard was kept intact through the 2026-09-04
   rewrite; stating a deployment and citing its record is not the same act as promising one.

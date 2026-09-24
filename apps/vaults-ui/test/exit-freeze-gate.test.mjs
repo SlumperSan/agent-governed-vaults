@@ -184,18 +184,25 @@ test('MUTATION: removing the queuedExitUnread message is caught', () => {
 // reason. `usdcPay` and any OTHER, still-healthy leg's value have no relationship to `frozen` at
 // all. Security's finding: make the dependency explicit rather than relying on that coincidence.
 
-test('preview is explicitly gated on !vault.frozen, not left to fall out of pricing', () => {
-  const m = /const preview: ExitPreview \| null =\s*\n\s*([^\n]*)\n/.exec(MEMBER_ACTIONS);
+// #183 (the size-impact notice) split this into two steps: `exitAmounts` (unconditional on
+// `vault.frozen` -- see its own long comment -- since a basket leg's TOKEN AMOUNT needs no price
+// or oracle read at all, and the pool the size notice reads is not what freezes) and `preview`
+// (still explicitly withheld while frozen, exactly as this section's own header demands -- the
+// dependency did not become implicit, it moved from inside previewExit's own argument list to a
+// one-line ternary immediately above the render, which is what these two tests now check).
+
+test('preview is explicitly gated on vault.frozen, not left to fall out of pricing', () => {
+  const m = /const preview: ExitPreview \| null = ([^\n]*);/.exec(MEMBER_ACTIONS);
   assert.ok(m, 'preview declaration not found');
-  assert.match(m[1], /!vault\.frozen && exitGate && shares !== null/, 'preview must require !vault.frozen before calling previewExit at all');
+  assert.match(m[1], /vault\.frozen \? null : exitAmounts/, 'preview must explicitly withhold exitAmounts while vault.frozen, not fall out of pricing by coincidence');
 });
 
-test('MUTATION: dropping the !vault.frozen guard from preview is caught', () => {
-  const guardLine = /!vault\.frozen && exitGate && shares !== null/;
+test('MUTATION: dropping the vault.frozen guard from preview is caught', () => {
+  const guardLine = /const preview: ExitPreview \| null = vault\.frozen \? null : exitAmounts;/;
   assert.match(MEMBER_ACTIONS, guardLine, 'the frozen guard was not found as expected');
-  const mutated = MEMBER_ACTIONS.replace(guardLine, 'exitGate && shares !== null');
+  const mutated = MEMBER_ACTIONS.replace(guardLine, 'const preview: ExitPreview | null = exitAmounts;');
   assert.notEqual(mutated, MEMBER_ACTIONS, 'mutation target not found');
-  assert.doesNotMatch(mutated, /!vault\.frozen && exitGate/, 'RED: the pre-fix preview must not depend on frozen at all');
+  assert.doesNotMatch(mutated, /const preview: ExitPreview \| null = vault\.frozen \? null : exitAmounts;/, 'RED: the pre-fix preview must not depend on frozen at all');
 });
 
 test('a frozen vault renders an explicit no-preview message ahead of the table, not a computed one', () => {
@@ -301,4 +308,45 @@ test('the facts fed to actions() encode capacity as UNKNOWN, not as "not full"',
   assert.match(src, /capacityKnown:\s*false/, 'capacity is not read by this app at all, so it must be declared undeterminable');
   assert.match(src, /hasPendingDeposit:\s*depositStatus\?\./, 'hasPendingDeposit must come from the live depositStatus read, not a hardcoded false');
   assert.match(src, /pendingMatured:\s*depositStatus\?\./, 'pendingMatured must come from the live depositStatus read, not a hardcoded false');
+});
+
+// ─────────────── P-O13: the stale-oracle exit disclosure renders before any freeze ───────────────
+// The frozen branches above only speak once a freeze is live. P-O13 requires the member to be told
+// BEFORE depositing that a stale feed freezes exits, with no fallback — so the sentence must sit in
+// the Exit section unconditionally, not behind `vault.frozen`.
+
+/** The Exit section's lead-in: from its heading to the first input row. */
+const exitLeadIn = (src) => {
+  const start = src.indexOf('<h3>Exit</h3>');
+  assert.ok(start >= 0, 'Exit heading not found');
+  const end = src.indexOf('<div className="act-row">', start);
+  assert.ok(end > start, 'Exit input row not found after the Exit heading');
+  return src.slice(start, end);
+};
+
+const disclosureStated = (lead) =>
+  /data-testid="exit-stale-oracle-disclosure"/.test(lead) &&
+  /price feed goes stale/.test(lead) &&
+  /including\s+your\s+exit/.test(lead) &&
+  /no\s+fallback\s+price\s+source/.test(lead);
+
+test('P-O13: the Exit section states, unconditionally, that a stale feed freezes exits with no fallback', () => {
+  const lead = exitLeadIn(MEMBER_ACTIONS);
+  assert.ok(disclosureStated(lead), 'the stale-oracle exit disclosure must render at the top of the Exit section');
+  assert.doesNotMatch(lead, /vault\.frozen/, 'the disclosure must not be gated on vault.frozen — it has to be read before a freeze, not during one');
+});
+
+test('MUTATION: removing the stale-oracle exit disclosure is caught', () => {
+  const mutated = MEMBER_ACTIONS.replace(/\s*<p className="note dim" data-testid="exit-stale-oracle-disclosure">[\s\S]*?<\/p>/, '');
+  assert.notEqual(mutated, MEMBER_ACTIONS, 'mutation target not found');
+  assert.equal(disclosureStated(exitLeadIn(mutated)), false, 'RED: with the paragraph removed the disclosure must read as absent');
+});
+
+test('MUTATION: gating the disclosure behind vault.frozen is caught', () => {
+  const mutated = MEMBER_ACTIONS.replace(
+    /(<p className="note dim" data-testid="exit-stale-oracle-disclosure">[\s\S]*?<\/p>)/,
+    '{vault.frozen ? ($1) : null}',
+  );
+  assert.notEqual(mutated, MEMBER_ACTIONS, 'mutation target not found');
+  assert.match(exitLeadIn(mutated), /vault\.frozen/, 'RED: a frozen-gated disclosure must be detected by the unconditional check');
 });
