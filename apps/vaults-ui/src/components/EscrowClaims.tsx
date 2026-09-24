@@ -41,6 +41,7 @@ export function EscrowClaims({ vault }: Props) {
   const vaultAddr = vault.address as Address;
 
   const [usdc, setUsdc] = useState<Address | null>(null);
+  const [usdcError, setUsdcError] = useState<string | null>(null);
   const [claimable, setClaimable] = useState<readonly { asset: string; amount: bigint }[] | null>(null);
   const [anyUnread, setAnyUnread] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
@@ -48,11 +49,23 @@ export function EscrowClaims({ vault }: Props) {
 
   // Round 1 — the vault's own USDC address, read fresh rather than assumed. Same helper
   // MemberActions.tsx already uses for the same read; not duplicated here.
+  //
+  // Security review, PR #409: a failed read here used to leave `usdc` at its initial `null`
+  // forever, which the render below could not tell apart from "genuinely nothing claimable" — the
+  // exact "unread renders as a clean zero" collapse this whole card exists to close, one step
+  // earlier than the claimable read itself. `usdcError` makes "the address read never resolved" a
+  // distinct, rendered state.
   useEffect(() => {
     let cancelled = false;
+    setUsdc(null);
+    setUsdcError(null);
     readVaultAddresses(publicClient, vaultAddr)
       .then((a) => { if (!cancelled) setUsdc(a.usdc); })
-      .catch(() => { if (!cancelled) setUsdc(null); });
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setUsdc(null);
+        setUsdcError(e instanceof Error ? e.message : String(e));
+      });
     return () => { cancelled = true; };
   }, [publicClient, vaultAddr]);
 
@@ -110,6 +123,17 @@ export function EscrowClaims({ vault }: Props) {
 
   if (!connected) return null;
 
+  // Security review, PR #409: "nothing claimable" is a CLAIM about a completed read, and it must
+  // render ONLY when one actually completed and came back empty. `claimable === null` covers both
+  // "still loading" and "the claimable read itself failed" (the catch branch below always resets
+  // it to `null`) — neither is evidence of "nothing", and both used to fall through to the same
+  // "Nothing claimable right now." text the genuinely-empty case renders. `usdcError` covers the
+  // one round the claimable read cannot even start without (no vault USDC address, so nothing was
+  // ever planned or called) — same rule, one round earlier.
+  const loadingAddresses = !usdc && !usdcError;
+  const loadingClaimable = !!usdc && claimable === null && !readError;
+  const nothingClaimable = claimable !== null && claimable.length === 0 && !anyUnread;
+
   return (
     <section className="panel">
       <h2>Escrowed claims</h2>
@@ -117,6 +141,16 @@ export function EscrowClaims({ vault }: Props) {
         An in-kind claim is created only when a payout could not transfer directly (EE-6) — most
         members will never see one here.
       </p>
+      {usdcError ? (
+        <p className="note tag-warn" role="status">
+          Could not read escrow — claimable unknown ({usdcError})
+        </p>
+      ) : null}
+      {loadingAddresses || loadingClaimable ? (
+        <p className="note dim" role="status" aria-live="polite">
+          Reading escrowed claims…
+        </p>
+      ) : null}
       {readError ? <p className="note tag-warn">Could not read escrowed claims: {readError}</p> : null}
       {anyUnread ? (
         <p className="note tag-warn">
@@ -145,9 +179,8 @@ export function EscrowClaims({ vault }: Props) {
             })}
           </tbody>
         </table>
-      ) : (
-        !anyUnread && !readError ? <p className="note dim">Nothing claimable right now.</p> : null
-      )}
+      ) : null}
+      {nothingClaimable ? <p className="note dim">Nothing claimable right now.</p> : null}
     </section>
   );
 }
