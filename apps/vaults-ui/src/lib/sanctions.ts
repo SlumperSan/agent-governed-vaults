@@ -104,18 +104,28 @@ export class SanctionsListStaleError extends Error {
  * The write-path gate. Called first thing inside `simulateThenWrite`, before any simulate or
  * sign — a listed address never even reaches the `eth_call` that simulate-before-sign runs.
  *
- * RUNTIME FRESHNESS CHECK (card 217), CHECKED FIRST AND UNCONDITIONALLY. Staleness used to be
+ * RUNTIME FRESHNESS CHECK (card 217), CHECKED FIRST. Staleness used to be
  * enforced only by `assertSdnListFresh`'s CI-time test against the real clock (see that
  * function's own comment) — a deployed build keeps serving whatever list it shipped with,
  * however old it gets, since nothing re-checks it after deploy. This calls the same
  * `sdnListAgeDays`/`SDN_LIST_MAX_AGE_DAYS` comparison on every write and fails CLOSED: once the
- * list is more than `SDN_LIST_MAX_AGE_DAYS` old, EVERY write refuses with
- * `SanctionsListStaleError`, not just writes from addresses that happen to be listed — a stale
- * list cannot prove an address is clean, so "clean" is never the answer it is allowed to give.
+ * list is more than `SDN_LIST_MAX_AGE_DAYS` old, every write that brings value IN or votes
+ * refuses with `SanctionsListStaleError`, for listed and unlisted addresses alike: a stale list
+ * cannot prove an address is clean.
+ *
+ * EXCEPT a member taking their own money OUT (`STALE_LIST_EXEMPT_FUNCTIONS`: requestExit,
+ * claimEscrowed). Those are still checked against the bundled list, so a listed address is still
+ * refused, but a stale list does not block them. The CTO decided this on 2026-09-24. Freezing
+ * every member's exit in this UI because the team's monthly list refresh slipped is a
+ * self-inflicted withdrawal freeze. It also buys no control, because `requestExit` and
+ * `claimEscrowed` are callable on the contract directly and this check is front-end only.
  * `now` is test-only: production call sites never pass it, so this always reads the real clock
  * there.
  */
-export function assertNotSanctioned(address: string | null | undefined, now?: number): void {
-  if (sdnListAgeDays(now) > SDN_LIST_MAX_AGE_DAYS) throw new SanctionsListStaleError();
+export const STALE_LIST_EXEMPT_FUNCTIONS: ReadonlySet<string> = new Set(['requestExit', 'claimEscrowed']);
+
+export function assertNotSanctioned(address: string | null | undefined, now?: number, functionName?: string): void {
+  const exempt = functionName !== undefined && STALE_LIST_EXEMPT_FUNCTIONS.has(functionName);
+  if (!exempt && sdnListAgeDays(now) > SDN_LIST_MAX_AGE_DAYS) throw new SanctionsListStaleError();
   if (isSanctionedAddress(address)) throw new SanctionsRefusalError();
 }

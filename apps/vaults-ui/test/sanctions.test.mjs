@@ -13,6 +13,7 @@ import {
   assertNotSanctioned,
   SanctionsRefusalError,
   SanctionsListStaleError,
+  STALE_LIST_EXEMPT_FUNCTIONS,
   SANCTIONS_REFUSAL_MESSAGE,
   SANCTIONS_LIST_STALE_MESSAGE,
   sdnListAgeDays,
@@ -190,4 +191,27 @@ test('sdn-addresses.ts: no duplicate addresses', () => {
 test('sdn-addresses.ts: records its own source URL and fetch date', () => {
   assert.match(SDN_ADDRESS_DATA.sourceUrl, /^https:\/\//);
   assert.ok(!Number.isNaN(Date.parse(SDN_ADDRESS_DATA.fetchedAt)), 'fetchedAt is not a parseable date');
+});
+
+// ─────── card 217, CTO 2026-09-24: a stale list never blocks a member taking their own money out ───────
+
+test('stale list: requestExit and claimEscrowed from a clean address pass; deposit, approve and votes are blocked', () => {
+  const at31Days = Date.parse(SDN_ADDRESS_DATA.fetchedAt) + 31 * 86_400_000;
+  for (const fn of ['requestExit', 'claimEscrowed']) {
+    assert.doesNotThrow(() => assertNotSanctioned(CLEAN_ADDRESS, at31Days, fn), fn);
+  }
+  for (const fn of ['approve', 'deposit', 'commitVote', 'revealVote', undefined]) {
+    assert.throws(() => assertNotSanctioned(CLEAN_ADDRESS, at31Days, fn), (err) => err instanceof SanctionsListStaleError, String(fn));
+  }
+});
+
+test('stale list: an exit from a LISTED address is still refused — the exemption is from staleness, not from screening', () => {
+  const at31Days = Date.parse(SDN_ADDRESS_DATA.fetchedAt) + 31 * 86_400_000;
+  for (const fn of ['requestExit', 'claimEscrowed']) {
+    assert.throws(() => assertNotSanctioned(KNOWN_LISTED, at31Days, fn), (err) => err instanceof SanctionsRefusalError, fn);
+  }
+});
+
+test('the stale-list exemption is exactly requestExit and claimEscrowed', () => {
+  assert.deepEqual([...STALE_LIST_EXEMPT_FUNCTIONS].sort(), ['claimEscrowed', 'requestExit']);
 });

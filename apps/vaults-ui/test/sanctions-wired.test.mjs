@@ -49,9 +49,9 @@ test('chain-actions.ts imports assertNotSanctioned from ./sanctions', () => {
 
 test('simulateThenWrite calls assertNotSanctioned(params.account) before simulateContract — a listed address never reaches an eth_call', () => {
   const body = simulateThenWriteBody(CHAIN_ACTIONS);
-  const guardAt = body.indexOf('assertNotSanctioned(params.account)');
+  const guardAt = body.indexOf('assertNotSanctioned(params.account, undefined, params.functionName)');
   const simulateAt = body.indexOf('publicClient.simulateContract');
-  assert.ok(guardAt >= 0, 'assertNotSanctioned(params.account) not found inside simulateThenWrite');
+  assert.ok(guardAt >= 0, 'assertNotSanctioned(params.account, undefined, params.functionName) not found inside simulateThenWrite — the function name is what exempts exits from the stale-list block (card 217)');
   assert.ok(simulateAt >= 0, 'publicClient.simulateContract not found inside simulateThenWrite');
   assert.ok(guardAt < simulateAt, 'assertNotSanctioned must run BEFORE the simulate call, not after');
 });
@@ -69,7 +69,7 @@ test('MUTATION: a simulateThenWrite body with the sanctions guard removed is cau
   }
   return walletClient.writeContract(request);
 }`;
-  const guardAt = preFixBody.indexOf('assertNotSanctioned(params.account)');
+  const guardAt = preFixBody.indexOf('assertNotSanctioned(params.account, undefined, params.functionName)');
   assert.equal(guardAt, -1, 'RED: the pre-fix body has no sanctions guard at all — this is the state that must fail the real test above');
 });
 
