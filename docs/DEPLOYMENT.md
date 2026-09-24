@@ -447,9 +447,11 @@ can:
   response (residual register **row 14**), not a config edit:
   every vault priced by that oracle is now mis-scaled by a power of ten, no on-chain lever can fix
   it (the vault's oracle is `immutable` — row 12), and members should be told to exit. **On a vault with
-  no sub-vaults, exits still settle correctly under drift** — `_settleExit` sizes the in-kind
-  slice pro-rata from `assetBalance` and only *values* it through the oracle, which is what
-  `test_harmModel_driftDoesNotRobAnExitingMember` demonstrates. That is the shape the proof
+  no sub-vaults, exits are never frozen by drift** — `_settleExit` sizes the in-kind
+  slice pro-rata from `assetBalance`, which is what `test_harmModel_driftDoesNotRobAnExitingMember`
+  demonstrates — but the oracle still *values* that slice to set the performance fee, and the fee
+  IS withheld from the member's actual tokens: drift costs a bounded, one-directional haircut of up
+  to the 10% fee clamp, not nothing. That is the shape the proof
   covers, and it is the launch shape (`Deploy.s.sol` sets `allowSubVaults = false`). **With
   children present it is unproven**: `childValTotalWad` is oracle-derived and enters the *sizing*
   of the cash leg, not only its valuation. Do not tell a member with a sub-vault parent that

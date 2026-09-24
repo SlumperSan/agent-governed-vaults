@@ -177,11 +177,13 @@ permanently, and every NAV path keeps answering. Accepted as residual register *
   (row 12). Tell members to exit, and say plainly that the vault is still *quoting* prices. This
   is the incident where "the canary is quiet" and "the protocol is fine" come apart.
 - **Exits under drift:** on a vault with **no sub-vaults** (the launch shape, since `Deploy.s.sol`
-  sets `allowSubVaults = false`), a member still exits whole. `_settleExit` sizes the in-kind slice
-  pro-rata from `assetBalance` and only *values* it through the oracle
-  (`test_harmModel_driftDoesNotRobAnExitingMember`). **With children present this is unproven**:
-  `childValTotalWad` is oracle-derived and enters the *sizing* of the cash leg. Do not tell a
-  member with a sub-vault parent that their exit is unaffected.
+  sets `allowSubVaults = false`), a member is never frozen out. `_settleExit` sizes the in-kind slice
+  pro-rata from `assetBalance` (`test_harmModel_driftDoesNotRobAnExitingMember`), but the oracle
+  still *values* that slice to set the performance fee, and the fee IS withheld from the member's
+  actual tokens: drift costs a bounded, one-directional haircut of up to the 10% fee clamp, not
+  nothing. **With children present this is unproven**: `childValTotalWad` is oracle-derived and
+  enters the *sizing* of the cash leg. Do not tell a member with a sub-vault parent that their exit
+  is unaffected.
 - **The dangerous direction is the one that does not freeze.** An under-statement mints excess
   shares to a new depositor (C-4's shape). So the first action is to stop directing new deposits at
   the vault, before any comms go out.

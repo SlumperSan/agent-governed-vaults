@@ -44,13 +44,19 @@ import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
 ///    BTC/USD and LINK/USD are each at phaseId 7 and report 8 at every phase that implements
 ///    AggregatorV3). Pinned by the `test_residual_*` cases, which assert the mispricing is silent —
 ///    they are the boundary of the accepted risk, not a claim that it is safe.
-/// 4. **The harm is bounded to MINTING, not to redemption.** `_settleExit` pays a member their
+/// 4. **The harm is bounded to a fee haircut, not a freeze.** `_settleExit` pays a member their
 ///    pro-rata slice of `assetBalance` and `idleUsdc` — the oracle is consulted only to value the
-///    payout for reporting and fees, never to size it. So under drift a member still exits whole,
-///    while a re-check that fail-closed on a routine swap would freeze `navWad`, `deposit` AND
+///    payout, never to size it — so under drift a member is never frozen out. But that valuation
+///    sets the performance fee, and the fee IS withheld from the member's actual tokens, so drift
+///    is not costless: it is a bounded, one-directional haircut of up to the 10% fee clamp. A
+///    re-check that fail-closed on a routine swap would instead freeze `navWad`, `deposit` AND
 ///    `requestExit` forever, with no rotation lever to undo it (the vault's oracle is `immutable`
-///    and `Governance` has no oracle surface — see `AuditOracleRotation.t.sol`). That asymmetry is
-///    the argument. Pinned by `test_harmModel_driftDoesNotRobAnExitingMember`.
+///    and `Governance` has no oracle surface — see `AuditOracleRotation.t.sol`). That asymmetry —
+///    a bounded haircut vs. a permanent freeze — is the argument, not an absence of cost. Sizing
+///    pinned by `test_harmModel_driftDoesNotRobAnExitingMember`, whose name overstates what it
+///    proves: it runs against `StubFeeEngine`'s default zero fee, so it pins the SIZING claim only
+///    and asserts nothing about the fee haircut above (see PR discussion for the mutation-tested
+///    non-zero-fee case).
 ///
 /// ## What would invalidate the acceptance
 ///
