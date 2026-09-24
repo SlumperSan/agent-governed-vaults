@@ -222,8 +222,8 @@ reseed of `knownVaults` from the restored file. None of those depend on which ch
 reads. Only the catch-up after a restore talks to the chain, and it depends on two things, both
 measured on Arc on 2026-09-24:
 
-- **The `eth_getLogs` range limit.** `rpc.mainnet.arc.io` answers a 9,999-block range and refuses
-  a 10,000-block one with `-32012 requested range too large`. The indexer's `BATCH_BLOCKS` default
+- **The `eth_getLogs` range limit.** `rpc.mainnet.arc.io` answers a range of up to 10,000 blocks
+  inclusive (`toBlock - fromBlock` = 9,999) and refuses 10,001 with `-32012 requested range too large`. The indexer's `BATCH_BLOCKS` default
   is 2,000 (`packages/indexer/src/index-runner.mjs`), well inside that limit.
 - **Block rate.** 10,000 Arc blocks took 5,073 s, about 0.51 s per block. The drill's 15-minute
   rung is therefore about 1,780 blocks behind on Arc, against 452 on Base Sepolia. That is still
