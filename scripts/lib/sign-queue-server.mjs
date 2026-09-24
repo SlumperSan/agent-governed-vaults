@@ -32,9 +32,14 @@ const RPC_BY_CHAIN = {
  * the network must not use this runner. */
 const castMemo = new Map();
 export function defaultCast(args) {
-  const key = JSON.stringify(args);
+  // Callers pass BigInts (execTransactionArgs carries the plan's uint fields as BigInt). A process
+  // argv is strings anyway, so normalise once, before BOTH the memo key and the spawn:
+  // JSON.stringify throws on a BigInt, which blocked the Safe-routed first-vault item from
+  // resolving at all ("Do not know how to serialize a BigInt").
+  const argv = args.map(String);
+  const key = JSON.stringify(argv);
   if (!castMemo.has(key)) {
-    castMemo.set(key, execFileSync(process.env.CAST ?? 'cast', args, { encoding: 'utf8', windowsHide: true }).trim());
+    castMemo.set(key, execFileSync(process.env.CAST ?? 'cast', argv, { encoding: 'utf8', windowsHide: true }).trim());
   }
   return castMemo.get(key);
 }
