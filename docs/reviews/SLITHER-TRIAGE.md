@@ -315,15 +315,21 @@ build. A key entirely absent from the baseline still fails regardless of detecto
 relaxes the count bound on an already-accepted site, never "any finding from this detector is fine."
 
 **A structural limit, not a bug: some detectors report once per FUNCTION, not once per instance.**
-`low-level-calls`, `missing-zero-check` (once per parameter), `assembly`, `cyclomatic-complexity`
-and the single-element `reentrancy-*` rows each fold every instance inside one function into ONE
-finding — confirmed by mutation-testing `IdentityGate.hasIdentity` (already 1 `low-level-calls`
-finding): a second, textually distinct `staticcall` added to that same function still reported
-count 1, because Slither lists the second call as an extra sub-bullet in the SAME finding rather
-than a second finding. For these detectors, this baseline can only catch a genuinely new *site*
-(count 0 -> 1 in a function that had none), not a new instance added to an *already-accepted* one.
-`calls-loop`, `costly-loop`, `unused-return` and `divide-before-multiply` do not share this limit —
-mutation-tested below, `calls-loop` caught a second call added inside an already-baselined loop.
+Measured by mutation-testing `IdentityGate.hasIdentity` (already 1 `low-level-calls` finding, 1
+`missing-zero-check` finding): a second, textually distinct `staticcall` added to that same function
+still reported count 1 for both, because Slither lists the second call as an extra sub-bullet in the
+SAME finding rather than a second finding. For a detector shaped this way, this baseline can only
+catch a genuinely new *site* (count 0 -> 1 in a function that had none), not a new instance added to
+an *already-accepted* one. `low-level-calls` and `missing-zero-check` (once per parameter) are
+measured to fold this way; `assembly` and `cyclomatic-complexity` are inferred to share the shape
+(single element per finding, same as the two measured) but were not separately mutation-tested.
+`reentrancy-benign`/`-events`/`-no-eth` currently sit at count 1 per key in this codebase, which is
+consistent with folding but is equally consistent with "no site here happens to have a second
+instance yet" — genuinely unknown either way. **`reentrancy-balance` is NOT in this group**: its
+own baseline data proves it reports per instance, not per function — `VaultCore.executeRebalance`
+alone carries 4 separate `reentrancy-balance` findings. `calls-loop`, `costly-loop`, `unused-return`
+and `divide-before-multiply` are also per-instance — mutation-tested below, `calls-loop` caught a
+second call added inside an already-baselined loop.
 
 **Pinning the analysis environment — a real improvement, but not a fix for the drift above.**
 `.github/workflows/ci.yml`'s `slither` job pins

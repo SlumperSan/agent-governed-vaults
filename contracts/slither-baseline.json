@@ -35,11 +35,11 @@
     },
     "cache-array-length::VaultCore._settleExit": {
       "count": 1,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10) and the child-vault loop (MAX_CHILDREN=8). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
     },
     "cache-array-length::VaultCore.navWad": {
       "count": 1,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10) and the child-vault loop (MAX_CHILDREN=8). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
     },
     "calls-loop::ChainlinkOracle._requireUsdQuote": {
       "count": 1,
@@ -51,59 +51,59 @@
     },
     "calls-loop::SubVaultRegistry.registerChild": {
       "count": 1,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::SubVaultRegistry.stackedExitFeeCapBps": {
       "count": 1,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore._assetValueWad": {
       "count": 12,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore._bal": {
       "count": 3,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore._childPendingExecution": {
       "count": 2,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore._fullNavWad": {
       "count": 77,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore._holdingValueWad": {
       "count": 22,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore._redeemChildMeasured": {
       "count": 4,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore._settleExit": {
       "count": 2,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore.constructor": {
       "count": 1,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore.executeRebalance": {
       "count": 1,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultFactory._requireOracleCoversBasket": {
       "count": 2,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultFactory.createChildVault": {
       "count": 1,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10 direct children). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "costly-loop::VaultCore.executeRebalance": {
       "count": 3,
-      "reason": "Accepted for the basket/child-vault loop (capped at MAX_CHILDREN=10). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10) and the child-vault loop (MAX_CHILDREN=8). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
     },
     "cyclomatic-complexity::VaultCore._settleExit": {
       "count": 1,
