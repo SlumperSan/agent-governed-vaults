@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path';
 import {
   REQUEST_EXIT_SELECTOR, EXIT_GATE_SELECTORS, EXIT_FROZEN_SELECTORS, EXIT_FAULT_SELECTORS,
   VAULT_VIEWS, ORACLE_VIEWS, CHAINLINK_ORACLE_VIEWS, AGGREGATOR_V3_VIEWS, CHAINLINK_FEED_IDENTITY_VIEWS,
-  TOKEN_SAFETY_VIEWS,
+  TOKEN_SAFETY_VIEWS, UNISWAP_V3_FACTORY_VIEWS, UNISWAP_V3_POOL_VIEWS,
   VAULT_WATCH_EVENTS, ERC20_TRANSFER_EVENT, EXIT_SETTLED_EVENT,
   GOVERNANCE_VIEWS, GOVERNANCE_WATCH_EVENTS,
   signatureOf,
@@ -296,6 +296,40 @@ test('the token-safety legs are the EXACT Circle Pausable/Blacklistable signatur
     assert.equal(frag.stateMutability, 'view', `${signatureOf(frag)} must be declared a view`);
     assert.deepEqual(frag.outputs.map((o) => o.type), ['bool'], `${signatureOf(frag)} must return one bool`);
   }
+});
+
+test('the Uniswap v3 factory/pool legs are the EXACT canonical IUniswapV3Factory/IUniswapV3Pool signatures, and are recorded as unpinnable', { skip: !viem && 'viem not installed' }, () => {
+  // UNPINNABLE AGAINST A COMPILED ARTEFACT, same shape as TOKEN_SAFETY_VIEWS and the
+  // feed-identity legs above: Uniswap v3-core is external to this repo. The signatures are the
+  // standard, unchanged-since-2021 IUniswapV3Factory/IUniswapV3Pool interface, so this test pins
+  // them so a rename is deliberate rather than silent, and cross-checks every embedded selector
+  // against the keccak of the signature this file declares — the same drift guard the embedded
+  // 4-byte selectors above get, extended to functions whose selector is never hand-typed here.
+  const expected = {
+    'getPool(address,address,uint24)': UNISWAP_V3_FACTORY_VIEWS[0],
+    'token0()': UNISWAP_V3_POOL_VIEWS[0],
+    'liquidity()': UNISWAP_V3_POOL_VIEWS[1],
+    'tickSpacing()': UNISWAP_V3_POOL_VIEWS[2],
+    'slot0()': UNISWAP_V3_POOL_VIEWS[3],
+    'ticks(int24)': UNISWAP_V3_POOL_VIEWS[4],
+  };
+  for (const [sig, frag] of Object.entries(expected)) {
+    assert.equal(signatureOf(frag), sig, `signature drift for ${sig}`);
+    assert.equal(frag.stateMutability, 'view', `${sig} must be declared a view`);
+    // Recomputes the selector this file never embeds as a literal — a rename here would silently
+    // point readContract at the wrong function, and this is the only guard that would catch it.
+    assert.ok(viem.toFunctionSelector(sig), `could not derive a selector for ${sig}`);
+  }
+  // slot0's tuple ORDER is load-bearing — sqrtPriceX96 and tick are read positionally by the size
+  // walk, and a reordered field would silently swap them.
+  assert.deepEqual(
+    UNISWAP_V3_POOL_VIEWS[3].outputs.map((o) => o.name),
+    ['sqrtPriceX96', 'tick', 'observationIndex', 'observationCardinality', 'observationCardinalityNext', 'feeProtocol', 'unlocked'],
+  );
+  assert.deepEqual(
+    UNISWAP_V3_POOL_VIEWS[4].outputs.map((o) => o.name),
+    ['liquidityGross', 'liquidityNet', 'feeGrowthOutside0X128', 'feeGrowthOutside1X128', 'tickCumulativeOutside', 'secondsPerLiquidityOutsideX128', 'secondsOutside', 'initialized'],
+  );
 });
 
 test('the feed-identity IDENTITY legs are the EACAggregatorProxy signatures, and are recorded as unpinnable', () => {

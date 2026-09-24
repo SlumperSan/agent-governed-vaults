@@ -60,6 +60,11 @@ export default defineConfig({
       // surface asked someone to request an exit without telling them what they would receive;
       // the code that could tell them already existed in the sibling app and was never imported.
       '@atlas/exit-preview': atlas('exit-preview'),
+      // The deposit/exit size-impact notice (#183, plan item 1.2) — the live-constant-liquidity
+      // walk over the cirBTC/USDC pool, already tested under apps/web/test/size-impact.test.mjs.
+      // Pure math only; chain-actions.ts does every read this needs and hands the raw tick data
+      // in, the same split as every other @atlas/* module here.
+      '@atlas/size-impact': atlas('size-impact'),
       // Seeded-address awareness (Decisions/Seed agent personas 2026-09-23.md, card 210) — a
       // lower bound on non-seeded members, and the gate on any "organically stake-weighted"
       // claim. Pure and zero-dependency like every other @atlas/* module; the disclosure LIST
