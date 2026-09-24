@@ -210,6 +210,60 @@ export const ERC20_VIEWS = Object.freeze([
 ]);
 
 /**
+ * UniswapV3Factory — the ONE view the deposit/exit size-impact notice
+ * (apps/vaults-ui/src/lib/chain-actions.ts, `@atlas/size-impact`) needs to find the cirBTC/USDC
+ * pool without a hardcoded pool address. `contracts/config/arc-mainnet.json`'s `router` field
+ * already records `factory() resolves to the v3Factory` for the ONE factory this repo has
+ * verified on Arc (0xf0db7b58379503491d857db50ac9ece64c653918, read off the deployed
+ * SwapRouter02 rather than assumed — see that file's `routerNote`, and its
+ * `addressSquattingChecked` note on why the CANONICAL cross-chain Uniswap addresses are NOT safe
+ * to assume on this chain). The caller still resolves the ACTUAL POOL address and fee tier live
+ * through `getPool`, probing the standard tiers rather than assuming one — see
+ * Tasks/deposit-size-warning.md and 2026-09-19-corridor-moved-87-percent-in-a-day.md, which is
+ * the finding that this whole notice exists to act on correctly.
+ */
+export const UNISWAP_V3_FACTORY_VIEWS = Object.freeze([
+  view('getPool', ['address', 'address', 'uint24'], ['address']),
+]);
+
+/**
+ * IUniswapV3Pool — the read-only surface the deposit/exit size-impact notice walks to find where
+ * the constant-liquidity fit stops holding (`@atlas/size-impact`'s `findMaterialEdge`). NOT
+ * locally compiled — Uniswap v3-core is external to this repo, the same situation
+ * TOKEN_SAFETY_VIEWS is in for cirBTC/USDC themselves (see that table's own note) — so this is
+ * the STANDARD, unchanged-since-launch IUniswapV3Pool interface rather than something pinned
+ * against a compiled artifact in this tree. `ticks(int24)` returns liquidityNet == 0 for a tick
+ * that was never initialised, which is indistinguishable from — and mathematically equivalent
+ * to, for this purpose — an initialised tick whose net happens to be exactly zero: either way the
+ * constant-liquidity fit survives crossing it, so the walk does not need a separate
+ * `tickBitmap` read to know which candidate ticks are "real".
+ */
+export const UNISWAP_V3_POOL_VIEWS = Object.freeze([
+  view('token0', [], ['address']),
+  view('liquidity', [], ['uint128']),
+  view('tickSpacing', [], ['int24']),
+  view('slot0', [], [
+    { name: 'sqrtPriceX96', type: 'uint160' },
+    { name: 'tick', type: 'int24' },
+    { name: 'observationIndex', type: 'uint16' },
+    { name: 'observationCardinality', type: 'uint16' },
+    { name: 'observationCardinalityNext', type: 'uint16' },
+    { name: 'feeProtocol', type: 'uint8' },
+    { name: 'unlocked', type: 'bool' },
+  ]),
+  view('ticks', ['int24'], [
+    { name: 'liquidityGross', type: 'uint128' },
+    { name: 'liquidityNet', type: 'int128' },
+    { name: 'feeGrowthOutside0X128', type: 'uint256' },
+    { name: 'feeGrowthOutside1X128', type: 'uint256' },
+    { name: 'tickCumulativeOutside', type: 'int56' },
+    { name: 'secondsPerLiquidityOutsideX128', type: 'uint160' },
+    { name: 'secondsOutside', type: 'uint32' },
+    { name: 'initialized', type: 'bool' },
+  ]),
+]);
+
+/**
  * Per-leg token safety reads — `paused()` and `isBlacklisted(address)` on a basket asset's OWN
  * token contract, not on VaultCore. Security confirmed both are plain view calls (card #32).
  *
