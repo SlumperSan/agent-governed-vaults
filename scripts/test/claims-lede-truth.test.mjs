@@ -548,14 +548,45 @@ test('the operator\'s lack of power is enumerated, never claimed as a universal'
 // AND the call site that falsified it, and the copy has to change in the same commit as the code.
 // ---------------------------------------------------------------------------------------------
 
-/** The blanket form: a vote gates EVERYTHING. False in seven places, listed above. */
+/**
+ * The blanket form: a vote gates EVERYTHING. False in seven places, listed above.
+ *
+ * Leg 1 used to require the movement verb DIRECTLY after "nothing" / "no <noun>" (one optional
+ * "ever"). That is a WORD SEQUENCE, not the claim's structure, and one interposed phrase slips
+ * past it: "Nothing in a vault moves without a member vote" is the same false blanket as "nothing
+ * changes without a vote", but the old regex passed it through undetected — recorded as card #71
+ * while re-mutation-testing PR #312 on its rebased head. A regex tuned to that one extra example
+ * would just as quietly miss the next reordering, so this replaces the word-sequence match with
+ * the claim's actual STRUCTURE: a universal quantifier over the subject (nothing / no <noun> /
+ * every <noun> / all <noun>) and a "without a vote/proposal" clause, both present in the SAME
+ * sentence (via `sentencesOf`, so neither piece can bleed across a sentence boundary), in EITHER
+ * order — "Without a vote, nothing moves." is exactly as false as the forward form.
+ *
+ * The verb set stays SCOPED to state-change verbs (changes/moves/happens/leaves/enters) and
+ * deliberately excludes trade/rebalance/buy/sell/swap: those are TRADE_VOTE_CLAIMS' job, below,
+ * because trading a vault's holdings genuinely IS gated by a vote today (guard 7b re-derives that
+ * from VaultCore.sol on every run, rather than assuming it). Folding "traded" in here would red
+ * "Nothing is traded without a vote; deposits and exits are yours." — a TRUE sentence that scopes
+ * the vote requirement to the one path where it holds and explicitly disclaims it for the rest.
+ *
+ * "one rule: nothing changes without a vote" (the old leg 3, the PR 305/306 lede shape) is now
+ * just an instance of this structure — "nothing" + "changes" + "without a vote" all sit in one
+ * sentence — so it needs no separate leg.
+ */
+const UNIVERSAL_QUANTIFIER_VERB =
+  /\b(?:nothing|no\s+\w+|every\s+\w+|all\s+\w+)\b(?:\s+\w+){0,4}?\s+\b(?:changes?|moves?|happens?|leaves?|enters?)\b/gi;
+const WITHOUT_VOTE_CLAUSE = /\bwithout\s+(?:a\s+)?(?:\w+\s+){0,2}?(?:vote|votes|voting|proposal)\b/gi;
+
+/** True structural hit: both pieces present in the same sentence, order-independent. */
+const isBlanketVoteSentence = (sentence) => {
+  UNIVERSAL_QUANTIFIER_VERB.lastIndex = 0;
+  WITHOUT_VOTE_CLAUSE.lastIndex = 0;
+  return UNIVERSAL_QUANTIFIER_VERB.test(sentence) && WITHOUT_VOTE_CLAUSE.test(sentence);
+};
+
 const BLANKET_VOTE_CLAIMS = [
-  // "nothing changes without a vote", "nothing moves unless members vote", "no change without a vote"
-  /\b(?:nothing|no\s+\w+)\s+(?:ever\s+)?(?:changes|moves|happens|leaves|enters)\b[^.]{0,40}?\bwithout\s+(?:a\s+)?(?:vote|votes|voting|proposal)\b/gi,
   // "every change is decided by vote", "all changes require a vote"
   /\b(?:every|each|all)\s+(?:change|movement|action)s?\b[^.]{0,40}?\b(?:requires?|needs?|decided by|gated by)\s+(?:a\s+)?(?:vote|proposal)\b/gi,
-  // "one rule: nothing changes without a vote" — the PR 306 / PR 305 shape, lede form
-  /\bone rule\b[^.]{0,30}?\bnothing\b[^.]{0,40}?\bwithout\s+(?:a\s+)?vote\b/gi,
 ];
 
 /** The TRADE form. True today; guard 7b re-derives that from the contract rather than assuming. */
@@ -572,6 +603,9 @@ test('no public surface claims a vote gates EVERY change, which is false in seve
     const hay = flat(text);
     for (const re of BLANKET_VOTE_CLAIMS) {
       for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    }
+    for (const sentence of sentencesOf(text)) {
+      if (isBlanketVoteSentence(sentence)) hits.push({ file, quote: sentence.trim() });
     }
   }
   assert.deepEqual(
@@ -590,6 +624,51 @@ test('no public surface claims a vote gates EVERY change, which is false in seve
       '  "nothing changes without a vote"          (false, in seven places)\n' +
       `Offending text:\n${report(hits)}`,
   );
+});
+
+test('probe: the blanket-vote structural check catches the reorder card #71 found, and spares the scoped trade claim', () => {
+  // The reorder escape itself, plus the shapes it generalizes to (quantifier and "without ...
+  // vote" clause in either order, with real prose between them).
+  for (const bad of [
+    'One rule: nothing changes without a vote.',
+    'Nothing in a vault moves without a member vote.',
+    'No funds leave the vault without a proposal.',
+    'Without a vote, nothing moves.',
+  ]) {
+    assert.equal(
+      sentencesOf(bad).some(isBlanketVoteSentence),
+      true,
+      `the structural check no longer catches: ${bad}`,
+    );
+  }
+  // "Every change needs a vote." is the same false blanket by a different structure (no "without"),
+  // caught by BLANKET_VOTE_CLAIMS' surviving leg rather than the structural check — confirm the
+  // combined guard still reds it.
+  assert.match('Every change needs a vote.', BLANKET_VOTE_CLAIMS[0]);
+
+  // TRUE sentences the guard must leave alone.
+  //
+  // "Rebalances happen only through a member vote." has no universal quantifier over the subject
+  // (rebalances is a noun, not "nothing"/"no X"/"every X"/"all X") and no "without" clause, so it
+  // never reaches the structural check.
+  //
+  // "Nothing is traded without a vote; deposits and exits are yours." pairs "nothing" with
+  // "traded" — deliberately OUTSIDE the verb set above — and is true for exactly that reason: the
+  // swap path is the one member-value-moving path that IS gated by a passed proposal (guard 7b
+  // re-derives that from VaultCore.sol on every run), and the clause after the semicolon says the
+  // other seven paths (deposits and exits among them) are explicitly NOT covered by that
+  // requirement. Scoping the verb set to state-change verbs and leaving trade to TRADE_VOTE_CLAIMS
+  // is what keeps this sentence out of the blanket-claim guard.
+  for (const ok of [
+    'Rebalances happen only through a member vote.',
+    'Nothing is traded without a vote; deposits and exits are yours.',
+  ]) {
+    assert.equal(
+      sentencesOf(ok).some(isBlanketVoteSentence),
+      false,
+      `the structural check reds true prose: ${ok}`,
+    );
+  }
 });
 
 test('a surface may say trades need a vote only while the contract still makes that true', () => {
