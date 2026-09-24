@@ -898,8 +898,9 @@ test('MUTATION BAR — an empty DEFAULT_ROSTER must not silently clear an unrost
   // resolve to nobody) turns "no REVIEW-ROSTER token" back into "nobody needs to review" --
   // exactly the stall-shaped bug card 167 exists to close, just inverted into a silent PASS
   // instead of a silent STALL. Verified by actually mutating DEFAULT_ROSTER to [] in
-  // scripts/lib/verdicts.mjs and re-running this suite (2026-09-24): the assertions below on
-  // `.clear` and `.roster` both flipped red, exactly as this test predicts they must.
+  // scripts/lib/verdicts.mjs and re-running this suite (2026-09-24): this test went red (on the
+  // `.clear` assertion below, the first one it reaches) along with 5 others in the file; reverting
+  // the mutation returned all 6 to green.
   const pr = { number: 504, state: 'OPEN', headRefOid: 'feed0504', headRefName: 'fix/whatever' };
   const d = evaluate({ pr, comments: [], runs: greenOn('feed0504'), mode: 'strict' });
   assert.equal(d.clear, false, 'RED if DEFAULT_ROSTER is empty: an empty roster has nothing left to resolve, so this would wrongly clear');
