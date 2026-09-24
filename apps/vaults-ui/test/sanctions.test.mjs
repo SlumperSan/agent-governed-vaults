@@ -103,6 +103,13 @@ test('assertSdnListFresh: throws once the list is older than SDN_LIST_MAX_AGE_DA
   assert.throws(() => assertSdnListFresh(wayOver), /older than the \d+-day freshness ceiling/);
 });
 
+test('assertSdnListFresh() against the REAL clock: the shipped list is fresh today, and this test goes red once it ages past the ceiling (card 213: the list cannot silently rot)', () => {
+  // No injected `now`. Every other freshness test passes identically on day 1 and day 400; this one
+  // is what makes the gate go red SDN_LIST_MAX_AGE_DAYS after each refresh. Refresh with
+  // apps/vaults-ui/scripts/build-sdn-list.mjs, then commit.
+  assert.doesNotThrow(() => assertSdnListFresh());
+});
+
 test('MUTATION: assertSdnListFresh with the age check inverted would pass the stale case (proves the test above is live)', () => {
   // Same shape as this repo's other MUTATION tests: reconstruct the inverted predicate and show it
   // produces the WRONG verdict, so the real assertSdnListFresh test above is known to be exercising
