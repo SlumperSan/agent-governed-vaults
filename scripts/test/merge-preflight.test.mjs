@@ -104,9 +104,14 @@ test('#98 at its merge instant: Mode B — one ACCEPT, one reviewer still out, R
 
   // Precision about the fixture: the ROSTER token above is reconstructed, not historical — #98 had
   // no such token, because the protocol did not exist. In the state #98 was actually in, strict
-  // blocks on roster-declared instead. Either way it does not merge; only the rule id differs.
+  // still blocks on roster-resolved (card 167: no token posted means the roster defaults to
+  // DEFAULT_ROSTER = ['Security'], not that nobody needs to review). Either way it does not merge.
   const asItWas = [{ createdAt: '2026-09-01T20:05:45Z', body: '## Adversarial review 1 of 2 — **ACCEPT**, plus a finding bigger than the PR' }];
-  assert.deepEqual(ruleIds(evaluate({ pr, comments: asItWas, runs: greenOn('cccc3333'), mode: 'strict' }).blockers), ['roster-declared']);
+  const asItWasDecision = evaluate({ pr, comments: asItWas, runs: greenOn('cccc3333'), mode: 'strict' });
+  assert.deepEqual(ruleIds(asItWasDecision.blockers), ['roster-resolved']);
+  assert.equal(asItWasDecision.rosterDefaulted, true);
+  assert.deepEqual(asItWasDecision.roster, ['Security']);
+  assert.match(asItWasDecision.blockers[0].detail, /Security/);
 });
 
 test('#109 at its merge instant: Mode B at its worst — the PR merged before any verdict existed', () => {
@@ -117,9 +122,13 @@ test('#109 at its merge instant: Mode B at its worst — the PR merged before an
   assert.equal(strict.clear, false);
   assert.deepEqual(ruleIds(strict.blockers), ['roster-resolved']);
 
-  // With no roster at all — the state #109 was actually in — strict still blocks, on roster-declared.
+  // With no roster at all — the state #109 was actually in — strict still blocks: card 167 defaults
+  // the roster to Security rather than treating an absent token as "nobody needs to review", so
+  // roster-resolved is what fires (roster-declared can no longer block on its own).
   const noRoster = evaluate({ pr, comments: [], runs: greenOn('dddd4444'), mode: 'strict' });
-  assert.deepEqual(ruleIds(noRoster.blockers), ['roster-declared']);
+  assert.deepEqual(ruleIds(noRoster.blockers), ['roster-resolved']);
+  assert.equal(noRoster.rosterDefaulted, true);
+  assert.deepEqual(noRoster.roster, ['Security']);
 
   // And the honest limit, asserted rather than claimed: advisory mode CANNOT catch #109.
   const adv = evaluate({ pr, comments: [], runs: greenOn('dddd4444'), mode: 'advisory' });
@@ -376,9 +385,10 @@ test('Mode E: a valid, unstale verdict on an UNMOVED head is still stale if the 
   // Both modes, like Mode D — it needs only a verdict token.
   assert.deepEqual(ruleIds(evaluate({ ...base, pr: pr(43), mode: 'advisory' }).blockers), ['base-current']);
 
-  // Gated on a verdict EXISTING. With none, roster-declared already blocks and base drift is noise.
+  // Gated on a verdict EXISTING. With none, roster-resolved already blocks (card 167: the roster
+  // defaults to Security rather than leaving "no roster" unresolved) and base drift is noise.
   const noVerdict = evaluate({ pr: pr(43), comments: [], runs: greenOn('d9293c23'), mode: 'strict' });
-  assert.deepEqual(ruleIds(noVerdict.blockers), ['roster-declared'], 'no verdict: base drift is not reported as its own blocker');
+  assert.deepEqual(ruleIds(noVerdict.blockers), ['roster-resolved'], 'no verdict: base drift is not reported as its own blocker');
 
   // And the honest limit: with no behindBy available the rule cannot fire at all.
   assert.equal(evaluate({ ...base, pr: pr(undefined) }).clear, true, 'no behindBy: Mode E is not checked, not silently passed as checked');
@@ -417,7 +427,7 @@ test('the heuristics in verdicts.mjs are byte-identical to the ones merge-policy
 
 test('every rule the evaluator can emit is declared in merge-policy.json, and vice versa', () => {
   const declared = POLICY.rules.map((/** @type {any} */ r) => r.id).sort();
-  const emitted = ['base-current', 'buy-borrow-build-declared', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
+  const emitted = ['base-current', 'buy-borrow-build-declared', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-resolved', 'verdict-covers-head'];
   assert.deepEqual(declared.sort(), emitted.sort(), 'a rule with no policy entry has no stated reason, and a policy entry with no rule is a promise nothing keeps');
 });
 
@@ -767,12 +777,18 @@ test('parseRoster: a later roster naming a DIFFERENT reviewer fully replaces the
   assert.deepEqual(parseRoster(comments), { reviewers: ['Security2'], at: '2026-09-21T14:00:00Z' });
 });
 
-test('an empty roster clears roster-declared/roster-resolved in strict mode for a now-withdrawn seat', () => {
+// MUTATION BAR, verified 2026-09-24 by actually editing the source rather than reasoning about
+// it: changing card 167's `rosterDefaulted` check from `explicitRoster === null` to
+// `!explicitRoster || explicitRoster.reviewers.length === 0` (reintroducing the #352 dead-seat
+// bug inside the NEW default-fallback code path -- an explicit empty roster falling back to
+// DEFAULT_ROSTER instead of being honoured) turned this test and one other red; reverting turned
+// both green again.
+test('an empty roster clears roster-resolved in strict mode for a now-withdrawn seat', () => {
   const pr = { number: 352, state: 'OPEN', headRefOid: 'feed0001', headRefName: 'feat/vault-addresses-lint', body: BBB_OK_BODY };
   const comments = [
     { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
     // Security's session ended with no verdict posted. Withdrawing the roster to empty must clear
-    // both roster-declared (a roster WAS declared) and roster-resolved (nobody is now required).
+    // roster-resolved (nobody is now required) rather than falling back to DEFAULT_ROSTER.
     { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
   ];
   const strict = evaluate({ pr, comments, runs: greenOn('feed0001'), mode: 'strict' });
@@ -828,6 +844,68 @@ test('MUTATION: reverting parseRoster to drop empty matches (the #352 bug) is ca
   };
   assert.deepEqual(preFixParseRoster(comments), { reviewers: ['Security'], at: '2026-09-21T10:00:00Z' }, 'RED: the pre-fix shape must keep reading the dead seat');
   assert.notDeepEqual(parseRoster(comments), preFixParseRoster(comments), 'the real parseRoster must differ from the reintroduced bug on this exact input');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Card 167 — an unposted roster defaults to Security instead of stalling the PR
+// ---------------------------------------------------------------------------------------------
+// Eight REVIEW-ROSTER tokens were posted by hand in one evening, every one mechanical, and four
+// PRs sat blocked 14-17 days on nothing but that missing comment. `roster-declared` used to block
+// forever on a PR nobody rostered; it now defaults instead, and `roster-resolved` is the rule that
+// actually has to clear — proving a default does not mean "nobody needs to review".
+
+test('card 167: no REVIEW-ROSTER token ever posted still requires Security to clear, in strict mode', () => {
+  const pr = { number: 500, state: 'OPEN', headRefOid: 'feed0500', headRefName: 'fix/whatever' };
+  const noToken = evaluate({ pr, comments: [], runs: greenOn('feed0500'), mode: 'strict' });
+  assert.equal(noToken.clear, false, 'defaulting must not clear the PR by itself');
+  assert.deepEqual(ruleIds(noToken.blockers), ['roster-resolved']);
+  assert.equal(noToken.rosterDefaulted, true);
+  assert.deepEqual(noToken.roster, ['Security']);
+  assert.match(noToken.blockers[0].detail, /Security/);
+
+  // Security posts a verdict without anyone ever declaring a roster: clears.
+  const cleared = evaluate({
+    pr,
+    comments: [{ createdAt: '2026-09-24T00:00:00Z', body: '<!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT -->' }],
+    runs: greenOn('feed0500'),
+    mode: 'strict',
+  });
+  assert.equal(cleared.clear, true, 'the default roster must be resolvable exactly like an explicit one');
+  assert.equal(cleared.rosterDefaulted, true);
+});
+
+test('card 167: an explicit REVIEW-ROSTER token still overrides the default', () => {
+  const pr = { number: 501, state: 'OPEN', headRefOid: 'feed0501', headRefName: 'fix/whatever' };
+  const comments = [{ createdAt: '2026-09-24T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Finance -->' }];
+  const d = evaluate({ pr, comments, runs: greenOn('feed0501'), mode: 'strict' });
+  assert.equal(d.rosterDefaulted, false);
+  assert.deepEqual(d.roster, ['Finance']);
+  assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
+  assert.match(d.blockers[0].detail, /Finance/);
+  assert.doesNotMatch(d.blockers[0].detail, /defaulted/, 'an explicit roster must not be reported as a default');
+});
+
+test('card 167: advisory mode never blocks on the defaulted roster (Mode B is strict-only)', () => {
+  const pr = { number: 502, state: 'OPEN', headRefOid: 'feed0502', headRefName: 'fix/whatever' };
+  const d = evaluate({ pr, comments: [], runs: greenOn('feed0502'), mode: 'advisory' });
+  assert.equal(d.clear, true);
+  assert.equal(d.rosterDefaulted, true);
+  assert.ok(d.notes.some((n) => n.includes('roster defaulted to Security')));
+});
+
+test('MUTATION BAR — an empty DEFAULT_ROSTER must not silently clear an unrostered PR', () => {
+  // The regression this guards: DEFAULT_ROSTER = [] (or any change that makes the default
+  // resolve to nobody) turns "no REVIEW-ROSTER token" back into "nobody needs to review" --
+  // exactly the stall-shaped bug card 167 exists to close, just inverted into a silent PASS
+  // instead of a silent STALL. Verified by actually mutating DEFAULT_ROSTER to [] in
+  // scripts/lib/verdicts.mjs and re-running this suite (2026-09-24): this test went red (on the
+  // `.clear` assertion below, the first one it reaches) along with 5 others in the file; reverting
+  // the mutation returned all 6 to green.
+  const pr = { number: 504, state: 'OPEN', headRefOid: 'feed0504', headRefName: 'fix/whatever' };
+  const d = evaluate({ pr, comments: [], runs: greenOn('feed0504'), mode: 'strict' });
+  assert.equal(d.clear, false, 'RED if DEFAULT_ROSTER is empty: an empty roster has nothing left to resolve, so this would wrongly clear');
+  assert.ok(d.roster && d.roster.length > 0, 'RED if DEFAULT_ROSTER is empty: the defaulted roster must name at least one reviewer');
+  assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
 });
 
 // ---------------------------------------------------------------------------------------------
