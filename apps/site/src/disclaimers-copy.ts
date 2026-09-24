@@ -464,7 +464,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "Worst case",
-        "dd": "A future vault, created by someone else, lists an adapter that is faulty or hostile. That adapter still cannot move anything on its own: the vault calls an adapter only to execute a rebalance its members voted for. On each leg of that rebalance, the most it can take is the slippage bound the vote approved, which the contract caps at 2% of that leg&rsquo;s oracle-priced value."
+        "dd": "A future vault, created by someone else, lists an adapter that is faulty or hostile. That adapter still cannot move anything on its own: the vault calls an adapter only to execute a rebalance its members voted for, and the vote commits to every leg of it. On each leg, the most it can take is the slippage bound the vote approved, which the contract caps at 2% of that leg&rsquo;s oracle-priced value. That cap is per leg, not per rebalance: a rebalance has no limit on its number of legs, and legs can trade back and forth, so the losses compound. Twenty legs trading the same value back and forth at the 2% cap can lose about a third of it."
       },
       {
         "dt": "What is done",
