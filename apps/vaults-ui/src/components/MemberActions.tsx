@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Address } from 'viem';
+import { termsTextSha256, TERMS_VERSION } from '@rwally/terms';
+import { hasAcceptedCurrentTerms, recordTermsAcceptance } from '../lib/terms-acceptance';
+import { TermsClickwrap } from './TermsClickwrap';
 import {
   actions,
   bpsPct,
@@ -102,6 +105,35 @@ export function MemberActions({ vault }: Props) {
   const [exitGate, setExitGate] = useState<ExitGateInputs | null>(null);
 
   const [depositStatus, setDepositStatus] = useState<DepositStatus | null>(null);
+
+  // Terms of Use clickwrap (card #214). `termsHash` is null until `termsTextSha256()` resolves —
+  // renderToString/first paint never has it, so `termsAccepted` must stay false (never true) while
+  // it is null: an unresolved hash is not a reason to skip the check, the same "unread is not
+  // clean" rule every chain-backed gate in this file already follows.
+  const [termsHash, setTermsHash] = useState<string | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    termsTextSha256().then((h) => {
+      if (!cancelled) setTermsHash(h);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Re-checked whenever the connected address or the resolved hash changes — a wallet switch
+  // must re-evaluate against ITS OWN stored acceptance, not carry over the previous address's.
+  useEffect(() => {
+    setTermsAccepted(hasAcceptedCurrentTerms(address ?? null, TERMS_VERSION, termsHash));
+  }, [address, termsHash]);
+
+  function handleAcceptTerms() {
+    if (!address || termsHash == null) return;
+    recordTermsAcceptance(address, TERMS_VERSION, termsHash);
+    setTermsAccepted(true);
+  }
 
   const [commit, setCommit] = useState<FlowState>(IDLE);
   const [support, setSupport] = useState(true);
@@ -472,6 +504,13 @@ export function MemberActions({ vault }: Props) {
       {addrErr ? <p className="note tag-warn">Could not read this vault&rsquo;s USDC/governance addresses: {addrErr}</p> : null}
 
       <h3>Deposit</h3>
+      {connected ? (
+        <TermsClickwrap
+          checked={termsAccepted}
+          disabled={termsHash == null}
+          onAccept={handleAcceptTerms}
+        />
+      ) : null}
       <div className="act-row">
         <input
           type="text"
@@ -484,7 +523,10 @@ export function MemberActions({ vault }: Props) {
         <button
           type="button"
           className="btn"
-          disabled={disabled || deposit.busy || !addrs || depositBlocked}
+          // termsAccepted gates the FIRST deposit signature from this wallet (card #214). Front-end
+          // only, by the card's own copy rule — VaultCore.deposit takes no terms-acceptance
+          // parameter and never will; this disables the button, it does not touch the contract.
+          disabled={disabled || deposit.busy || !addrs || depositBlocked || !termsAccepted}
           onClick={() => void handleDeposit()}
         >
           {deposit.busy ? 'Depositing…' : 'Deposit'}
