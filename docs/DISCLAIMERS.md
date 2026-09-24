@@ -36,7 +36,7 @@ Each entry's severity is the site's own label. Read the full entry on
 2. **An oracle freeze traps every exit** — Accepted by design.
 3. **A single price provider, with no fallback** — Partially mitigated.
 4. **The settlement token is pinned at $1.00 in the oracle** — Accepted, no mitigation.
-5. **Sequencer downtime** — Handled in code, never exercised.
+5. **Sequencer downtime** — Exempted on Arc, fails open.
 6. **Forward-settled exits are irrevocable** — Accepted by design.
 7. **Governance capture and thin electorates** — Partially mitigated.
 8. **The rules can freeze permanently** — Accepted by design.
