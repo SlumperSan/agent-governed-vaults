@@ -48,7 +48,7 @@ export const HOME = {
   },
 
   proof: [
-    { k: 'Settles in', v: 'USDC' },
+    { k: 'Settles in', v: 'Kind' },
     { k: 'Built for', v: 'Arc' },
     { k: 'Votes are', v: 'On-chain' },
     { k: 'Contracts are', v: 'Immutable' },
