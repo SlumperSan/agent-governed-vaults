@@ -55,11 +55,13 @@ export function sdnListAgeDays(now: number = Date.now()): number {
 
 /**
  * Throws when the vendored list is older than `SDN_LIST_MAX_AGE_DAYS` — called from
- * `scripts/test/sdn-list-freshness.test.mjs`, which runs in `npm run gate` (`test:backend`), so a
- * rotting list fails the gate rather than silently under-screening forever. Not called from the
- * hot signing path itself: a stale list should not make deposits/votes/exits refuse across the
- * board for every member, it should make the CI-visible freshness check red so whoever owns the
- * gate re-runs the build script.
+ * `apps/vaults-ui/test/sanctions.test.mjs`'s real-clock test, which runs in `npm run gate`
+ * (`test:backend`), so a rotting list fails the gate rather than silently under-screening
+ * forever. THIS ALONE IS CI-TIME ONLY, and reads the real clock only when a caller omits `now` —
+ * it is not, by itself, a runtime guard: a deployed build ships whatever `sdn-addresses.ts` it
+ * was built with and keeps serving it however old it gets, since nothing here re-runs the gate
+ * against a live clock after deploy. `assertNotSanctioned` below is the runtime counterpart
+ * (card 217): it calls this same predicate on every write, not just in CI.
  */
 export function assertSdnListFresh(now?: number): void {
   const age = sdnListAgeDays(now);
@@ -80,8 +82,40 @@ export class SanctionsRefusalError extends Error {
   }
 }
 
-/** The write-path gate. Called first thing inside `simulateThenWrite`, before any simulate or
- *  sign — a listed address never even reaches the `eth_call` that simulate-before-sign runs. */
-export function assertNotSanctioned(address: string | null | undefined): void {
+/** The exact line shown for a write refused because the list itself cannot be trusted, never
+ *  because a specific address matched it — kept short and distinct from
+ *  `SANCTIONS_REFUSAL_MESSAGE` so the two causes are never confused in member-facing copy. */
+export const SANCTIONS_LIST_STALE_MESSAGE = 'sanctions list out of date';
+
+/**
+ * Thrown by `assertNotSanctioned` (card 217) when the vendored list is too old to answer the
+ * question it is asked at all — an unusable screen, not a clean one. FAILS CLOSED, the same
+ * direction `functions/_middleware.js`'s `isSanctionedRequest` takes on a missing `cf`: absent
+ * proof the address is clean, the write is refused, never silently allowed through on a stale
+ * list nobody caught. */
+export class SanctionsListStaleError extends Error {
+  constructor() {
+    super(SANCTIONS_LIST_STALE_MESSAGE);
+    this.name = 'SanctionsListStaleError';
+  }
+}
+
+/**
+ * The write-path gate. Called first thing inside `simulateThenWrite`, before any simulate or
+ * sign — a listed address never even reaches the `eth_call` that simulate-before-sign runs.
+ *
+ * RUNTIME FRESHNESS CHECK (card 217), CHECKED FIRST AND UNCONDITIONALLY. Staleness used to be
+ * enforced only by `assertSdnListFresh`'s CI-time test against the real clock (see that
+ * function's own comment) — a deployed build keeps serving whatever list it shipped with,
+ * however old it gets, since nothing re-checks it after deploy. This calls the same
+ * `sdnListAgeDays`/`SDN_LIST_MAX_AGE_DAYS` comparison on every write and fails CLOSED: once the
+ * list is more than `SDN_LIST_MAX_AGE_DAYS` old, EVERY write refuses with
+ * `SanctionsListStaleError`, not just writes from addresses that happen to be listed — a stale
+ * list cannot prove an address is clean, so "clean" is never the answer it is allowed to give.
+ * `now` is test-only: production call sites never pass it, so this always reads the real clock
+ * there.
+ */
+export function assertNotSanctioned(address: string | null | undefined, now?: number): void {
+  if (sdnListAgeDays(now) > SDN_LIST_MAX_AGE_DAYS) throw new SanctionsListStaleError();
   if (isSanctionedAddress(address)) throw new SanctionsRefusalError();
 }

@@ -12,7 +12,9 @@ import {
   isSanctionedAddress,
   assertNotSanctioned,
   SanctionsRefusalError,
+  SanctionsListStaleError,
   SANCTIONS_REFUSAL_MESSAGE,
+  SANCTIONS_LIST_STALE_MESSAGE,
   sdnListAgeDays,
   assertSdnListFresh,
   SDN_LIST_MAX_AGE_DAYS,
@@ -82,6 +84,59 @@ test('the refusal message says "front end only" and never claims the Protocol it
   assert.match(SANCTIONS_REFUSAL_MESSAGE, /front end only/);
   assert.match(SANCTIONS_REFUSAL_MESSAGE, /permissionless/);
   assert.doesNotMatch(SANCTIONS_REFUSAL_MESSAGE, /protocol (blocks|refuses|prevents)/i);
+});
+
+// ─────── assertNotSanctioned: runtime freshness guard, fails CLOSED (card 217) ───────
+
+test('assertNotSanctioned: passes a clean address when the list is 29 days old', () => {
+  const fetchedMs = Date.parse(SDN_ADDRESS_DATA.fetchedAt);
+  const at29Days = fetchedMs + 29 * 86_400_000;
+  assert.doesNotThrow(() => assertNotSanctioned(CLEAN_ADDRESS, at29Days));
+});
+
+test('assertNotSanctioned: blocks a clean address when the list is 31 days old — fails CLOSED', () => {
+  // The core card-217 property: staleness alone must refuse the write, for an address that is
+  // NOT on the list and would otherwise sail through isSanctionedAddress. A stale list cannot
+  // prove an address is clean, so "clean" is never the answer it gets to give.
+  const fetchedMs = Date.parse(SDN_ADDRESS_DATA.fetchedAt);
+  const at31Days = fetchedMs + 31 * 86_400_000;
+  assert.throws(
+    () => assertNotSanctioned(CLEAN_ADDRESS, at31Days),
+    (err) => {
+      assert.ok(err instanceof SanctionsListStaleError);
+      assert.equal(err.message, SANCTIONS_LIST_STALE_MESSAGE);
+      assert.equal(err.message, 'sanctions list out of date', 'the exact card-217 copy, unchanged');
+      return true;
+    },
+  );
+});
+
+test('assertNotSanctioned: the staleness check runs BEFORE the address check — a stale list blocks even a real listed address with SanctionsListStaleError, not SanctionsRefusalError', () => {
+  const fetchedMs = Date.parse(SDN_ADDRESS_DATA.fetchedAt);
+  const at31Days = fetchedMs + 31 * 86_400_000;
+  assert.throws(
+    () => assertNotSanctioned(KNOWN_LISTED, at31Days),
+    (err) => { assert.ok(err instanceof SanctionsListStaleError); return true; },
+  );
+});
+
+test('assertNotSanctioned: a fresh list still refuses a listed address with SanctionsRefusalError, not SanctionsListStaleError', () => {
+  const fetchedMs = Date.parse(SDN_ADDRESS_DATA.fetchedAt);
+  const at29Days = fetchedMs + 29 * 86_400_000;
+  assert.throws(
+    () => assertNotSanctioned(KNOWN_LISTED, at29Days),
+    (err) => { assert.ok(err instanceof SanctionsRefusalError); return true; },
+  );
+});
+
+test('MUTATION: an assertNotSanctioned with the age comparison disarmed would silently pass a stale-list write (proves the tests above are live)', () => {
+  // Same shape as this repo's other MUTATION tests: reconstruct the pre-fix predicate (staleness
+  // never checked at all) and show it produces the WRONG verdict for the 31-day case above.
+  const preFixAssertNotSanctioned = (address) => { if (isSanctionedAddress(address)) throw new SanctionsRefusalError(); };
+  assert.doesNotThrow(
+    () => preFixAssertNotSanctioned(CLEAN_ADDRESS),
+    'RED: the disarmed version passes a clean address through with no way to know the list is 31 days stale — this is why the real code checks sdnListAgeDays(now) > SDN_LIST_MAX_AGE_DAYS first',
+  );
 });
 
 // ─────────────────────────────────── freshness ───────────────────────────────────
