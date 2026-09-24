@@ -15,8 +15,10 @@
  * its refutation has no truth value, and the appended correction is the form that survives review
  * because it looks like diligence.
  *
- * WHAT CHANGED IN THAT SECOND PASS: the settlement token is USDC; nothing is deployed, so the
- * deployment paragraph, the vault capacity figures and the address ledger references say so; the
+ * WHAT CHANGED IN THAT SECOND PASS: the settlement token is USDC; nothing was deployed then, so the
+ * deployment paragraph, the vault capacity figures and the address ledger references said so (all
+ * three were replaced again on 2026-09-24, when the first vault went live on Arc, from
+ * contracts/config/deployments/arc-mainnet.json and a chain read of the live oracle); the
  * sequencer-gate entry records the Arc exemption, granted for chain 5042 on 2026-09-19, and what it
  * costs at price time; and figures that came out of a configuration file which has since
  * been deleted were removed rather than carried forward as though still sourced.
@@ -80,7 +82,7 @@ export const HERO = {
     "Every warning, limit and unresolved question on this site is on this page. The rest of this site describes mechanism. This one describes what that mechanism costs you when it does not go your way.",
   bannerOffer: "Nothing on this site is an offer, a solicitation, or financial advice.",
   deploymentParagraph:
-    "Not deployed. No instance of this protocol exists on Arc or on any other mainnet, so there is no address ledger and nothing to read live. Every risk below describes what the contracts would do once deployed, which is a statement about code that has been written and tested rather than about anything currently holding value.",
+    "Deployed on Arc mainnet. The first vault, the cirBTC Vault, is at <code>0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6</code>, and every protocol address is recorded in <code>contracts/config/deployments/arc-mainnet.json</code>. Every risk below describes code that is now running on Arc and can hold real USDC, and none of that code can be changed.",
   licence: "Open source under the MIT licence.",
   jurisdictionParagraph:
     "Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.",
@@ -169,7 +171,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "The contracts carry no proxy, no upgrade path and no pause, and the source declares no owner and no admin role. One privileged caller exists &mdash; the deploy key &mdash; and its entire power is wiring: three one-shot calls that write four registry-pointer slots and revert the second time each is tried. None of the four is a path to member funds. Nothing is deployed yet, so nothing is permanent yet &mdash; but the moment an instance is broadcast, its code is what runs, permanently, and nobody acquires the power to replace it."
+        "dd": "The contracts carry no proxy, no upgrade path and no pause, and the source declares no owner and no admin role. One privileged caller exists &mdash; the deploy key &mdash; and its entire power is wiring: three one-shot calls that write four registry-pointer slots and revert the second time each is tried. None of the four is a path to member funds. The contracts are now live on Arc, so this is no longer hypothetical: their code is what runs, permanently, and nobody holds the power to replace it."
       },
       {
         "dt": "Worst case",
@@ -215,7 +217,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "What is done",
-        "dd": "Three defences in the general case, and only two on Arc: a heartbeat and staleness bound per asset, a plausibility band per asset that rejects prices outside it, and the sequencer gate &mdash; mandatory wherever Chainlink publishes an L2 Sequencer Uptime Feed. Chainlink publishes none for Arc, which is an L1 rather than a rollup, so on Arc that gate would never run. The heartbeat and the band are per-deployment values, bounded above by the 90,000 seconds the oracle constructor accepts &mdash; deliberately an hour more than the 86,400-second cadence these feeds publish on, because a bound set at the cadence itself trips on a feed that is behaving normally. Both are chosen for Arc, and this page will print them when there is a deployment to print them from. A band is wide by nature: it rejects gross errors, and it does not reject an adverse but plausible price. The basket is limited to assets with a genuine Chainlink USD feed, rather than reaching for assets that would need a weaker price source."
+        "dd": "Three defences in the general case, and only two on Arc: a heartbeat and staleness bound per asset, a plausibility band per asset that rejects prices outside it, and the sequencer gate &mdash; mandatory wherever Chainlink publishes an L2 Sequencer Uptime Feed. Chainlink publishes none for Arc, which is an L1 rather than a rollup, so on Arc that gate would never run. The heartbeat and the band are per-deployment values, bounded above by the 90,000 seconds the oracle constructor accepts &mdash; deliberately an hour more than the 86,400-second cadence these feeds publish on, because a bound set at the cadence itself trips on a feed that is behaving normally. On the live Arc oracle, read from its <code>feedOf</code> entry for cirBTC: a staleness bound of 90,000 seconds and a band of $4,000 to $4,000,000 on the price read from the Chainlink BTC/USD feed at <code>0xa109B535C70C8Be9995be64Bb6751AcDB27e03De</code>. No sequencer feed is wired, as described above. A band is wide by nature: it rejects gross errors, and it does not reject an adverse but plausible price. The basket is limited to assets with a genuine Chainlink USD feed, rather than reaching for assets that would need a weaker price source."
       }
     ]
   },
@@ -665,8 +667,8 @@ export const REFERENCES: readonly Reference[] = [
   },
   {
     "key": "deployment-record",
-    "term": "<code>docs/evidence/arc-deploy-runbook.md</code>",
-    "body": "What has to be resolved before a deploy on Arc is possible, and why Arc testnet cannot serve as the dry run. There is no address ledger, because there are no addresses."
+    "term": "<code>contracts/config/deployments/arc-mainnet.json</code>",
+    "body": "The address ledger: every contract deployed on Arc mainnet, the transactions that created them, and the first vault's creation and registration. Check any address here against the chain before you send it anything."
   },
   {
     "key": "contracts",
@@ -677,7 +679,7 @@ export const REFERENCES: readonly Reference[] = [
 
 export const ACTIONS: readonly Action[] = [
   {
-    "href": "index.html#live",
+    "href": "https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/arc-mainnet.json",
     "label": "The address ledger",
     "primary": true
   },
