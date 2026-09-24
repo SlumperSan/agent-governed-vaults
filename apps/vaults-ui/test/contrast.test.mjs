@@ -40,10 +40,12 @@
  * a second invocation path to the same file would have to be wired into both to
  * earn its existence. One path is enough.
  *
- * THE FAILING DIRECTIONS ARE TESTED. Two mutations at the bottom: the known-bad
- * --ink-faint value must red the text suite, and moving the selected-row border
- * to --line must red the non-text suite. The second is the regression that
- * motivated this rewrite, so it is asserted rather than described.
+ * THE FAILING DIRECTIONS ARE TESTED. Mutations further down: the known-bad --ink-faint value
+ * must red the text suite, and moving the selected-row border to --line must red the non-text
+ * suite — the second is the regression that motivated this rewrite, so it is asserted rather than
+ * described. Card 72 (below the "tokens file is the shared one" test) adds the same discipline for
+ * a :root/html override of a shared token: planted three ways (plain :root, html{}, nested inside
+ * @media) each must red, and a token tokens.css never defines must not.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +62,72 @@ function readTokens(css) {
   for (const m of css.matchAll(/^\s*(--[a-z0-9-]+):\s*([^;]+);/gim)) t[m[1]] = m[2].trim();
   assert.ok(Object.keys(t).length > 10, 'tokens.css parsed to almost nothing — the format changed');
   return t;
+}
+
+/** Index of the `}` matching the `{` at `openIdx`, tracking nesting depth. -1 if unbalanced. */
+function matchingBrace(css, openIdx) {
+  let depth = 0;
+  for (let i = openIdx; i < css.length; i += 1) {
+    if (css[i] === '{') depth += 1;
+    else if (css[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Every `{selectorText, body}` block in `css`, recursing into at-rule bodies (`@media`,
+ * `@supports`, `@layer`, …) so a `:root` nested a level deep — the shape a dark-mode media query
+ * or a `@layer` wrapper would actually use — is still found rather than swallowed whole into the
+ * at-rule's own "body". A naive `([^{}]+)\{([^}]*)\}` regex (this file's first draft) stops at the
+ * FIRST `}`, which is the nested rule's closing brace, not the at-rule's — so the nested `:root`
+ * is captured as unstructured text inside the outer block and never matched as its own selector.
+ */
+function parseBlocks(css) {
+  const blocks = [];
+  let i = 0;
+  while (i < css.length) {
+    const brace = css.indexOf('{', i);
+    if (brace === -1) break;
+    const selectorText = css.slice(i, brace).trim();
+    const close = matchingBrace(css, brace);
+    if (close === -1) break;
+    const body = css.slice(brace + 1, close);
+    if (selectorText.startsWith('@')) blocks.push(...parseBlocks(body));
+    else if (selectorText !== '') blocks.push({ selectorText, body });
+    i = close + 1;
+  }
+  return blocks;
+}
+
+/**
+ * Every custom property NAME declared inside a `:root`, `html` or `:where(:root)` block of `css`,
+ * at any nesting depth — the selectors this app could use to add to, or silently shadow, the
+ * palette tokens.css sets on `:root`. Read by NAME ONLY, never by value: card 72 was `styles.css`
+ * appending `:root { --blue: #3a76ff; }` after the `@import`, which parses as valid CSS and simply
+ * wins the cascade — a later declaration of a name tokens.css already owns is the bug, whatever
+ * value it carries. A custom property declared under a component selector (`.vault-row`) is scoped
+ * to that selector and cannot shadow anything, so only these three root-ish selectors are read.
+ */
+function readRootCustomProps(css) {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const names = [];
+  for (const { selectorText, body } of parseBlocks(stripped)) {
+    const isRoot = selectorText.split(',').some((s) => {
+      const sel = s.trim();
+      return sel === ':root' || sel === 'html' || sel === ':where(:root)';
+    });
+    if (!isRoot) continue;
+    for (const p of body.matchAll(/(--[a-z0-9-]+)\s*:/gi)) names.push(p[1]);
+  }
+  return names;
+}
+
+/** Names `css` redeclares on a root-ish selector that `tokens` (from readTokens) already owns. */
+function shadowedTokens(css, tokens) {
+  return readRootCustomProps(css).filter((name) => name in tokens);
 }
 
 const hex = (h) => {
@@ -316,4 +384,49 @@ test('the tokens file is the shared one, not a copy inside this app', () => {
   assert.match(TOKENS.replace(/\\/g, '/'), /apps\/site\/src\/tokens\.css$/);
   const local = new URL('../src/tokens.css', import.meta.url);
   assert.throws(() => readFileSync(local), /ENOENT/, 'a second palette appeared inside apps/vaults-ui');
+});
+
+test('no app stylesheet redeclares a :root/html custom property tokens.css already owns', () => {
+  // Card 72: the previous test above only checked "no copy of tokens.css exists inside this app" —
+  // it never noticed that styles.css can just re-open :root after the @import and redefine any name
+  // in it. `--blue: #3a76ff` appended to styles.css is valid CSS, wins the cascade (last declaration
+  // wins), and every prior test in this file stayed green, because none of them reads the FULL set
+  // of names styles.css declares — only the ones a specific case names. This reads all of them.
+  const T = readTokens(CSS);
+  for (const [label, css] of [['styles.css', STYLES_CSS], ['chrome.css', CHROME_CSS]]) {
+    const shadowed = shadowedTokens(css, T);
+    assert.deepEqual(
+      shadowed,
+      [],
+      `${label} redeclares shared token(s) already defined in tokens.css: ${shadowed.join(', ')} — ` +
+        'a workspace stylesheet may ADD app-local custom properties on :root, but may not redefine ' +
+        'one tokens.css owns; the later declaration silently wins the cascade and drifts from the ' +
+        'measured palette.',
+    );
+  }
+});
+
+test('mutation: a workspace :root override of a shared token reds the guard above', () => {
+  const broken = `${STYLES_CSS}\n:root { --blue: #3a76ff; }\n`;
+  assert.deepEqual(shadowedTokens(broken, readTokens(CSS)), ['--blue'], 'appending :root { --blue: ... } to styles.css did not red');
+});
+
+test('mutation: a workspace :root override under html{} also reds the guard above', () => {
+  const broken = `${STYLES_CSS}\nhtml { --blue-control: #123456; }\n`;
+  assert.deepEqual(shadowedTokens(broken, readTokens(CSS)), ['--blue-control'], 'appending html { --blue-control: ... } did not red');
+});
+
+test('mutation: a :root override nested inside @media (a dark-mode query, e.g.) still reds', () => {
+  // The first draft of readRootCustomProps used a non-recursive regex that stopped at the first
+  // `}` — the nested rule's own close, not the @media's — so a :root buried inside an at-rule was
+  // silently swallowed into the at-rule's "body" and never matched as its own selector. This is
+  // the shape that would have slipped through: a dark-mode media query is a real place a workspace
+  // stylesheet would plausibly re-open :root.
+  const broken = `${STYLES_CSS}\n@media (prefers-color-scheme: dark) { :root { --blue: #3a76ff; } }\n`;
+  assert.deepEqual(shadowedTokens(broken, readTokens(CSS)), ['--blue'], ':root nested inside @media did not red');
+});
+
+test('mutation: an app-local custom property tokens.css does not define stays green', () => {
+  const extended = `${STYLES_CSS}\n:root { --app-only-thing: 1px; }\n`;
+  assert.deepEqual(shadowedTokens(extended, readTokens(CSS)), [], 'an app-local :root property that tokens.css never defines must be allowed');
 });
