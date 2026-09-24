@@ -23,7 +23,9 @@ import {
   LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN, SELF_WORKFLOW_NAME,
 } from '../lib/verdicts.mjs';
 // Importing the adapter is safe: its bottom guard runs `main()` only when it is `process.argv[1]`.
-import { PR_FIELDS, RUN_FIELDS, missingFields, validateGhPayloads } from '../merge-preflight.mjs';
+import {
+  PR_FIELDS, RUN_FIELDS, TRUSTED_ASSOCIATIONS, missingFields, trustedComments, validateGhPayloads,
+} from '../merge-preflight.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const POLICY = JSON.parse(readFileSync(path.join(ROOT, 'scripts', 'lib', 'merge-policy.json'), 'utf8'));
@@ -668,7 +670,7 @@ test('missingFields answers on key PRESENCE, not truthiness', () => {
 const okPr = () => ({
   number: 1, state: 'OPEN', isDraft: false, headRefName: 'b', headRefOid: 'newhead0',
   baseRefName: 'protocol/main',
-  comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->' }],
+  comments: [{ createdAt: '2026-09-01T22:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=R -->', author: { login: 'SlumperSan' }, authorAssociation: 'OWNER' }],
   commits: [{ oid: 'newhead0', committedDate: '2026-09-01T21:00:00Z' }],
 });
 const okRuns = () => [{ headSha: 'newhead0', status: 'completed', conclusion: 'success', workflowName: 'CI' }];
@@ -948,5 +950,70 @@ test('evaluate(): omitting `reviews` entirely (every pre-existing caller/fixture
     const d = evaluate({ pr, comments, runs: greenOn('feed0216'), mode: 'strict' });
     assert.equal(d.clear, false);
     assert.ok(d.blockers.every((b) => !b.detail.startsWith('Security')));
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Only collaborators speak to the gate (Security, Findings/2026-09-24-merge-gate-counts-anyones-
+// comments.md): the repo is public, and a token names its reviewer in its own text.
+// ---------------------------------------------------------------------------------------------
+
+{
+  const pr = { number: 417, state: 'OPEN', headRefOid: 'feed0417', headRefName: 'x' };
+  const by = (assoc, login, at, body) => ({ createdAt: at, body, author: { login }, authorAssociation: assoc });
+  const real = [
+    by('OWNER', 'SlumperSan', '2026-09-24T01:00:00Z', '<!-- REVIEW-ROSTER reviewers=Security -->'),
+    by('OWNER', 'SlumperSan', '2026-09-24T02:00:00Z', '<!-- REVIEW-VERDICT reviewer=Security verdict=REJECT -->'),
+  ];
+
+  test('trusted commenters: a forged ACCEPT from a NONE-association account does not clear a real REJECT', () => {
+    const raw = [...real, by('NONE', 'mallory', '2026-09-24T03:00:00Z', '<!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT -->')];
+    const t = trustedComments(raw);
+    assert.deepEqual(t.dropped, ['mallory (NONE)']);
+    for (const mode of /** @type {const} */ (['advisory', 'strict'])) {
+      const d = evaluate({ pr, comments: t.comments, runs: greenOn('feed0417'), mode });
+      assert.equal(d.clear, false, `${mode}: the forged ACCEPT must not supersede the REJECT`);
+      assert.deepEqual(ruleIds(d.blockers), ['no-standing-reject']);
+    }
+    // Non-vacuity: the same forged comment, if trusted, WOULD clear — so the filter is what blocks.
+    const untrusted = evaluate({ pr, comments: raw.map((c) => ({ createdAt: c.createdAt, body: c.body })), runs: greenOn('feed0417'), mode: 'strict' });
+    assert.equal(untrusted.clear, true);
+  });
+
+  test('trusted commenters: a forged re-roster plus self-ACCEPT from a CONTRIBUTOR is ignored', () => {
+    const raw = [
+      by('OWNER', 'SlumperSan', '2026-09-24T01:00:00Z', '<!-- REVIEW-ROSTER reviewers=Security -->'),
+      by('CONTRIBUTOR', 'mallory', '2026-09-24T02:00:00Z', '<!-- REVIEW-ROSTER reviewers=Mallory --> <!-- REVIEW-VERDICT reviewer=Mallory verdict=ACCEPT -->'),
+    ];
+    const d = evaluate({ pr, comments: trustedComments(raw).comments, runs: greenOn('feed0417'), mode: 'strict' });
+    assert.equal(d.clear, false);
+    assert.deepEqual(d.roster, ['Security']);
+    assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
+  });
+
+  test('trusted commenters: OWNER, MEMBER and COLLABORATOR are read; every other association is not', () => {
+    assert.deepEqual([...TRUSTED_ASSOCIATIONS].sort(), ['COLLABORATOR', 'MEMBER', 'OWNER']);
+    for (const assoc of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
+      assert.equal(trustedComments([by(assoc, 'a', 't', 'x')]).comments.length, 1, assoc);
+    }
+    for (const assoc of ['NONE', 'CONTRIBUTOR', 'FIRST_TIMER', 'FIRST_TIME_CONTRIBUTOR', 'MANNEQUIN', '', 'owner']) {
+      assert.equal(trustedComments([by(assoc, 'a', 't', 'x')]).comments.length, 0, assoc);
+    }
+    // An untrusted comment with no token is dropped silently; only token-bearing ones are named.
+    assert.deepEqual(trustedComments([by('NONE', 'a', 't', 'nice PR')]).dropped, []);
+  });
+
+  test('validateGhPayloads fails CLOSED on a comment with no authorAssociation', () => {
+    const noAssoc = { ...okPr(), comments: [{ createdAt: 't', body: 'x', author: { login: 'SlumperSan' } }] };
+    assert.match(String(validateGhPayloads(noAssoc, okRuns(), 0)), /authorAssociation/);
+    assert.match(String(validateGhPayloads({ ...okPr(), comments: [null] }, okRuns(), 0)), /authorAssociation/);
+  });
+
+  test('main() feeds evaluate the TRUSTED comments, not the raw payload', () => {
+    const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'merge-preflight.mjs'), 'utf8');
+    const call = src.slice(src.indexOf('const decision = evaluate({'), src.indexOf('mode: opts.mode,'));
+    assert.match(call, /comments: trusted\.comments,/);
+    assert.doesNotMatch(call, /pr\.data\.comments/);
+    assert.match(src, /const trusted = trustedComments\(pr\.data\.comments\);/);
   });
 }

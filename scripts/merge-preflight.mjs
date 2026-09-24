@@ -161,6 +161,16 @@ export function validateGhPayloads(prData, runsData, behindBy) {
     return "'gh pr view' returned no commits[].committedDate, which is the only input to verdict-covers-head";
   }
 
+  // Every comment must say who posted it: `trustedComments` drops any comment whose association is
+  // not trusted, so a payload that stopped carrying the field would silently drop every verdict —
+  // and a gate that sees no REJECT reads as CLEAR in advisory mode.
+  if (!Array.isArray(prData.comments)) return "'gh pr view' returned comments that are not an array";
+  for (const [i, c] of prData.comments.entries()) {
+    if (c === null || typeof c !== 'object' || typeof c.authorAssociation !== 'string') {
+      return `'gh pr view' comment #${i} carries no authorAssociation, which is how the gate tells a collaborator's verdict from anyone's`;
+    }
+  }
+
   // Not "the array is non-empty": a branch with no runs at all is a legitimate state, and
   // `ci-matches-head` already blocks on it correctly. The check is that every run PRESENT is whole.
   if (!Array.isArray(runsData)) return "'gh run list' did not return an array";
@@ -175,6 +185,36 @@ export function validateGhPayloads(prData, runsData, behindBy) {
     return `the compare API's .behind_by came back as ${JSON.stringify(behindBy)}, not a number`;
   }
   return null;
+}
+
+/**
+ * Who may speak to the gate. The repo is PUBLIC, and a REVIEW-ROSTER or REVIEW-VERDICT token names
+ * its reviewer in its own text, so without this any GitHub account could post a hidden
+ * `<!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT -->` after a real REJECT, or re-roster the
+ * PR to itself, and the gate would go CLEAR (Security, Findings/2026-09-24-merge-gate-counts-anyones-
+ * comments.md). GitHub's `authorAssociation` is set by GitHub, not by the commenter.
+ */
+export const TRUSTED_ASSOCIATIONS = Object.freeze(['OWNER', 'MEMBER', 'COLLABORATOR']);
+
+/**
+ * The comments the rules may read: only those whose author is the repo's owner, an org member or a
+ * collaborator. Everything else is dropped before `evaluate` sees it, so no rule can be cleared,
+ * re-rostered or blocked by an outsider. `dropped` lists the outsiders whose comments carried a
+ * token, for a note; their text is never judged.
+ * @param {any[]} raw  `gh pr view --json comments`'s `comments`
+ * @returns {{comments: {createdAt: string, body: string}[], dropped: string[]}}
+ */
+export function trustedComments(raw) {
+  const comments = [];
+  const dropped = [];
+  for (const c of raw ?? []) {
+    if (TRUSTED_ASSOCIATIONS.includes(c.authorAssociation)) {
+      comments.push({ createdAt: c.createdAt, body: c.body });
+    } else if (/<!--\s*REVIEW-(?:ROSTER|VERDICT)\b/.test(c.body ?? '')) {
+      dropped.push(`${c.author?.login ?? '(unknown)'} (${c.authorAssociation})`);
+    }
+  }
+  return { comments, dropped };
 }
 
 export function main(argv = process.argv.slice(2)) {
@@ -242,6 +282,7 @@ export function main(argv = process.argv.slice(2)) {
     return 2;
   }
 
+  const trusted = trustedComments(pr.data.comments);
   const decision = evaluate({
     pr: {
       number: pr.data.number,
@@ -255,13 +296,17 @@ export function main(argv = process.argv.slice(2)) {
       baseRefName: pr.data.baseRefName,
       behindBy: cmp.data,
     },
-    comments: (pr.data.comments ?? []).map((/** @type {any} */ c) => ({ createdAt: c.createdAt, body: c.body })),
+    comments: trusted.comments,
     runs: (runs.data ?? []).map((/** @type {any} */ r) => ({
       headSha: r.headSha, status: r.status, conclusion: r.conclusion, name: r.workflowName,
     })),
     reviews,
     mode: opts.mode,
   });
+
+  if (trusted.dropped.length > 0) {
+    decision.notes.push(`ignored review tokens from non-collaborators: ${trusted.dropped.join(', ')}. Only OWNER, MEMBER or COLLABORATOR comments are read.`);
+  }
 
   if (opts.json) {
     process.stdout.write(JSON.stringify({ pr: pr.data.number, headRefOid: pr.data.headRefOid, ...decision }, null, 2) + '\n');
