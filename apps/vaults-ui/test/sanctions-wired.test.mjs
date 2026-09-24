@@ -49,9 +49,9 @@ test('chain-actions.ts imports assertNotSanctioned from ./sanctions', () => {
 
 test('simulateThenWrite calls assertNotSanctioned(params.account) before simulateContract — a listed address never reaches an eth_call', () => {
   const body = simulateThenWriteBody(CHAIN_ACTIONS);
-  const guardAt = body.indexOf('assertNotSanctioned(params.account)');
+  const guardAt = body.indexOf('assertNotSanctioned(params.account, undefined, params.functionName)');
   const simulateAt = body.indexOf('publicClient.simulateContract');
-  assert.ok(guardAt >= 0, 'assertNotSanctioned(params.account) not found inside simulateThenWrite');
+  assert.ok(guardAt >= 0, 'assertNotSanctioned(params.account, undefined, params.functionName) not found inside simulateThenWrite — the function name is what exempts exits from the stale-list block (card 217)');
   assert.ok(simulateAt >= 0, 'publicClient.simulateContract not found inside simulateThenWrite');
   assert.ok(guardAt < simulateAt, 'assertNotSanctioned must run BEFORE the simulate call, not after');
 });
@@ -69,7 +69,7 @@ test('MUTATION: a simulateThenWrite body with the sanctions guard removed is cau
   }
   return walletClient.writeContract(request);
 }`;
-  const guardAt = preFixBody.indexOf('assertNotSanctioned(params.account)');
+  const guardAt = preFixBody.indexOf('assertNotSanctioned(params.account, undefined, params.functionName)');
   assert.equal(guardAt, -1, 'RED: the pre-fix body has no sanctions guard at all — this is the state that must fail the real test above');
 });
 
@@ -119,6 +119,31 @@ test('MUTATION: a connect() body with the sanctioned check removed is caught', (
 
 test('WalletConnect.tsx surfaces SANCTIONS_REFUSAL_MESSAGE when sanctioned', () => {
   const WALLET_CONNECT = readFileSync(join(APP, 'src/components/WalletConnect.tsx'), 'utf8');
-  assert.match(WALLET_CONNECT, /import\s*\{\s*SANCTIONS_REFUSAL_MESSAGE\s*\}\s*from\s*'\.\.\/lib\/sanctions';/);
+  assert.match(WALLET_CONNECT, /import\s*\{\s*SANCTIONS_REFUSAL_MESSAGE/);
   assert.match(WALLET_CONNECT, /sanctioned\s*\?\s*<p[^>]*>\{SANCTIONS_REFUSAL_MESSAGE\}<\/p>\s*:\s*null/);
+});
+
+// ─────────────────── WalletConnect.tsx: the runtime freshness banner (card 217) ───────────────────
+
+test('WalletConnect.tsx imports the freshness predicate and the stale-list message from ./sanctions', () => {
+  const WALLET_CONNECT = readFileSync(join(APP, 'src/components/WalletConnect.tsx'), 'utf8');
+  assert.match(WALLET_CONNECT, /import\s*\{[^}]*SANCTIONS_LIST_STALE_MESSAGE[^}]*\}\s*from\s*'\.\.\/lib\/sanctions';/);
+  assert.match(WALLET_CONNECT, /import\s*\{[^}]*sdnListAgeDays[^}]*\}\s*from\s*'\.\.\/lib\/sanctions';/);
+  assert.match(WALLET_CONNECT, /import\s*\{[^}]*SDN_LIST_MAX_AGE_DAYS[^}]*\}\s*from\s*'\.\.\/lib\/sanctions';/);
+});
+
+test('WalletConnect.tsx surfaces SANCTIONS_LIST_STALE_MESSAGE when the vendored list is older than SDN_LIST_MAX_AGE_DAYS', () => {
+  const WALLET_CONNECT = readFileSync(join(APP, 'src/components/WalletConnect.tsx'), 'utf8');
+  assert.match(WALLET_CONNECT, /sdnListAgeDays\(\)\s*>\s*SDN_LIST_MAX_AGE_DAYS/, 'the same age comparison assertNotSanctioned uses, not a re-derived one');
+  assert.match(WALLET_CONNECT, /listStale\s*\?\s*<p[^>]*>\{SANCTIONS_LIST_STALE_MESSAGE\}<\/p>\s*:\s*null/);
+});
+
+test('MUTATION: a WalletConnect.tsx body with the freshness banner removed is caught', () => {
+  const preFixBody = `
+      {error ? <p className="note tag-warn">{error}</p> : null}
+      {sanctioned ? <p className="note tag-warn">{SANCTIONS_REFUSAL_MESSAGE}</p> : null}
+    </div>
+  );
+}`;
+  assert.doesNotMatch(preFixBody, /SANCTIONS_LIST_STALE_MESSAGE/, 'RED: the pre-fix body has no stale-list banner at all — this is why the real assertions above check for it by name');
 });

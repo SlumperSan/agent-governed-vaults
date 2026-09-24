@@ -1,7 +1,7 @@
 import { shortAddress } from '../lib/atlas';
 import { TARGET_CHAIN } from '../lib/chains';
 import { useWallet } from '../lib/wallet';
-import { SANCTIONS_REFUSAL_MESSAGE } from '../lib/sanctions';
+import { SANCTIONS_REFUSAL_MESSAGE, SANCTIONS_LIST_STALE_MESSAGE, sdnListAgeDays, SDN_LIST_MAX_AGE_DAYS } from '../lib/sanctions';
 
 /**
  * Connect / account / network banner. Lives in the header, independent of which vault is
@@ -9,6 +9,11 @@ import { SANCTIONS_REFUSAL_MESSAGE } from '../lib/sanctions';
  */
 export function WalletConnect() {
   const { status, address, providers, error, sanctioned, connect, disconnect, switchToTarget } = useWallet();
+  // Card 217: the same runtime freshness guard `assertNotSanctioned` enforces on every write,
+  // surfaced here so a stale list is visible BEFORE a member tries a write and hits the refusal
+  // cold. Computed at render, not stored in `wallet.tsx`'s state — unlike `sanctioned`, staleness
+  // does not depend on which address is connected, only on the vendored list's own age.
+  const listStale = sdnListAgeDays() > SDN_LIST_MAX_AGE_DAYS;
 
   if (status === 'disconnected' || (status === 'connecting' && !address)) {
     return (
@@ -51,6 +56,7 @@ export function WalletConnect() {
       </button>
       {error ? <p className="note tag-warn">{error}</p> : null}
       {sanctioned ? <p className="note tag-warn">{SANCTIONS_REFUSAL_MESSAGE}</p> : null}
+      {listStale ? <p className="note tag-warn">{SANCTIONS_LIST_STALE_MESSAGE}</p> : null}
     </div>
   );
 }

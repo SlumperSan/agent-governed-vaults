@@ -538,7 +538,7 @@ async function simulateThenWrite<T extends { abi: Abi; functionName: string; arg
   walletClient: WalletClient,
   params: T & { address: Address; account: Address },
 ): Promise<Hex> {
-  assertNotSanctioned(params.account);
+  assertNotSanctioned(params.account, undefined, params.functionName);
   let request: unknown;
   try {
     ({ request } = await publicClient.simulateContract({

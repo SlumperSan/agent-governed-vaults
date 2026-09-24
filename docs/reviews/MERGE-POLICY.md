@@ -210,6 +210,20 @@ Run it in two places, not one:
   is one call. Divergence is not liveness: `git rev-list --left-right --count` reports "0 behind /
   N ahead" for a freshly-merged branch exactly as it does for a live one.
 
+## Buy / borrow / build (`buy-borrow-build-declared`, card 190)
+
+Chairman directive 13, 2026-09-19: the global buy-borrow-build rule existed in prose and nobody ran
+it — 3 `WebSearch` and 11 `WebFetch` calls across 18,000 messages. `/dept-engineering` and
+`/dept-security` now post a `## Buy / borrow / build` / `## Standards` skeleton into every `feat/`
+PR body; this rule makes leaving it unfilled mechanically visible rather than trusting it got read.
+
+**"None found" is a real, checkable answer and must pass.** A blank section reads identically to a
+search that never happened, in a diff nobody re-reads — the exact failure the skeleton's own text
+warns against. Blank means only whitespace, an HTML comment, or one bare unfilled placeholder token
+(`<what you grepped ...>`, `TBD`, `TODO`, ...) — deliberately narrow, on the same "do not cry wolf"
+reasoning as every other content check here, and scoped to `feat/` head branches only: `fix/`,
+`test/`, `docs/` and `chore/` branches are not adding a new capability.
+
 ## What this cannot catch
 
 Stated plainly, because failing to state a mechanism's blind spots is the failure this whole
@@ -393,6 +407,16 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
       "title": "a verdict is only valid against the base it was computed on",
       "blocksWhen": "the branch is behind its base branch and the PR has been reviewed at all (a verdict token, or a prose verdict heading of either kind)",
       "why": "Mode E, and Mode D's mirror: D is 'the content changed under the verdict', E is 'the world the content describes changed under it'. Seen live on 2026-09-01: #119 held a valid ACCEPT against d9293c23, then #121 merged and inverted the canary tier semantics in sinks.mjs, making two sentences #119 ADDS false against merged main -- while merge-tree stayed clean (they touch different files), CI stayed green on the reviewed head, and the verdict stayed untouched. The branch head never moved, so verdict-covers-head cannot see it and no rule keyed to the PR alone can. Read from the compare API's behind_by, because gh pr view's mergeStateStatus only reports BEHIND once the repository already requires up-to-date branches -- the very setting this argues for. It detects that a verdict was computed against a base that no longer exists; it cannot tell you WHETHER the moved base falsifies anything, which is a re-read. The enforcement half was GitHub's 'Require branches to be up to date before merging' (strict=true on required_status_checks), which makes every base advance force a re-integration and therefore a re-verdict. The owner set strict_required_status_checks_policy to false on the protocol-main ruleset on 2026-09-10, so a behind branch no longer blocks a merge and this rule is the only thing that reports the drift."
+    },
+    {
+      "id": "buy-borrow-build-declared",
+      "modes": [
+        "advisory",
+        "strict"
+      ],
+      "title": "a feat/ PR must declare Buy / borrow / build and Standards",
+      "blocksWhen": "the head branch name starts with feat/ and the PR body is missing a '## Buy / borrow / build' or '## Standards' section, or either section is present but blank (only whitespace, an HTML comment, or an unfilled template placeholder)",
+      "why": "Chairman directive 13, 2026-09-19: the global buy-borrow-build rule existed in prose and nobody ran it -- 3 WebSearch and 11 WebFetch calls across 18,000 messages. '/dept-engineering' and '/dept-security' post a '## Buy / borrow / build' / '## Standards' skeleton into every feat/ PR body; this rule makes leaving it unfilled mechanically visible rather than trusting it got read. 'None found' is a real, checkable answer and must pass -- a blank section reads identically to a search that never happened, in a diff nobody re-reads, which is the exact failure the skeleton's own text warns against. Scoped to feat/ head branches only: fix/, test/, docs/ and chore/ branches are not adding a new capability, and gating those too would make the rule routed around like a hardcoded two-reviewer count would. Blank detection is deliberately narrow (whitespace, an HTML comment, or one bare placeholder token such as '<what you grepped ...>', 'TBD', 'TODO') rather than attempting to detect a partially-filled skeleton -- the same 'do not cry wolf' scoping merge-preflight.mjs's other content checks already use, and it is enough to catch the two real failure modes: the section left out entirely, and the section heading pasted with nothing under it."
     }
   ],
   "legacyProseHeuristic": {

@@ -177,6 +177,62 @@ The deployment therefore went ahead with gates 3 and 6 unearned and gate 5 uncov
 owner's decision of 2026-09-04. That is recorded here rather than argued: this file's job is to say
 what was proven, and being deployed is not one of the things these gates prove.
 
+## 0a. Arc mainnet (chain 5042): where each gate stands
+
+Added 2026-09-24. The protocol went live on Arc on 2026-09-24
+(`contracts/config/deployments/arc-mainnet.json`, first vault
+`0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`). The Base-mainnet board in §1 does not transfer to Arc
+automatically: gate 5's 12/12 was earned against Base feeds and the Base sequencer feed, and Arc has
+neither. This section records what has been earned on Arc itself. Each figure below was read on
+2026-09-24 and should be re-run before anyone quotes it.
+
+| # | Gate | Arc verdict | Evidence |
+| --- | --- | --- | --- |
+| 5 | Mainnet oracle stack verified on mainnet RPC | **GO** with named residual, 2026-09-24 | See "Gate 5 on Arc" below. |
+| 7 | Ops runbook exercised, a restore actually performed | **GO by transfer**, 2026-09-24 | See "Gate 7 on Arc" below. The drill's mechanics are chain-independent, and its two chain-dependent inputs were measured on Arc. |
+| 3 | Soak drills | **Not earned on Arc** | The soak is parked until after launch (board card 177). |
+| 6 | Canary operational | **Not earned on Arc** | The first canary read on Arc waits for the first persona deposit (board card 73), because with `totalShares` 0 the probe has nothing to read. |
+
+### Gate 5 on Arc
+
+- **Chain binding:** `eth_chainId` returns 5042 on both `https://rpc.mainnet.arc.io` and
+  `https://arc.gateway.tenderly.co`.
+- **Config against the live feed:** `node scripts/verify-chainlink-oracle.mjs contracts/config/arc-mainnet.json --strict`, with
+  `BASE_RPC` set to each endpoint in turn, passes **13/13 on both**. It checks:
+  - cirBTC is priced from BTC/USD `0xa109B535C70C8Be9995be64Bb6751AcDB27e03De` at 8 decimals;
+  - the aggregator is unchanged since the pin;
+  - the answer is fresh within the 90,000 s heartbeat;
+  - the sane-price band is $4,000–$4,000,000, 1000x wide, with the live price inside it.
+- **The deployed contract, not just the config:** `feedOf(cirBTC)` on the deployed
+  `ChainlinkOracle` `0x0C60b9a4C207dd622CcC0Ee3C51b5c274cb7B979` returns the same feed, heartbeat
+  90000, scale 1e10 and band 4e21..4e24 on both endpoints. `usdc()` is
+  `0x3600000000000000000000000000000000000000`, and `priceWad(cirBTC)` answers.
+- **Named residual, the same as Base's plus one:**
+  - A single provider (Chainlink) stands behind the price. The heartbeat and the band are the only
+    defences against a bad answer.
+  - **Arc has no sequencer uptime feed.** Arc is an L1, so the guard is exempt by owner decision on
+    2026-09-19; the verifier's first line records why. At a 90,000 s heartbeat, a stalled feed is
+    caught within a day, but a stalled chain cannot be told apart from a quiet one.
+
+### Gate 7 on Arc
+
+The restore drill (§1 gate 7, [RESTORE-DRILL.md](RESTORE-DRILL.md) §10) exercised the indexer's and
+canary's **state files**: aged snapshot rungs, an off-host tar, atomic writes under SIGKILL, and a
+reseed of `knownVaults` from the restored file. None of those depend on which chain the indexer
+reads. Only the catch-up after a restore talks to the chain, and it depends on two things, both
+measured on Arc on 2026-09-24:
+
+- **The `eth_getLogs` range limit.** `rpc.mainnet.arc.io` answers a range of up to 10,000 blocks
+  inclusive (`toBlock - fromBlock` = 9,999) and refuses 10,001 with `-32012 requested range too large`. The indexer's `BATCH_BLOCKS` default
+  is 2,000 (`packages/indexer/src/index-runner.mjs`), well inside that limit.
+- **Block rate.** 10,000 Arc blocks took 5,073 s, about 0.51 s per block. The drill's 15-minute
+  rung is therefore about 1,780 blocks behind on Arc, against 452 on Base Sepolia. That is still
+  one 2,000-block batch, so the rewind closes in a single `getLogs` round.
+
+The drill therefore transfers to Arc. What it does not cover is an Arc RPC that rate-limits
+harder than the endpoint measured here. That is the same exposure the canary's RPC fallback exists
+for, and it is not something a restore drill tests.
+
 ## 1. Go/no-go checklist
 
 | # | Gate | Verdict | Evidence |

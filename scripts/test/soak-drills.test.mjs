@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
@@ -1181,16 +1181,21 @@ if (sub === 'send') {
 `;
 
 /**
- * @param {{failCount?: number, failKind?: 'estimate'|'timeout'}} opts
- * @returns {{ok: boolean, status?: string, message?: string, calls: number, log: string}}
+ * @param {{failCount?: number, failKind?: 'estimate'|'timeout', tty?: boolean}} opts
+ *   `tty` fakes `process.stdin.isTTY` inside the probe process, BEFORE `lib.mjs` is imported, to
+ *   reproduce an attended run — this harness's own stdin is always piped by `spawnSync`, never a
+ *   real terminal, so the only way to exercise `cast()`'s TTY branch is to force the flag the way
+ *   `cast()` actually reads it (`process.stdin.isTTY`), not to fake a terminal underneath it.
+ * @returns {{ok: boolean, status?: string, message?: string, calls: number, log: string, err: string}}
  */
-function runSendProbe({ failCount = 0, failKind = 'estimate' } = {}) {
+function runSendProbe({ failCount = 0, failKind = 'estimate', tty = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'soak-sendprobe-'));
   const stub = path.join(dir, 'fake-cast-send.cjs');
   fs.writeFileSync(stub, FAKE_CAST_SEND_SRC);
   const counterFile = path.join(dir, 'send-count.txt');
   const src = `
     process.env.SOAK_SIGNER_ARGS = '--account test';
+    ${tty ? "Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });" : ''}
     const { send } = await import(${JSON.stringify(new URL('../soak/lib.mjs', import.meta.url).href)});
     try {
       const r = send('probe', '0x0000000000000000000000000000000000000001', 'createVault(string)', 'soak-test');
@@ -1200,7 +1205,10 @@ function runSendProbe({ failCount = 0, failKind = 'estimate' } = {}) {
     }
   `;
   try {
-    const out = execFileSync(process.execPath, ['--input-type=module', '-e', src], {
+    // spawnSync, not execFileSync: this probe's `tty: true` case needs to see the PROBE
+    // PROCESS's own stderr (issue #280's tee writes there), and execFileSync only ever exposes
+    // stderr through a thrown error, never on a clean exit.
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', src], {
       encoding: 'utf8',
       env: {
         ...process.env,
@@ -1212,9 +1220,11 @@ function runSendProbe({ failCount = 0, failKind = 'estimate' } = {}) {
         FAKE_SEND_FAIL_KIND: failKind,
       },
     });
+    if (r.error) throw r.error;
+    const out = r.stdout ?? '';
     const last = out.trim().split('\n').pop();
     const calls = Number(fs.readFileSync(counterFile, 'utf8') || '0');
-    return { ...JSON.parse(last), calls, log: out };
+    return { ...JSON.parse(last), calls, log: out, err: r.stderr ?? '' };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -1251,6 +1261,32 @@ test('send() does NOT retry a failure that is not the gas-estimation phase', () 
   assert.equal(r.ok, false, 'a non-estimation failure must still fail the drill');
   assert.match(r.message, /operation timed out/);
   assert.equal(r.calls, 1, 'a non-estimation failure must be reported on the FIRST attempt, never retried');
+});
+
+// ─── send(): issue #280, the estimate-retry must also fire on an attended TTY run ───
+
+test('send() retries a gas-estimation failure on an attended TTY run too (issue #280)', () => {
+  // Before the fix, `cast()` handed stderr to `stdio: 'inherit'` whenever this branch ran —
+  // exactly the same branch a real operator hits at an interactive terminal. `inherit` throws the
+  // stream at the terminal directly, WITHOUT Node ever capturing it, so the thrown error's stderr
+  // came back empty, `detail` fell back to the generic exec-failure message, and the literal
+  // marker `FAILED_TO_ESTIMATE_GAS` never matched — the retry issue #214 added was inert on
+  // exactly the runs it was meant to protect, and nothing said so. This is the reproduction: same
+  // fixture, same failure text, only `tty: true` differs from the passing non-TTY test above.
+  const r = runSendProbe({ failCount: 2, failKind: 'estimate', tty: true });
+  assert.equal(r.ok, true, `send() must recover on an attended TTY run exactly as it does off one: ${r.message}`);
+  assert.equal(r.status, '0x1');
+  assert.equal(r.calls, 3, 'the retry must fire on a TTY run — this is the assertion the pre-fix code failed');
+  assert.match(r.log, /gas estimation failed on attempt 1\/3/);
+  assert.match(r.log, /gas estimation failed on attempt 2\/3/);
+});
+
+test('send() still tees the estimation failure to the terminal on an attended TTY run', () => {
+  // The fix moves stderr from `inherit` to always-`pipe` plus a manual write-back. This proves the
+  // write-back actually happens: piping without it would silently take away text an attended
+  // operator used to see live, trading one silent failure for another.
+  const r = runSendProbe({ failCount: 1, failKind: 'estimate', tty: true });
+  assert.match(r.err, /Failed to estimate gas: execution reverted/, 'the attended operator must still see cast\'s own stderr, not just the log line');
 });
 
 // ───────── votableNow: a pid is not a votable round (drill 5) ─────────
