@@ -19,6 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, parseRoster, runsForHead,
+  parseUnparseableVerdicts, reviewObjectVerdicts,
   LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN, SELF_WORKFLOW_NAME,
 } from '../lib/verdicts.mjs';
 // Importing the adapter is safe: its bottom guard runs `main()` only when it is `process.argv[1]`.
@@ -809,4 +810,88 @@ test('MUTATION: reverting parseRoster to drop empty matches (the #352 bug) is ca
   };
   assert.deepEqual(preFixParseRoster(comments), { reviewers: ['Security'], at: '2026-09-21T10:00:00Z' }, 'RED: the pre-fix shape must keep reading the dead seat');
   assert.notDeepEqual(parseRoster(comments), preFixParseRoster(comments), 'the real parseRoster must differ from the reintroduced bug on this exact input');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Card #59: report-only surfacing of verdict tokens that reach the gate silently unparsed
+// ---------------------------------------------------------------------------------------------
+
+test('parseUnparseableVerdicts: an invalid verdict= value is reported; the standard values are not', () => {
+  const invalid = [{ createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=REQUEST_CHANGES -->' }];
+  const found = parseUnparseableVerdicts(invalid);
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0], { reviewer: 'Finance', value: 'REQUEST_CHANGES', at: '2026-09-19T00:00:00Z' });
+
+  // MUTATION direction 1: fixing the value to ACCEPT must make it disappear from this report AND
+  // start counting as a real verdict.
+  const fixed = [{ createdAt: '2026-09-19T00:05:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' }];
+  assert.deepEqual(parseUnparseableVerdicts(fixed), []);
+  const d = evaluate({ pr: { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'x' }, comments: fixed, runs: greenOn('a') });
+  assert.ok(Object.keys(d.latestVerdicts).includes('Finance'), 'the fixed token must count as a real verdict');
+
+  assert.deepEqual(parseUnparseableVerdicts([]), []);
+});
+
+test('evaluate(): an unparseable verdict token in a comment is a NOTE, never a blocker or a clear', () => {
+  const pr = { number: 307, state: 'OPEN', headRefOid: 'feed0059', headRefName: 'x' };
+  const comments = [
+    { createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Finance -->' },
+    { createdAt: '2026-09-19T00:05:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=REQUEST_CHANGES -->' },
+  ];
+  const d = evaluate({ pr, comments, runs: greenOn('feed0059'), mode: 'strict' });
+  // Still blocked -- the malformed token counts as NOTHING, so the roster is still unresolved.
+  assert.equal(d.clear, false);
+  assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
+  assert.ok(
+    d.notes.some((n) => n.includes('verdict token found but not parsed') && n.includes('REQUEST_CHANGES')),
+    'the report must name the unparsed value',
+  );
+
+  // MUTATION direction 2: the fixed value clears the note AND resolves the roster.
+  const fixed = [
+    comments[0],
+    { createdAt: '2026-09-19T00:05:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' },
+  ];
+  const d2 = evaluate({ pr, comments: fixed, runs: greenOn('feed0059'), mode: 'strict' });
+  assert.equal(d2.clear, true);
+  assert.ok(!d2.notes.some((n) => n.includes('verdict token found but not parsed')));
+});
+
+test('reviewObjectVerdicts: a rostered reviewer\'s token in a REVIEW OBJECT is reported only while comments carry none from them', () => {
+  const reviews = [{ author: 'Finance', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' }];
+  // Rostered, no comment-verdict yet: reported.
+  assert.deepEqual(reviewObjectVerdicts(reviews, {}, ['Finance']), ['Finance']);
+  // Not on the roster: not reported -- this channel-mismatch report is scoped to reviewers who are
+  // actually expected to post, same as roster-resolved itself.
+  assert.deepEqual(reviewObjectVerdicts(reviews, {}, ['SomeoneElse']), []);
+  // MUTATION direction: once the SAME verdict also exists in `comments` (re-posted correctly), the
+  // report must go quiet.
+  assert.deepEqual(reviewObjectVerdicts(reviews, { Finance: { verdict: 'ACCEPT', at: 'now' } }, ['Finance']), []);
+  // A review object with no parseable token at all is not reported (prose review summary, etc).
+  assert.deepEqual(reviewObjectVerdicts([{ author: 'Finance', body: 'Looks good to me' }], {}, ['Finance']), []);
+});
+
+test('evaluate(): a verdict posted only as a review object is a NOTE, never counted, never clears', () => {
+  const pr = { number: 308, state: 'OPEN', headRefOid: 'feed0058', headRefName: 'x' };
+  const comments = [{ createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Finance -->' }];
+  const reviews = [{ author: 'Finance', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' }];
+  const d = evaluate({ pr, comments, runs: greenOn('feed0058'), reviews, mode: 'strict' });
+  assert.equal(d.clear, false, 'a review-object token must never clear roster-resolved');
+  assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
+  assert.ok(d.notes.some((n) => n.includes('Finance posted a verdict as a review object')));
+
+  // MUTATION direction: re-posting the SAME token as a comment (the correct channel) clears both
+  // the blocker and the note.
+  const reposted = [...comments, { createdAt: '2026-09-19T00:10:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=ACCEPT -->' }];
+  const d2 = evaluate({ pr, comments: reposted, runs: greenOn('feed0058'), reviews, mode: 'strict' });
+  assert.equal(d2.clear, true);
+  assert.ok(!d2.notes.some((n) => n.includes('posted a verdict as a review object')));
+});
+
+test('evaluate(): omitting `reviews` entirely (every pre-existing caller/fixture) is unaffected', () => {
+  const pr = { number: 1, state: 'OPEN', headRefOid: 'a', headRefName: 'x' };
+  const comments = [{ createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' }];
+  const d = evaluate({ pr, comments, runs: greenOn('a'), mode: 'strict' });
+  assert.equal(d.clear, true);
+  assert.deepEqual(d.notes, []);
 });
