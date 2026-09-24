@@ -242,7 +242,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
   },
   {
     "id": "r5",
-    "severityLabel": "Handled in code, never exercised",
+    "severityLabel": "Exempted on Arc, fails open",
     "heading": "5. Sequencer downtime",
     "rows": [
       {
@@ -251,7 +251,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
       },
       {
         "dt": "Worst case",
-        "dd": "A sequencer incident extends into a vault freeze that outlasts the incident itself, because the oracle will not price anything until the grace period has elapsed."
+        "dd": "On Arc the guard is exempted, so it fails open: while the chain is halted the oracle keeps serving the last answer for as long as that answer stays inside the heartbeat and the band. Where the guard does run, a sequencer incident can extend into a vault freeze that outlasts the incident, because the oracle will not price anything until the grace period has elapsed."
       },
       {
         "dt": "What is done",
