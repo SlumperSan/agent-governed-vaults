@@ -354,11 +354,12 @@ export interface LiveConfig {
  * `VITE_VAULT_NAME` is a fourth, OPTIONAL variable — unlike the first three, its absence does not
  * fail the config: a nameless vault renders `shortAddress`, which is honest, not broken.
  *
- * `null` on anything unusable — NOT a default that points somewhere. Nothing is deployed on Arc
- * 5042 yet (`contracts/config/arc-mainnet.json`'s own `status` field says so), so a production
- * build with no env configured must render "not configured", never fall back to a guess. See
- * `App.tsx` for how that state renders, and `apps/vaults-ui/.env.example` for the one
- * configuration this repository can currently prove end to end (Base Sepolia, chain 84532).
+ * `null` on anything unusable — NOT a default that points somewhere. Even though a real vault is
+ * now deployed (Arc mainnet, chain 5042, since 2026-09-24 — firstVault.createdAt,
+ * contracts/config/deployments/arc-mainnet.json), an env this repository did not
+ * configure is not evidence of one, so a production build with no env configured must render "not
+ * configured", never fall back to a guess. See `App.tsx` for how that state renders, and
+ * `apps/vaults-ui/.env.example` for the configuration this app builds against by default.
  */
 export function readLiveConfig(): LiveConfig | null {
   const env = import.meta.env as Record<string, string | undefined>;
@@ -411,6 +412,13 @@ export async function buildBoundClient(cfg: LiveConfig): Promise<PublicClient> {
     chain: {
       id: cfg.chainId,
       name: `chain-${cfg.chainId}`,
+      // PLACEHOLDER, NOT A CLAIM ABOUT THE CONFIGURED CHAIN'S ACTUAL NATIVE CURRENCY. viem's
+      // `Chain` type requires this field; this client only ever calls `readContract`/`multicall`,
+      // neither of which consults it (no gas estimation, no native-balance display happens here).
+      // On Arc the real native asset is USDC (18-decimal native view — see chains.ts's
+      // ARC_MAINNET, which the connected WALLET client uses and which IS accurate), not ETH; this
+      // generic read-only client is built from a bare `chainId`/`rpcUrl` pair with no per-chain
+      // currency table, so it cannot know which is correct and must not be read as if it did.
       nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
       rpcUrls: { default: { http: [cfg.rpcUrl] } },
       contracts: { multicall3: { address: MULTICALL3_ADDRESS } },
@@ -452,9 +460,10 @@ export function useLiveVaults(): Fetched<readonly Vault[]> {
       setState(
         failed(
           'Live chain reads are not configured for this build.',
-          'VITE_RPC_URL / VITE_CHAIN_ID / VITE_VAULT_ADDRESSES were not set at build time — nothing ' +
-            'is deployed on Arc mainnet yet. This is expected before launch, and is why this screen ' +
-            'shows no vault rather than a bundled sample.',
+          'VITE_RPC_URL / VITE_CHAIN_ID / VITE_VAULT_ADDRESSES were not set at build time — this ' +
+            'build has no vault configured. RWAlly’s v1 vault (cirBTC Vault) is live on Arc ' +
+            'mainnet; this screen shows no vault because THIS BUILD was not pointed at it, never a ' +
+            'bundled sample standing in for a real read.',
           false,
         ),
       );

@@ -54,11 +54,18 @@ function AppShell() {
     <Page current="/">
       <header className="masthead">
         <h1>RWAlly</h1>
-        {/* Chairman directive, cutover condition: this line gates app.rwally.com going live on
-         * Base Sepolia. UNCONDITIONAL on purpose — not gated on `fetched.kind`, freshness, or any
-         * other read, because a read that can fail is a disclosure that can vanish, and its
-         * absence here would read as "this is mainnet". Verbatim text, do not paraphrase. */}
-        <p className="note tag-warn">Reading Base Sepolia testnet. No vault holds real funds yet.</p>
+        {/* Chairman directive, cutover condition: this line gates what app.rwally.com is allowed to
+         * say about the chain it reads. UNCONDITIONAL on purpose — not gated on `fetched.kind`,
+         * freshness, or any other read, because a read that can fail is a disclosure that can
+         * vanish, and its absence here would read as an unqualified, unlabelled mainnet. Verbatim
+         * text, do not paraphrase. Live on Arc mainnet since 2026-09-24 (chain 5042,
+         * firstVault.createdAt — contracts/config/deployments/arc-mainnet.json). AS READ
+         * 2026-09-23 the vault was empty (zero deposits, zero shares, a real chain read of a real
+         * zero) — the SAME sentence stays true once a member deposits, because it says "real
+         * funds", not "no funds yet"; read `vault.navWad`/`vault.holderCount` live for the current
+         * figure rather than trusting this comment. Any activity the RWAlly team itself seeds on
+         * this vault is labelled as the team's own, never presented as an organic member. */}
+        <p className="note tag-warn">Live on Arc mainnet. Deposits here are real funds, not a test. Activity seeded by the RWAlly team is labelled as such.</p>
         <p className="note">
           An agent-operator proposes a basket. The members whose money it is vote it up or down by
           commit-reveal. Nothing rebalances until a proposal passes.

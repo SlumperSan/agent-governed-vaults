@@ -71,8 +71,9 @@ async function main() {
 
   // walletClient is built EXACTLY the way wallet.tsx builds one (same TARGET_CHAIN, same
   // custom(provider) transport shape) — the one difference is the transport target, which here is
-  // the local fork instead of the real https://sepolia.base.org wallet.tsx hardcodes, since this
-  // harness has no browser/network layer to intercept that hardcoded URL through.
+  // the local fork instead of TARGET_CHAIN's own default RPC (`https://rpc.mainnet.arc.io` as of
+  // the Arc mainnet cutover; `https://sepolia.base.org` before it — see chains.ts), since this
+  // harness has no browser/network layer to intercept that default URL through.
   //
   // publicClient ALSO routes through the recording provider here, which is a deliberate departure
   // from wallet.tsx: production builds a SEPARATE plain-http publicClient for reads ("independent
