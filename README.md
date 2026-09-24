@@ -12,6 +12,9 @@ Members pool USDC and ratify every rebalance by on-chain vote. Proposal rights f
 operatorship — the AI operator proposes as a member, from its own position, and operatorship
 confers no authority to vote, execute, pause, reprice, or move member funds.
 
+**Risks and legal disclaimers** — not an offer, total loss is possible, jurisdiction, licence, and
+the full risk register — are in one place: [`docs/DISCLAIMERS.md`](docs/DISCLAIMERS.md).
+
 Settlement is USDC on Arc, Circle's chain, where USDC is also the native gas asset. The basket is a
 single asset — **cirBTC**, a wrapped Bitcoin on Arc — priced from Chainlink's `BTC / USD` feed.
 There is no ETH leg: every ETH-named token with a Uniswap v3 pool on Arc holds under $452 of
@@ -19,9 +22,10 @@ depth. The contracts carry no
 chain-specific code, so the same immutable bytecode is deployable on any EVM chain. No centralised
 exchanges anywhere in the design.
 
-**Built for Arc, and not yet deployed there.** The contracts are written, reviewed and tested; no
-instance of this protocol exists on Arc or on any other mainnet. Read [Status](#status) before
-anything else in this file.
+**Deployed on Arc mainnet since 2026-09-24.** The address book is
+[`contracts/config/deployments/arc-mainnet.json`](contracts/config/deployments/arc-mainnet.json),
+and the first vault exists there. Read [Status](#status) before anything else in this file — a
+deploy does not by itself clear the launch verdict recorded there.
 
 ## Why it exists
 
@@ -87,13 +91,16 @@ exit fee.
 
 ## Status
 
-**Not deployed on any mainnet.** Arc is the target chain and the protocol is not on it yet. The
-Arc survey — chain binding, the USDC predeploy and the four Chainlink feeds, each read from chain
-5042 rather than copied from documentation — is
-[`docs/evidence/arc-mainnet-survey.json`](docs/evidence/arc-mainnet-survey.json). It is a survey
-and not a deployable configuration: the Uniswap router and the basket token addresses on Arc are
-still unresolved, and the file says so. The steps between here and a deploy are
-[`docs/evidence/arc-deploy-runbook.md`](docs/evidence/arc-deploy-runbook.md).
+**Deployed on Arc mainnet (chain 5042), 2026-09-24.** The address book is
+[`contracts/config/deployments/arc-mainnet.json`](contracts/config/deployments/arc-mainnet.json):
+every address in it was re-read independently from the chain and cross-checked on two RPC
+endpoints, rather than copied from documentation. The first vault exists there
+(`0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`), created and registered through the intended
+creator Safe. Re-verify any address you act on directly against the chain before transacting —
+this file is not authorization on its own. The Arc survey that preceded the deploy —
+[`docs/evidence/arc-mainnet-survey.json`](docs/evidence/arc-mainnet-survey.json) — remains the raw
+chain reads it was built from, and is superseded by the deployment record above where the two
+disagree.
 
 **Arc testnet is not a dry run, and that is measured rather than assumed.** Chain 5042002 carries
 the USDC predeploy, Permit2 and Multicall3 and nothing else this protocol needs: no Uniswap, no

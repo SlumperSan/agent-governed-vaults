@@ -28,19 +28,22 @@ the allocator front end's OWN test fixtures and nothing in this workspace's `src
 `test/csp.test.mjs` fails the build if that ever changes.
 
 **Three env vars, build-time only** (Vite inlines `import.meta.env.*` — a served page cannot read
-them at runtime): `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_VAULT_ADDRESSES` (comma-separated). Unset —
-which is the state of a production build today, since nothing from this repository is deployed on
-Arc mainnet yet (`contracts/config/arc-mainnet.json`'s own `status` field says so) — and the page
-renders an honest "not configured" state, never a bundled sample. `cp .env.example
-.env.development.local` sets all three against **Base Sepolia**, the one live-read path this
-repository can prove end to end right now (`contracts/config/deployments/base-sepolia.json`'s smoke
-vault, with nothing to fill in — see the template's own header), so `npm run dev` exercises real
-chain reads. Vite never loads `.env.example` itself, same convention as the root `.env.example`.
+them at runtime): `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_VAULT_ADDRESSES` (comma-separated). Unset,
+and the page renders an honest "not configured" state, never a bundled sample. `cp .env.example
+.env.development.local` sets all three against **Arc mainnet** (chain 5042), live since
+2026-09-24 (`firstVault.createdAt`, `contracts/config/deployments/arc-mainnet.json`): RWAlly's v1
+vault, the cirBTC Vault at `0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`
+(nothing to fill in — see the template's own header), so `npm run dev` exercises real chain reads
+against the real vault. Vite never loads `.env.example` itself, same convention as the root
+`.env.example`. Base Sepolia (`contracts/config/deployments/base-sepolia.json`'s smoke vault) is
+still what the UI smoke harness (`test/lib/ui-smoke-chain.mjs`) forks locally, but it is no longer
+what a production build reads by default.
 
-**Before the Arc cutover:** set the three vars in the Cloudflare Pages build environment for this
-project, **and** update `public/_headers`' `connect-src` to the production RPC origin, in the same
-commit — see that file's own comment on the directive, and `test/csp.test.mjs`'s coupling test,
-which fails if `.env.example`'s `VITE_RPC_URL` and `_headers`' `connect-src` disagree.
+**Cutting over to a different RPC or vault:** set the three vars in the Cloudflare Pages build
+environment for this project, **and** update `public/_headers`' `connect-src` to the new RPC
+origin, in the same commit — see that file's own comment on the directive, and
+`test/csp.test.mjs`'s coupling test, which fails if `.env.example`'s `VITE_RPC_URL` and `_headers`'
+`connect-src` disagree.
 
 **`VITE_VAULT_ADDRESSES` is cross-checked against `contracts/config/deployments/*.json` in
 `npm run gate` and CI** (`scripts/vault-addresses-lint.mjs`, card A2), BLOCKING, not advisory. Every
@@ -101,8 +104,7 @@ The rest, unchanged and still worth knowing:
   beside `apps/site/functions`. This app has no Function and needs none. `apps/app/README.md`
   records the hazard from the other side: Pages picks up a Functions bundle from the working
   directory if one is sitting there.
-- **`connect-src` already names an RPC origin** (`https://sepolia.base.org`, the provable
-  Base Sepolia config — see "What it renders from" above), because this app now reads a chain
-  rather than bundling fixtures. **Before deploying against a different `VITE_RPC_URL`, update
-  `public/_headers`' `connect-src` to match, in the same commit**, or every read is refused by the
-  browser with no build-time warning.
+- **`connect-src` already names an RPC origin** (`https://rpc.mainnet.arc.io`, Arc mainnet — see
+  "What it renders from" above), because this app now reads a chain rather than bundling fixtures.
+  **Before deploying against a different `VITE_RPC_URL`, update `public/_headers`' `connect-src` to
+  match, in the same commit**, or every read is refused by the browser with no build-time warning.

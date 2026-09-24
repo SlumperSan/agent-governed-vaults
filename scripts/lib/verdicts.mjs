@@ -114,6 +114,17 @@ const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]*)\s*-->/g;
 const VERDICT_RE = /<!--\s*REVIEW-VERDICT\s+reviewer=([A-Za-z0-9_.\-]+)\s+verdict=(ACCEPT|REJECT)\s*-->/g;
 
 /**
+ * Same shape as `VERDICT_RE` but with `verdict=` left unconstrained, so it matches a token whose
+ * value the strict regex above rejects — `verdict=REQUEST_CHANGES` (GitHub's own review UI's word)
+ * being the case that motivated this. Used ONLY by `parseUnparseableVerdicts` to REPORT a token
+ * the gate saw but could not parse; it never clears or blocks anything, and a match here is never
+ * counted as a real verdict. Card #59 (PR 307): this exact shape, in a comment, held a REJECT that
+ * `roster-resolved` reported as "reviewer has not reported" — a blocking finding that never reached
+ * the gate, because the invalid value made the token invisible rather than merely rejected.
+ */
+const LOOSE_VERDICT_RE = /<!--\s*REVIEW-VERDICT\s+reviewer=([A-Za-z0-9_.\-]+)\s+verdict=([^\s>]*)\s*-->/g;
+
+/**
  * Legacy prose verdicts, for PRs written before the token existed. Block-only, by design.
  *
  * Applied to the FIRST NON-EMPTY LINE with bold markers stripped, not to the whole body — the
@@ -220,6 +231,54 @@ export function parseVerdicts(comments) {
 }
 
 /**
+ * REVIEW-VERDICT tokens whose shape the gate recognizes but whose `verdict=` value `VERDICT_RE`
+ * does not match — seen, not parsed, and rendering identically to "reviewer has not reported" in
+ * `roster-resolved`. Report-only: a match here is NEVER counted as a real verdict by anything else
+ * in this file, so it can never clear or weaken a blocker.
+ * @param {Comment[]} comments
+ * @returns {{reviewer: string, value: string, at: string}[]}
+ */
+export function parseUnparseableVerdicts(comments) {
+  const out = [];
+  for (const c of comments) {
+    LOOSE_VERDICT_RE.lastIndex = 0;
+    let m;
+    while ((m = LOOSE_VERDICT_RE.exec(c.body)) !== null) {
+      if (!/^(?:ACCEPT|REJECT)$/.test(m[2])) out.push({ reviewer: m[1], value: m[2], at: c.createdAt });
+    }
+  }
+  return out;
+}
+
+/**
+ * @typedef {object} Review   a GitHub REVIEW OBJECT (`gh pr view --json reviews`), distinct from an
+ *   issue comment — `merge-preflight.mjs` never reads this array for rule evaluation and never
+ *   will (a token here cannot clear anything; see `merge-policy.json`'s
+ *   `enforcement.nativeReviewsUnavailable`). Passed to `evaluate` for REPORTING ONLY.
+ * @property {string} author
+ * @property {string} body
+ */
+
+/**
+ * Rostered reviewers who posted a well-formed verdict token inside a REVIEW OBJECT (`gh pr review`)
+ * but have no verdict in `comments` — the token renders correctly on the PR page and is invisible
+ * to the gate, which reads issue comments only. Report-only: never counted as a verdict.
+ * @param {Review[]} reviews
+ * @param {Record<string, {verdict: Verdict, at: string}>} latestFromComments
+ * @param {string[]} rosterReviewers
+ * @returns {string[]}
+ */
+export function reviewObjectVerdicts(reviews, latestFromComments, rosterReviewers) {
+  const out = [];
+  for (const r of reviews) {
+    if (!rosterReviewers.includes(r.author) || latestFromComments[r.author]) continue;
+    VERDICT_RE.lastIndex = 0;
+    if (VERDICT_RE.test(r.body ?? '') && !out.includes(r.author)) out.push(r.author);
+  }
+  return out;
+}
+
+/**
  * Prose REJECT headings, for PRs predating the token.
  * @param {Comment[]} comments
  * @returns {{heading: string, at: string}[]}
@@ -289,10 +348,12 @@ export function runsForHead(runs, headSha) {
  * @param {PullRequest} input.pr
  * @param {Comment[]} input.comments
  * @param {Run[]} input.runs
+ * @param {Review[]} [input.reviews]   REPORT-ONLY (see `reviewObjectVerdicts`); defaults to `[]` so
+ *   every existing caller and fixture that does not supply it is unaffected.
  * @param {'advisory'|'strict'} [input.mode]
  * @returns {Decision}
  */
-export function evaluate({ pr, comments, runs, mode = 'strict' }) {
+export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) {
   /** @type {Blocker[]} */
   const blockers = [];
   /** @type {string[]} */
@@ -458,6 +519,22 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
   }
   if (legacy.length > 0 && verdicts.length === 0) {
     notes.push('this PR predates the REVIEW-VERDICT token; verdicts read by the block-only prose heuristic.');
+  }
+
+  // --- card #59: verdict tokens that reach the gate silently unparsed ------------------------
+  // Both render on the PR page identically to "reviewer has not reported", which `roster-resolved`
+  // cannot tell apart from a review still in flight. Report-only, by design (see PR body / card
+  // #59): a noisy gate is its own problem, so neither of these may block or clear anything.
+  for (const u of parseUnparseableVerdicts(comments)) {
+    notes.push(
+      `verdict token found but not parsed: reviewer=${u.reviewer} verdict=${u.value} (at ${u.at}) — ` +
+      'accepted values are ACCEPT, REJECT.',
+    );
+  }
+  if (roster) {
+    for (const author of reviewObjectVerdicts(reviews, latest, roster.reviewers)) {
+      notes.push(`${author} posted a verdict as a review object; the gate reads issue comments. Re-post with \`gh pr comment\`.`);
+    }
   }
 
   return {

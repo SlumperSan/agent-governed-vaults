@@ -12,6 +12,7 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
     // false everywhere except `.ts` extension imports of `sanctions.ts`/`sdn-addresses.ts` (card
     // 213) — those two files must import each other in a way plain Node's ESM loader can resolve
     // directly, with no extension inference, so `test/sanctions.test.mjs` can run them as a real

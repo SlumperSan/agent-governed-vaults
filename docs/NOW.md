@@ -18,19 +18,21 @@ work it describes.
 
 ## Right now
 
-- **The direction is Arc, decided 2026-09-18, and the protocol is NOT deployed there.** Settlement
-  is USDC on Arc (chain id 5042), where USDC is also the native gas asset. What exists today is the
-  survey — [`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json) — recording
-  the chain binding, the USDC predeploy at `0x3600…0000` and four Chainlink feeds, each read off
-  chain 5042 rather than copied from documentation.
+- **The protocol is DEPLOYED on Arc mainnet (chain 5042), 2026-09-24, and the first vault exists.**
+  Every address was re-read from the chain and cross-checked on two RPC endpoints; see
+  [`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
+  for the full record, including the first vault (`0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`,
+  created and registered through the intended creator Safe). Settlement is USDC on Arc, where USDC
+  is also the native gas asset.
 - **The Uniswap v3 router and the basket's one eligible asset are RESOLVED on Arc, by direct read.**
   `SwapRouter02` is `0x53bf…6f77` (`factory()` confirms it, both allow-listed selectors present in
   the router runtime), cross-checked byte-identical on four RPC endpoints. The canonical
   cross-chain Uniswap addresses are NOT Uniswap on this chain — squatted, verified rather than
   assumed. `eth_getLogs` works and is CAPPED, not refused (10k blocks public RPC, 100k on
-  Tenderly); a filtered, bounded scan returns real results. **What remains open is the basket
-  SHAPE, an owner decision, not a lookup**: Arc has a BTC leg (cirBTC) and no ETH leg, so the prior
-  two-asset design does not port. The measurements and the open decision are in
+  Tenderly); a filtered, bounded scan returns real results. **The basket SHAPE was decided and is
+  deployed**: single-asset cirBTC, no ETH leg — the deployed VaultFactory's `BLESSED_ORACLES` allows
+  only the cirBTC ChainlinkOracle and the first vault's basket is cirBTC alone. The measurements
+  behind that decision are in
   [`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md) and
   [`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json).
 - **Arc TESTNET is not a dry run, and that is measured.** Chain 5042002 carries the USDC predeploy,
@@ -155,7 +157,9 @@ re-checked it. Re-check this list before repeating it.
   therefore sat 23 s BELOW the worst gap. The figure is stable rather than still climbing: a 169 h
   walk and a 449 h walk return the same 86,423 s, and the bound is one heartbeat period plus
   publish jitter. Assets are limited to WETH + cbBTC on Base, which has no cbETH/USD feed; on Arc
-  the basket is cirBTC alone, because Arc has no ETH representation in any form. A feed deprecation
+  the basket is cirBTC alone: of the 26,187 tokens that appear in a Uniswap v3 pool on Arc, 52
+  carry an ETH- or BTC-family symbol, and every one of the 51 that is not cirBTC holds under $452
+  of depth. A feed deprecation
   fails that asset *closed*, which is safe but has no fallback.
 - **The sequencer guard has never run against a real uptime feed.** Base Sepolia leaves it
   `address(0)` by design, and Arc would too: Arc is an L1 rather than a rollup and Chainlink

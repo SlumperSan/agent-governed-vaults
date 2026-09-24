@@ -118,12 +118,66 @@ t('every sentence in copy.ts reaches the built page', () => {
   assert.deepEqual(missing, [], `copy that never reached any page:\n  ${missing.join('\n  ')}`);
 });
 
-t('the page does not claim a deployment it does not have', () => {
-  const h = html().toLowerCase();
-  for (const banned of ['is deployed on', 'now live on', 'deployed on arc', 'live on arc']) {
-    assert.ok(!h.includes(banned), `the page claims a deployment: "${banned}". Nothing is deployed.`);
+/**
+ * The deployment status the site states, derived from the deployment record rather than from this
+ * test's author. `contracts/config/deployments/arc-mainnet.json` is written when Arc is broadcast
+ * and read back; its `firstVault.address` is the one fact every "is it live" sentence hangs on.
+ *
+ * BOTH BRANCHES ASSERT. Neither is a skip: with no record, the page must say it is not deployed;
+ * with one, it must print that exact address and carry no not-deployed sentence on ANY page. The
+ * second branch reads every page, not just the homepage, because when the first vault went live
+ * (2026-09-24) the stale claims were on the About and Disclaimers pages, which the homepage-only
+ * version of this test never read. A record that exists but lacks a well-formed address throws
+ * rather than falling through to the not-deployed branch.
+ */
+const ARC_RECORD = path.join(APP, '..', '..', 'contracts', 'config', 'deployments', 'arc-mainnet.json');
+const liveVaultAddress = () => {
+  if (!existsSync(ARC_RECORD)) return null;
+  const addr = JSON.parse(readFileSync(ARC_RECORD, 'utf8')).firstVault?.address;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(addr ?? '')) {
+    throw new Error(`${ARC_RECORD} exists but firstVault.address is not an address: ${addr}`);
   }
-  assert.ok(html().includes('not yet deployed'), 'the page must say plainly that it is not deployed');
+  return addr;
+};
+
+/** Every shape a not-deployed claim has taken on this site. Lower-cased; matched against lower-cased HTML. */
+const NOT_DEPLOYED_SHAPES = [
+  'not yet deployed',
+  'not deployed',
+  'nothing is deployed',
+  'no rwally vault is live',
+  'no instance of this protocol exists',
+  'there is no address ledger',
+  'there are no addresses',
+  'nothing to deposit into',
+  'with sample data',
+];
+
+t('the site states the deployment status the deployment record gives it', () => {
+  const addr = liveVaultAddress();
+  if (addr === null) {
+    const h = html().toLowerCase();
+    for (const banned of ['is deployed on', 'now live on', 'deployed on arc', 'live on arc']) {
+      assert.ok(!h.includes(banned), `the page claims a deployment: "${banned}", and there is no deployment record.`);
+    }
+    assert.ok(h.includes('not yet deployed'), 'no deployment record exists, so the page must say plainly that it is not deployed');
+    return;
+  }
+  assert.ok(html().includes(addr), `the homepage must name the live vault ${addr}, from the deployment record`);
+  const all = allHtml();
+  assert.ok(
+    all.split(addr).length - 1 >= 2,
+    `the live vault ${addr} must be printed on the homepage and the disclaimers page`
+  );
+  const lower = all.toLowerCase();
+  const stale = NOT_DEPLOYED_SHAPES.filter((shape) => lower.includes(shape));
+  assert.deepEqual(stale, [], `the deployment record names a live vault, but the site still says: ${stale.join(' | ')}`);
+  // Stating a deployment is not inviting anyone into it. skills/rwally-claims-contract/SKILL.md
+  // keeps the OUTCOME/INVITATION shapes banned after the flip; "a vote is live" is mechanism, so the
+  // shapes below are anchored to the product, not to the bare word.
+  const invite = ['vault is live', 'is live on', 'goes live', 'now trading', 'launched on', 'mainnet is up']
+    .filter((shape) => lower.includes(shape));
+  assert.deepEqual(invite, [], `a deployment is stated as an invitation: ${invite.join(' | ')}`);
 });
 
 t('the product phrase survives as ONE contiguous string in the rendered HTML', () => {

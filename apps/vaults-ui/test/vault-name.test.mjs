@@ -71,20 +71,21 @@ test('live-vaults.ts: VITE_VAULT_NAME is read, threaded through readOneVault, an
   );
   assert.match(
     src,
-    /readOneVault\(c, address, cfg\.vaultName\)/,
+    /readOneVault\(c, address, cfg\.vaultName, cfg\.factoryAddress\)/,
     'fetchLiveVaults no longer passes cfg.vaultName into readOneVault',
   );
   assert.match(
     src,
-    /async function readOneVault\(client: PublicClient, address: string, name: string\)/,
+    /async function readOneVault\(\s*client: PublicClient,\s*address: string,\s*name: string,/,
     'readOneVault no longer accepts a name parameter',
   );
   // The actual sink: the `name` local must reach the assembleVault({ ... }) call as a bare
   // shorthand property, not be left as the old hardcoded `''`. Matched inside the return block
   // specifically, not anywhere in the file, so a `name` variable used for something unrelated
-  // could not make this pass by accident.
-  const returnBlock = /return assembleVault\(\{[\s\S]*?\n {2}\}\);/.exec(src);
-  assert.ok(returnBlock, 'no `return assembleVault({ ... })` block found in readOneVault');
+  // could not make this pass by accident. Card 211 (A2) wraps the old `return assembleVault({…})`
+  // in `return { ...assembleVault({…}), manifestVerified }`, so this matches the inner call.
+  const returnBlock = /assembleVault\(\{[\s\S]*?\n {4}\}\)/.exec(src);
+  assert.ok(returnBlock, 'no `assembleVault({ ... })` block found in readOneVault');
   assert.match(
     returnBlock[0],
     /\bname,/,
@@ -118,14 +119,19 @@ test('mutation: the wiring assertions above are not vacuous — they fail agains
   );
 });
 
-test('.env.example: VITE_VAULT_NAME is not set against the Base Sepolia smoke fixture', () => {
-  // That vault is a generic testnet fixture, not the v1 mainnet vault — see the comment this test
-  // guards. Setting a real display name against it would be a false claim shipped into every
-  // developer's local build.
+test('.env.example: VITE_VAULT_NAME is set to "cirBTC Vault" against the real Arc mainnet vault (owner decision #353)', () => {
+  // Inverted from the pre-cutover version of this test. Before this cutover, .env.example pointed
+  // at a generic Base Sepolia smoke-test fixture, and setting a real display name against it would
+  // have been a false claim shipped into every developer's local build — this test asserted the
+  // name was ABSENT for exactly that reason. .env.example now points at RWAlly's real v1 mainnet
+  // vault (card #67, `Decisions/Vault name is cirBTC Vault 2026-09-19`), so the same false-claim
+  // risk runs the other way: leaving the name unset here would render `shortAddress` instead of the
+  // name the owner decided on. `test/csp.test.mjs` additionally asserts this string reaches the
+  // built bundle, not just this file.
   const env = readFileSync(ENV_EXAMPLE, 'utf8');
-  assert.doesNotMatch(
+  assert.match(
     env,
-    /^VITE_VAULT_NAME\s*=\s*\S/m,
-    'VITE_VAULT_NAME is set to a real value in .env.example, against the Base Sepolia smoke vault',
+    /^VITE_VAULT_NAME\s*=\s*cirBTC Vault\s*$/m,
+    'VITE_VAULT_NAME is not set to exactly "cirBTC Vault" in .env.example',
   );
 });

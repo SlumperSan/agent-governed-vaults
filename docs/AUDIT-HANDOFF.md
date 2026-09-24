@@ -95,13 +95,15 @@ The adapter warning that used to sit here is retired. The live adapter is
 the #108 scoped refund, established by ancestry against `8a0e1155`, not asserted. The earlier
 adapter at `0xf3e08c8b…`, which predated both and carried a cross-order theft path, is superseded.
 
-**No mainnet deployment exists.** The protocol is built for Arc (chain id 5042, where USDC is both
-the settlement token and the native gas asset), not yet deployed there or on Base mainnet or any
-other mainnet. `docs/evidence/arc-mainnet-survey.json` records what has been read off Arc so far —
-the chain binding, the USDC predeploy, and four Chainlink feeds — and is explicitly a survey, not a
-deployable config: the Uniswap router and the basket asset addresses are still unresolved. The audit
-surface is the source at the tag above. Treat every testnet instance as evidence about the bytecode
-it actually ran, and check which commit that was before relying on it.
+**Deployed on Arc, not on Base mainnet or any other mainnet.** The protocol is deployed on Arc
+(chain id 5042, where USDC is both the settlement token and the native gas asset) since 2026-09-24
+— `contracts/config/deployments/arc-mainnet.json` — with no deployment on Base mainnet or any other
+mainnet. That record postdates the audit tag above: the audit surface is the source at the tag,
+not this deployment. `docs/evidence/arc-mainnet-survey.json` records what was read off Arc ahead
+of the deploy — the chain binding, the USDC predeploy, and four Chainlink feeds — and is superseded
+by `contracts/config/arc-mainnet.json` and the deployment record where the two disagree. Treat
+every testnet instance as evidence about the bytecode it actually ran, and check which commit that
+was before relying on it.
 
 > **Reviewers start at [audit/README.md](audit/README.md)**, the full audit package: reading
 > order, system map, trust boundaries, wiring order, per-contract walkthroughs

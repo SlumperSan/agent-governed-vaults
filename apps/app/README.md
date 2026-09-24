@@ -1,8 +1,10 @@
 # `apps/app` — the explore surface at app.rwally.com
 
-The vault explorer, v1. It renders one thing and it renders it honestly: the protocol is not
-deployed on Arc, or on any mainnet, so the protocol card says so plainly instead of showing live
-reads it does not have, above a table of vaults with no rows.
+The vault explorer, v1. It renders one thing and it renders it honestly: this static page has never
+been repointed at Arc (the protocol IS deployed there since 2026-09-24 —
+`contracts/config/deployments/arc-mainnet.json` — but nothing in this retiring surface reads it), so
+the protocol card says so plainly instead of showing live reads it does not have, above a table of
+vaults with no rows.
 
 The order used to be stated the other way round here. In `index.html` the protocol card is the first
 `<section>` and the vaults card the second, so the table is BELOW it.
@@ -11,8 +13,9 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 
 ## What is on the page, and where each fact comes from
 
-The protocol is not deployed on Arc, or on any mainnet, so there is no deployment record for this
-page to read and no address for it to call. Every fact on the page follows from that:
+This retiring, unmaintained page reads no deployment record — nothing in `app.js` was ever pointed
+at `contracts/config/deployments/arc-mainnet.json` (the protocol's real deployment record, written
+2026-09-24) or at any chain. Every fact on the page follows from that:
 
 | Thing | Source |
 |---|---|
@@ -24,7 +27,8 @@ page to read and no address for it to call. Every fact on the page follows from 
 ## Three decisions that are easy to undo by accident
 
 **1. The empty state is static markup, not a rendered value.** The sentence "This table lists no
-vaults. The protocol is not deployed on Arc, so there is nothing to list." lives in `index.html`
+vaults. The protocol is deployed on Arc, but this page has not been repointed at it, so there is
+nothing here to list." lives in `index.html`
 and is never written by `app.js`, because `app.js` writes nothing: there is no live read to produce
 it from. `test/claims.test.mjs` asserts the sentence is in the built HTML, so moving it into the
 script, or letting some future live read stand in for it, reds the guard.
@@ -52,8 +56,8 @@ no error on the page and nothing in the build output. This is invisible on `file
 local server that does not send the header, so **verify against the deployed URL, not a local
 file.** `test/claims.test.mjs` checks the markup for all three shapes for exactly this reason.
 
-`connect-src` names no third-party origin, just `'self'`. The protocol is not deployed anywhere, so
-this page makes no chain call and there is nothing to widen the policy for. The two fonts are
+`connect-src` names no third-party origin, just `'self'`. This page has not been repointed at the
+deployed protocol, so it makes no chain call and there is nothing to widen the policy for. The two fonts are
 self-hosted copies of the faces `apps/site-next` uses, so `font-src 'self'` holds and nothing is
 fetched from a font CDN.
 
@@ -62,7 +66,7 @@ fetched from a font CDN.
 ```
 src/index.html   the page, all of it
 src/app.css      the only stylesheet, palette carried from apps/site-next/src/tokens.css
-src/app.js       inert. No chain call: nothing is deployed to read
+src/app.js       inert. No chain call: this page has never been repointed at the deployment
 src/_headers     the CSP. Copied to dist/_headers, where Pages reads it from
 src/favicon.svg  the comic R on its tile, byte-identical to the site's
 src/brand/       mark-comic.svg, byte-identical to the site copy in public/brand/
@@ -83,7 +87,7 @@ node --test --test-reporter=tap apps/app/test/claims.test.mjs
 ```
 
 Seven checks: the empty-state sentence survives into the build, the page states plainly that the
-protocol is not deployed, no contract address of any kind survives into the build, no banned claim
+protocol is deployed on Arc and that this page does not read it, no contract address of any kind survives into the build, no banned claim
 shape appears in any built file, `_headers` carries every required directive and names no external
 origin in `connect-src`, the markup has no inline script or style, and the page makes no request to
 any origin at all, with `app.js` carrying no `fetch()` call.

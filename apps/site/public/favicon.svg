@@ -1,24 +1,18 @@
-<!-- The tab icon. NOT the "Rwally" comic wordmark this file used to trace — that mark was retired
-     by the 2026-09-18 blue/white pivot, and #319 fixed only this file's `aria-label` (the string a
-     screen reader speaks), never the drawn letterforms underneath it, which still read "Rwally" in
-     vector paths a screen reader never sees. A favicon is read at 16-32px, where illustrated text is
-     unreadable regardless of casing, so the fix here is not a redraw of the word — it is the same
-     non-pictorial mark `apps/vaults-ui/src/chrome.css`'s `.brand-mark` already uses: a rounded
-     gradient square, no letterform, nothing the twelve-round mark-elimination ban
-     (Design/mark-elimination-record-2026-09-18) could apply to.
-
-     Values copied from apps/site/src/tokens.css, literally, the same way scripts/build-og-card.mjs's
-     own header already argues for: this file cannot read a CSS custom property, so when the palette
-     moves, this moves with it in the same commit. --bg #070b18, --blue-bright #5b8cff, --blue
-     #2f6bff, at the masthead mark's own proportions (19px square, 5px radius -> 1024 canvas, 560
-     square, ~147 radius, centered). -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="RWAlly">
-  <rect width="1024" height="1024" fill="#070b18"/>
-  <rect x="232" y="232" width="560" height="560" rx="147" fill="url(#mark)"/>
-  <defs>
-    <linearGradient id="mark" x1="190" y1="232" x2="834" y2="792" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5b8cff"/>
-      <stop offset="1" stop-color="#2f6bff"/>
-    </linearGradient>
-  </defs>
+<!-- THRESHOLD. Replaces the placeholder rounded gradient square per the owner's brand decision,
+     Agent-Governed Vaults/Decisions/the-mark-is-threshold-2026-09-18.md, rolled out repo-wide
+     2026-09-24. Everything below is copied verbatim from Design/brand-threshold/favicon.svg — do
+     not hand-edit the geometry; regenerate from that source file if it ever changes, and rerun
+     scripts/build-favicon.mjs afterwards to refresh favicon.ico from it. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RWAlly">
+  <!-- FAVICON. The mark is a wide letterbox, so on its own it floats in a square tile with dead
+       space either side. Here it sits on the brand ground and is scaled to fill the tile, which
+       is what makes it resolve at 16px. The opening is the whole idea: if it closes up, the
+       icon has failed and the course heights are wrong, not the concept. -->
+  <rect width="64" height="64" rx="12" fill="#070b18"/>
+  <g fill="#2f6bff" transform="translate(32 32) scale(1.06) translate(-32 -32)">
+    <rect x="8" y="16" width="48" height="10" rx="2.5"/>
+    <rect x="8" y="29" width="14" height="10" rx="2.5"/>
+    <rect x="42" y="29" width="14" height="10" rx="2.5"/>
+    <rect x="8" y="42" width="48" height="10" rx="2.5"/>
+  </g>
 </svg>

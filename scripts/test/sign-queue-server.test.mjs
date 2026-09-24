@@ -8,13 +8,18 @@
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import {
-  advanceSentItems, originGateRefusal, recordSentHash,
-} from '../lib/sign-queue-server.mjs';
-import { QUEUE_PATH, readQueue, writeQueueAtomic } from '../lib/sign-queue.mjs';
+// Namespace imports for the write-capable functions ON PURPOSE (see the guard below): only
+// `originGateRefusal` (read-only) is destructured directly. `advanceSentItems`/`recordSentHash`
+// are reached ONLY through the `*Safe` wrappers, so a test that bypasses a wrapper and calls the
+// bare name is a `ReferenceError`, not a silent write to the real file.
+import * as server from '../lib/sign-queue-server.mjs';
+import * as sq from '../lib/sign-queue.mjs';
+
+const { originGateRefusal } = server;
+const { QUEUE_PATH, readQueue } = sq;
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'sign-queue-server-test-'));
 after(() => { try { rmSync(TMP, { recursive: true, force: true }); } catch { /* best effort */ } });
@@ -25,15 +30,42 @@ const tmpQueuePath = () => path.join(TMP, `q${n++}.json`);
 // omitted the `tmpQueuePath()` third argument, so every `changed:true` case (done/foreign-revert/
 // failed/grace-period-revert) defaulted to the REAL `QUEUE_PATH` and overwrote the live Sign-queue
 // file with a single fake test item — caught only by manually re-inspecting the real file after a
-// run, not by anything in this suite. Snapshot the real file's bytes before any test here runs, and
-// assert in `after` that not one byte changed. Every test in this file MUST pass an explicit
-// `tmpQueuePath()` to any function that can write.
-const REAL_QUEUE_BEFORE = existsSync(QUEUE_PATH) ? readFileSync(QUEUE_PATH, 'utf8') : null;
-after(() => {
-  const nowExists = existsSync(QUEUE_PATH);
-  const now = nowExists ? readFileSync(QUEUE_PATH, 'utf8') : null;
-  assert.equal(now, REAL_QUEUE_BEFORE, 'a test in this file wrote to the REAL Sign-queue file — every write-capable call must pass an explicit tmpQueuePath()');
-});
+// run, not by anything in this suite.
+//
+// A prior version of this guard diffed the real file's bytes before/after this whole suite ran.
+// That is unsound on this machine: the live dashboard (a separate long-running process, run from
+// C:\Users\Micha\Claude\Projects\Arc\agv-dashboard-main) polls and rewrites the SAME real queue
+// file, so any write it makes mid-run turns the byte-diff red for a reason unrelated to this file
+// — a false failure, not a caught regression. Comparing disk state can also MISS the real defect:
+// if the dashboard happens to overwrite the file again after this suite's own accidental write, the
+// "before" and "after" snapshots can coincidentally match even though a test here did write it.
+//
+// The replacement below checks THIS PROCESS's own calls instead of disk bytes, in two layers:
+//   1. Every write-capable call in this file is routed through a `*Safe` wrapper, which refuses to
+//      proceed unless the caller supplied an explicit `queuePath` that is not the real `QUEUE_PATH`.
+//      `advanceSentItems`/`recordSentHash`/`writeQueueAtomic` are imported ONLY via the `server`/
+//      `sq` namespaces above and never destructured, so a test that skips a wrapper and calls the
+//      bare name fails fast with `ReferenceError` rather than silently writing the real file.
+//   2. That alone does not prove the CALLEE actually wrote to the tmp path it was given — if
+//      `sign-queue-server.mjs` ever stopped threading its own `queuePath` parameter through to
+//      `writeQueueAtomic` internally, a test asserting only on the in-memory `queue` object would
+//      still pass while silently writing the real file. So every test whose `changed` reaches a
+//      write also reads back through `readQueue(qp)` and asserts against THAT, not just the
+//      in-memory object — proving the write landed at the path this test actually controls.
+function guardedQueuePath(queuePath, fnName) {
+  assert.ok(queuePath, `${fnName} called without an explicit tmpQueuePath() in this test file — would default to the REAL Sign-queue file`);
+  assert.notEqual(queuePath, QUEUE_PATH, `${fnName} called with the REAL QUEUE_PATH — every call in this file must use tmpQueuePath()`);
+  return queuePath;
+}
+function advanceSentItemsSafe(queue, fetchImpl, queuePath) {
+  return server.advanceSentItems(queue, fetchImpl, guardedQueuePath(queuePath, 'advanceSentItems'));
+}
+function recordSentHashSafe(id, body, fetchImpl, castFn, queuePath) {
+  return server.recordSentHash(id, body, fetchImpl, castFn, guardedQueuePath(queuePath, 'recordSentHash'));
+}
+function writeQueueAtomicSafe(queue, queuePath) {
+  return sq.writeQueueAtomic(queue, guardedQueuePath(queuePath, 'writeQueueAtomic'));
+}
 
 const FROM = '0xF000000000000000000000000000000000000f';
 const TO = '0xA000000000000000000000000000000000000a';
@@ -101,9 +133,13 @@ test('advanceSentItems: a matching, successful receipt moves the item to done �
     receipt: { status: '0x1', from: FROM, to: TO, contractAddress: null, logs: [] },
   };
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: good }), tmpQueuePath());
+  const qp = tmpQueuePath();
+  const changed = await advanceSentItemsSafe(queue, stubFetch({ [hash]: good }), qp);
   assert.equal(changed, true);
   assert.equal(queue.items[0].status, 'done');
+  // Read back from the tmp path itself, not just the in-memory `queue` object — proves the write
+  // this call made actually landed at `qp`, not somewhere else (see the guard comment up top).
+  assert.equal(readQueue(qp).items[0].status, 'done');
 
   // Same shape, but the on-chain input does not match what was frozen at send time.
   const wrongInput = {
@@ -111,7 +147,7 @@ test('advanceSentItems: a matching, successful receipt moves the item to done �
     receipt: { status: '0x1', from: FROM, to: TO, contractAddress: null, logs: [] },
   };
   const queue2 = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  await advanceSentItems(queue2, stubFetch({ [hash]: wrongInput }), tmpQueuePath());
+  await advanceSentItemsSafe(queue2, stubFetch({ [hash]: wrongInput }), tmpQueuePath());
   assert.notEqual(queue2.items[0].status, 'done');
 });
 
@@ -122,13 +158,16 @@ test('advanceSentItems: a FOREIGN tx (from does not match) reverts the item to p
     receipt: { status: '0x1', from: '0x9999999999999999999999999999999999999a', to: TO, contractAddress: null, logs: [] },
   };
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: foreign }), tmpQueuePath());
+  const qp = tmpQueuePath();
+  const changed = await advanceSentItemsSafe(queue, stubFetch({ [hash]: foreign }), qp);
   assert.equal(changed, true);
   const it = queue.items[0];
   assert.equal(it.status, 'pending');
   assert.equal(it.txHash, null);
   assert.equal(it.sentData, null);
   assert.match(it.verifyNote, /not this item's send|does not match/);
+  // Read back from the tmp path itself — proves the write landed at `qp`, not the real file.
+  assert.equal(readQueue(qp).items[0].status, 'pending');
 });
 
 test('advanceSentItems: a matching tx that genuinely REVERTED on chain goes to failed, not back to pending', async () => {
@@ -138,14 +177,14 @@ test('advanceSentItems: a matching tx that genuinely REVERTED on chain goes to f
     receipt: { status: '0x0', from: FROM, to: TO, contractAddress: null, logs: [] },
   };
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  await advanceSentItems(queue, stubFetch({ [hash]: reverted }), tmpQueuePath());
+  await advanceSentItemsSafe(queue, stubFetch({ [hash]: reverted }), tmpQueuePath());
   assert.equal(queue.items[0].status, 'failed');
 });
 
 test('advanceSentItems: a hash not yet found stays sent (still might just be propagating) — no premature revert', async () => {
   const hash = `0x${'44'.repeat(32)}`;
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: new Date().toISOString() })] };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: { tx: null, receipt: null } }), tmpQueuePath());
+  const changed = await advanceSentItemsSafe(queue, stubFetch({ [hash]: { tx: null, receipt: null } }), tmpQueuePath());
   assert.equal(changed, false);
   assert.equal(queue.items[0].status, 'sent');
 });
@@ -154,9 +193,12 @@ test('advanceSentItems: a hash not found for a LONG time (past the grace period)
   const hash = `0x${'55'.repeat(32)}`;
   const longAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1h ago
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: longAgo })] };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: { tx: null, receipt: null } }), tmpQueuePath());
+  const qp = tmpQueuePath();
+  const changed = await advanceSentItemsSafe(queue, stubFetch({ [hash]: { tx: null, receipt: null } }), qp);
   assert.equal(changed, true);
   assert.equal(queue.items[0].status, 'pending');
+  // Read back from the tmp path itself — proves the write landed at `qp`, not the real file.
+  assert.equal(readQueue(qp).items[0].status, 'pending');
 });
 
 test('advanceSentItems: a REAL tx found but still unmined past the grace period stays sent — never re-signable (V-381-r2 duplicate-vault regression)', async () => {
@@ -164,7 +206,7 @@ test('advanceSentItems: a REAL tx found but still unmined past the grace period 
   const longAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1h ago, well past grace
   const queue = { items: [pendingItem({ status: 'sent', txHash: hash, sentData: DATA, sentAt: longAgo })] };
   const tx = { hash, from: FROM, to: TO, input: DATA, blockNumber: null };
-  const changed = await advanceSentItems(queue, stubFetch({ [hash]: { tx, receipt: null } }), tmpQueuePath());
+  const changed = await advanceSentItemsSafe(queue, stubFetch({ [hash]: { tx, receipt: null } }), tmpQueuePath());
   assert.equal(changed, false);
   assert.equal(queue.items[0].status, 'sent', 'a found, unmined send must not go back to pending');
 });
@@ -175,8 +217,8 @@ const HASH = `0x${'aa'.repeat(32)}`;
 
 test('recordSentHash: a well-formed hash from the correct signer is recorded, freezing sentData now', async () => {
   const qp = tmpQueuePath();
-  writeQueueAtomic({ items: [pendingItem()] }, qp);
-  const out = await recordSentHash('x', { hash: HASH, from: FROM }, fetch, () => '', qp);
+  writeQueueAtomicSafe({ items: [pendingItem()] }, qp);
+  const out = await recordSentHashSafe('x', { hash: HASH, from: FROM }, fetch, () => '', qp);
   assert.equal(out.code, 200);
   const q = readQueue(qp);
   assert.equal(q.items[0].status, 'sent');
@@ -186,38 +228,38 @@ test('recordSentHash: a well-formed hash from the correct signer is recorded, fr
 
 test('recordSentHash: a wrong `from` refuses and changes nothing', async () => {
   const qp = tmpQueuePath();
-  writeQueueAtomic({ items: [pendingItem()] }, qp);
-  const out = await recordSentHash('x', { hash: HASH, from: '0x1111111111111111111111111111111111111111' }, fetch, () => '', qp);
+  writeQueueAtomicSafe({ items: [pendingItem()] }, qp);
+  const out = await recordSentHashSafe('x', { hash: HASH, from: '0x1111111111111111111111111111111111111111' }, fetch, () => '', qp);
   assert.equal(out.code, 400);
   assert.equal(readQueue(qp).items[0].status, 'pending');
 });
 
 test('recordSentHash: an already-sent item refuses (409), never overwriting the first hash', async () => {
   const qp = tmpQueuePath();
-  writeQueueAtomic({ items: [pendingItem({ status: 'sent', txHash: '0xalready', sentData: DATA })] }, qp);
-  const out = await recordSentHash('x', { hash: HASH, from: FROM }, fetch, () => '', qp);
+  writeQueueAtomicSafe({ items: [pendingItem({ status: 'sent', txHash: '0xalready', sentData: DATA })] }, qp);
+  const out = await recordSentHashSafe('x', { hash: HASH, from: FROM }, fetch, () => '', qp);
   assert.equal(out.code, 409);
   assert.equal(readQueue(qp).items[0].txHash, '0xalready');
 });
 
 test('recordSentHash: an item with an unmet dependency refuses', async () => {
   const qp = tmpQueuePath();
-  writeQueueAtomic({ items: [pendingItem({ dependsOn: ['missing-dep'] })] }, qp);
-  const out = await recordSentHash('x', { hash: HASH, from: FROM }, fetch, () => '', qp);
+  writeQueueAtomicSafe({ items: [pendingItem({ dependsOn: ['missing-dep'] })] }, qp);
+  const out = await recordSentHashSafe('x', { hash: HASH, from: FROM }, fetch, () => '', qp);
   assert.equal(out.code, 409);
 });
 
 test('recordSentHash: a malformed hash refuses before touching the queue at all', async () => {
   const qp = tmpQueuePath();
-  writeQueueAtomic({ items: [pendingItem()] }, qp);
-  const out = await recordSentHash('x', { hash: 'not-a-hash', from: FROM }, fetch, () => '', qp);
+  writeQueueAtomicSafe({ items: [pendingItem()] }, qp);
+  const out = await recordSentHashSafe('x', { hash: 'not-a-hash', from: FROM }, fetch, () => '', qp);
   assert.equal(out.code, 400);
   assert.equal(readQueue(qp).items[0].status, 'pending');
 });
 
 test('recordSentHash: an unknown item id 404s', async () => {
   const qp = tmpQueuePath();
-  writeQueueAtomic({ items: [pendingItem()] }, qp);
-  const out = await recordSentHash('nope', { hash: HASH, from: FROM }, fetch, () => '', qp);
+  writeQueueAtomicSafe({ items: [pendingItem()] }, qp);
+  const out = await recordSentHashSafe('nope', { hash: HASH, from: FROM }, fetch, () => '', qp);
   assert.equal(out.code, 404);
 });

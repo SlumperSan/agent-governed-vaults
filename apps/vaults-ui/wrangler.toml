@@ -40,11 +40,14 @@
 # future Function needs it; there is no Function here, so an unused flag would be
 # a claim about a capability nothing exercises.
 #
-# BEFORE THE FIRST DEPLOY THAT READS A CHAIN: `connect-src` in public/_headers is
-# `'self'`, because this app renders bundled fixtures. The moment it is pointed at
-# a live adapter, the one RPC origin has to be added to that file IN THE SAME
-# COMMIT as the code that calls it, or every read is refused by the browser and
-# the page renders empty with no build-time warning.
+# `connect-src` IN public/_headers NAMES THE LIVE RPC ORIGIN, and has since plan item 0.7 — this
+# app renders no bundled fixtures at all, only chain reads. It is `'self' https://rpc.mainnet.arc.io`
+# as of the Arc mainnet cutover (live on chain 5042 since 2026-09-24, firstVault.createdAt).
+# Repointing `VITE_RPC_URL` to a different origin — in
+# this file's Pages build environment, or in a future `.env.example` — needs `connect-src` updated
+# to match IN THE SAME COMMIT as the code that calls it, or every read is refused by the browser and
+# the page renders empty with no build-time warning. See `public/_headers`'s own comment on the
+# directive, and `test/csp.test.mjs`'s coupling test.
 
 name = "rwally-app"
 pages_build_output_dir = "dist"

@@ -30,6 +30,35 @@ export declare function planProposal(governance: string, pid: number | bigint): 
 export declare function planLegSafety(vault: string, assets: readonly string[]): readonly PlannedCall[];
 export declare function planFeeds(feeds: readonly string[]): readonly PlannedCall[];
 
+/** Card 211 (A2) — the deployment-manifest check. See `chain-reader.mjs`'s own doc comments. */
+export type ManifestState = 'verified' | 'not-found' | 'unknown';
+export declare function planFactoryVaultCount(factory: string): readonly PlannedCall[];
+export declare function planFactoryAllVaults(factory: string, count: number): readonly PlannedCall[];
+export declare function assembleManifestCheck(
+  vaultAddress: string,
+  countValue: unknown,
+  allVaultsValues: readonly unknown[],
+): ManifestState;
+
+/** Card 211 (B2) — escrow claim surface. */
+export declare function planClaimableEscrow(
+  vault: string,
+  member: string | null | undefined,
+  assets: readonly string[],
+): readonly PlannedCall[];
+export interface ClaimableEscrowEntry {
+  readonly asset: string;
+  readonly amount: bigint;
+  readonly readAt: number | null;
+}
+export interface UnreadEscrowEntry {
+  readonly asset: string;
+  readonly readAt: number | null;
+}
+export declare function assembleClaimableEscrow(
+  entries: readonly { asset: string; value: unknown; readAt?: number | null }[],
+): { claimable: readonly ClaimableEscrowEntry[]; unread: readonly UnreadEscrowEntry[] };
+
 export interface CoreReads {
   readonly navWad: bigint | null;
   readonly totalShares: bigint;
@@ -133,6 +162,15 @@ export interface AssembledVault {
   readonly totalPendingUsdc: bigint;
   readonly usdcScalar: bigint;
   readonly holderCount: number;
+  /**
+   * `null` — never `0` — when unread (card 210). "addresses with shares > 0, EXCLUDING the
+   * creator" (VaultCore.sol:107), as distinct from `holderCount`'s "creator included"
+   * (VaultCore.sol:128). This is the count `apps/web/src/seeded.mjs`'s `organicMemberBound`
+   * expects, never `holderCount` itself — the creator is the RWAlly team's own Safe, not on the
+   * seeded-persona list, so subtracting only seeded addresses from `holderCount` would silently
+   * count the creator as organic.
+   */
+  readonly nonCreatorMemberCount: number | null;
   readonly childVaultCount: number;
   readonly oracle: string;
   readonly governance: string;
@@ -155,6 +193,7 @@ export declare function assembleVault(r: {
   operatorAddress?: string;
   attested?: boolean;
   holderCount?: number;
+  nonCreatorMemberCount?: number;
   blockNumber?: bigint | number | null;
 }): AssembledVault;
 

@@ -42,6 +42,9 @@ import {
   assembleAllowSubVaults,
   planClaimableEscrow,
   assembleClaimableEscrow,
+  planFactoryVaultCount,
+  planFactoryAllVaults,
+  assembleManifestCheck,
 } from '../src/chain-reader.mjs';
 import { MISSING_IN_LIVE } from '../src/live-adapter.mjs';
 import {
@@ -102,6 +105,8 @@ test('every planned call names a real fragment in the table it claims', () => {
     ...planWiringLockSubVaultFactory(SUBVAULT_REGISTRY),
     ...planAllowSubVaults(FACTORY),
     ...planClaimableEscrow(VAULT, MEMBER, [WETH, USDC]),
+    ...planFactoryVaultCount(FACTORY),
+    ...planFactoryAllVaults(FACTORY, 3),
   ];
   assert.ok(planned.length > 0);
 
@@ -796,6 +801,84 @@ test('unread never reports a resolved token, positive or zero', () => {
     { asset: USDC, value: 999_999n, readAt: NOW },
   ]);
   assert.deepEqual(unread, [], 'both tokens resolved — neither belongs in the unread list');
+});
+
+// ── A2 (card 211): calldata vs deployment manifest ──────────────────────────────────────────────
+
+test('planFactoryVaultCount plans exactly one call, VaultFactory.vaultCount()', () => {
+  const planned = planFactoryVaultCount(FACTORY);
+  assert.equal(planned.length, 1);
+  assert.equal(planned[0].fn, 'vaultCount');
+  assert.equal(planned[0].address, FACTORY);
+});
+
+test('planFactoryAllVaults plans one allVaults(i) call per index, in order', () => {
+  const planned = planFactoryAllVaults(FACTORY, 3);
+  assert.equal(planned.length, 3);
+  assert.deepEqual(planned.map((c) => c.args), [[0], [1], [2]]);
+  for (const c of planned) assert.equal(c.fn, 'allVaults');
+});
+
+test('planFactoryAllVaults(factory, 0) plans nothing', () => {
+  assert.deepEqual(planFactoryAllVaults(FACTORY, 0), []);
+});
+
+test("assembleManifestCheck: the vault address is one of the factory's own entries — verified", () => {
+  const state = assembleManifestCheck(VAULT, 2n, [hexAddr('99'), VAULT]);
+  assert.equal(state, 'verified');
+});
+
+test('assembleManifestCheck is case-insensitive on the address comparison', () => {
+  const mixedCase = '0x' + hexAddr('a5').slice(2).toUpperCase();
+  const state = assembleManifestCheck(mixedCase, 1n, [hexAddr('a5').toLowerCase()]);
+  assert.equal(state, 'verified');
+});
+
+test("assembleManifestCheck: a complete, successful read that does NOT name this address — not-found", () => {
+  const state = assembleManifestCheck(VAULT, 2n, [hexAddr('99'), hexAddr('98')]);
+  assert.equal(state, 'not-found');
+});
+
+test('assembleManifestCheck: vaultCount() itself failed to decode — unknown, never not-found', () => {
+  assert.equal(assembleManifestCheck(VAULT, undefined, []), 'unknown');
+  assert.equal(assembleManifestCheck(VAULT, 'not-a-bigint', []), 'unknown');
+});
+
+test('assembleManifestCheck: ONE allVaults(i) entry failed to decode — unknown, never not-found', () => {
+  // Two entries expected (count says 2n), but only one resolved — the missing one is exactly the
+  // one that could have matched, so this must NOT report a confident negative.
+  const state = assembleManifestCheck(VAULT, 2n, [hexAddr('99'), undefined]);
+  assert.equal(state, 'unknown');
+});
+
+test('assembleManifestCheck: a malformed entry (wrong shape, not a clean decode failure) is also unknown', () => {
+  const state = assembleManifestCheck(VAULT, 1n, ['not-an-address']);
+  assert.equal(state, 'unknown');
+});
+
+test('assembleManifestCheck: fewer resolved entries than count claims — unknown, not a silent short scan', () => {
+  // If the caller ever mis-plans round 2 (fewer calls than `count`), this must not quietly treat
+  // "what I happened to read" as "the whole manifest" — see this function's own header.
+  const state = assembleManifestCheck(VAULT, 3n, [hexAddr('99'), VAULT]);
+  assert.equal(state, 'unknown');
+});
+
+test('MUTATION: reporting not-found on ANY unread entry (rather than unknown) is caught by the tests above', () => {
+  // The defect this reintroduces: a version of assembleManifestCheck that skipped the per-entry
+  // decode check and only inspected the entries that DID resolve. Reintroducing that shape here,
+  // inline, and confirming the earlier assertions would have failed against it.
+  function buggyAssemble(vaultAddress, countValue, allVaultsValues) {
+    if (typeof countValue !== 'bigint') return 'unknown';
+    const resolved = allVaultsValues
+      .filter((v) => typeof v === 'string' && /^0x[0-9a-fA-F]{40}$/.test(v))
+      .map((v) => v.toLowerCase());
+    return resolved.includes(vaultAddress.toLowerCase()) ? 'verified' : 'not-found';
+  }
+  // Same input as "ONE allVaults(i) entry failed to decode" above — the real function says
+  // 'unknown'; the buggy one says 'not-found', which is the false confident-negative this guard
+  // exists to prevent.
+  assert.equal(buggyAssemble(VAULT, 2n, [hexAddr('99'), undefined]), 'not-found');
+  assert.equal(assembleManifestCheck(VAULT, 2n, [hexAddr('99'), undefined]), 'unknown');
 });
 
 // ── The two lists stay complements of each other ────────────────────────────────────────────────
