@@ -177,7 +177,7 @@ permanently, and every NAV path keeps answering. Accepted as residual register *
   (row 12). Tell members to exit, and say plainly that the vault is still *quoting* prices. This
   is the incident where "the canary is quiet" and "the protocol is fine" come apart.
 - **Exits under drift:** on a vault with **no sub-vaults** (the launch shape, since `Deploy.s.sol`
-  sets `allowSubVaults = false`), drift does not change how many tokens an exit pays out. `_settleExit` sizes the in-kind slice
+  sets `allowSubVaults = false`), drift does not change the pre-fee pro-rata slice an exit is sized from; it changes only the performance fee withheld from that slice (at most 10% of the payout on +1, none on −1). `_settleExit` sizes the in-kind slice
   pro-rata from `assetBalance` (`test_harmModel_driftDoesNotRobAnExitingMember`), but the oracle
   still *values* that slice to set the performance fee, and the fee IS withheld from the member's
   actual tokens: drift costs a bounded, one-directional haircut of up to the 10% fee clamp, not

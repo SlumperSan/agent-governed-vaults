@@ -49,7 +49,7 @@ import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
 ///    mints the new depositor excess shares and dilutes every existing member, well past 10%; that
 ///    harm has no bound here. Exit: `_settleExit` pays a member their pro-rata slice of
 ///    `assetBalance` and `idleUsdc`, and the oracle only values the payout, never sizes it, so drift
-///    does not change the token quantity paid out. But that valuation sets the performance fee, and the fee IS
+///    does not change the pre-fee pro-rata slice. But that valuation sets the performance fee, and the fee IS
 ///    withheld from the member's actual tokens: a +1-decimal drift overstates the gain and charges
 ///    a fee of at most 10% of the payout (the fee clamp), while a −1-decimal drift charges none. A
 ///    re-check that fail-closed on a routine swap would instead freeze `navWad`, `deposit` AND
