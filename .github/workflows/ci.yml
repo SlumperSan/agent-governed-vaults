@@ -57,25 +57,70 @@ jobs:
 
   slither:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1
         with:
           version: v1.7.1
-      - run: cd contracts && forge build
+      - run: forge build
+      # Card 134. Pinned to the exact version contracts/slither-baseline.json was generated
+      # against (docs/reviews/SLITHER-TRIAGE.md records the disposition history). Not
+      # crytic/slither-action: that action's own fail-on/cwd behaviour is undocumented here and
+      # would be a second, unverified source of pass/fail on top of the check below: this job now
+      # owns Slither's invocation AND its own verdict, both readable in this file. A venv, never a
+      # global pip install: ubuntu-latest's system Python is externally-managed (PEP 668) and
+      # `pip install` outside a venv can refuse outright; a venv also can't collide with whatever
+      # Python packages a future step in this job installs.
+      #
+      # The eth-*/rlp/hexbytes pins below matter for reproducibility in general -- without them
+      # slither-analyzer==0.11.6 alone resolves to whatever is newest and compatible on the day the
+      # cache is cold. They do NOT fix the one measured count drift docs/reviews/SLITHER-TRIAGE.md
+      # records (VaultCore._mintShares's `incorrect-equality` count moving 1 -> 2 in a fresh venv):
+      # a venv built from these exact pins still reproduces it. That drift is tolerated by
+      # scripts/slither_baseline_check.py's FUZZY_COUNT_KEYS instead, deliberately scoped to the one
+      # key actually observed to move.
+      - run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet \
+            slither-analyzer==0.11.6 \
+            eth-abi==5.2.0 \
+            eth-account==0.13.7 \
+            eth-keyfile==0.8.1 \
+            eth-keys==0.7.0 \
+            eth-rlp==2.2.0 \
+            eth-typing==6.0.0 \
+            eth-utils==6.0.0 \
+            hexbytes==1.3.1 \
+            pycryptodome==3.23.0 \
+            rlp==4.1.0 \
+            web3==7.16.0
       - name: Slither
-        uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v0.4.0
-        with:
-          target: contracts/
-          # Anchored on purpose (Sprint 10, F-3). The old pattern was
-          # "lib|test|script" — an unanchored regex, so it also matched
-          # src/lib/, and SafeTransferLib, BoundedCall and Checkpoints were
-          # silently excluded from every Slither run this project ever did.
-          # ~150 LoC of Medium-risk primitives carrying the H-1 and H-2 fixes.
-          # Only Foundry's dependency dir (contracts/lib/), test/ and script/
-          # are meant to be filtered. Keep the anchors.
-          slither-args: --filter-paths "^lib/|^test/|^script/"
-        continue-on-error: true  # advisory until the audit-prep triage in the runbook
+        # This step used to carry `continue-on-error: true`, which made the required `slither`
+        # check green regardless of what Slither reported -- a required check over a gate that
+        # could never fail. It no longer does. `--fail-none` is required here, not cosmetic:
+        # Slither's OWN default (`--fail-pedantic`, read from slither/__main__.py) exits nonzero
+        # on ANY finding, which would fail this step -- and the job -- on every one of the 242
+        # ALREADY-ACCEPTED findings on protocol/main, before the baseline check below ever runs.
+        # `rm -f` first because Slither refuses to overwrite an existing --json file (silently
+        # keeps the old one, exit 0) -- a stale report here would make the check below grade
+        # yesterday's tree. The check step, not this one, is what can fail this job now.
+        # Anchored on purpose (Sprint 10, F-3). The old pattern was "lib|test|script" — an
+        # unanchored regex, so it also matched src/lib/, and SafeTransferLib, BoundedCall and
+        # Checkpoints were silently excluded from every Slither run this project ever did. Only
+        # Foundry's dependency dir (lib/), test/ and script/ are meant to be filtered.
+        run: rm -f slither-report.json && .venv/bin/slither . --filter-paths "^lib/|^test/|^script/" --fail-none --json slither-report.json
+      # Every finding above is either fixed or dispositioned with a one-line reason in
+      # docs/reviews/SLITHER-TRIAGE.md and counted into contracts/slither-baseline.json (see that
+      # script's module docstring for why the key it matches on carries no line number: Slither's
+      # own per-finding id is a hash that, for a handful of detectors, depends on WHICH of several
+      # equivalent comparisons/reads it happened to bundle into one finding this run -- measured to
+      # change on an unrelated file elsewhere in contracts/src, with the flagged file byte-for-byte
+      # unchanged. A finding whose (check, contract, function) is NOT already in the baseline still
+      # reds this job.
+      - run: python3 scripts/slither_baseline_check.py slither-report.json slither-baseline.json
 
   backend:
     runs-on: ubuntu-latest
