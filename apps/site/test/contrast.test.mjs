@@ -214,8 +214,9 @@ test('mutation: each assertion fails against the values that were there before t
 });
 
 test('--blue is still the brand accent and is still used only where nothing reads on it', () => {
-  // The fix deliberately did NOT move --blue: it is the mark's gradient and the base of
-  // --blue-soft and --blue-line, none of which carries a label. This asserts the split holds —
+  // The fix deliberately did NOT move --blue: it is the Threshold mark's own fill (single accent,
+  // no gradient) and the base of --blue-soft and --blue-line, none of which carries a label. This
+  // asserts the split holds —
   // if --blue comes back as a control fill, the first test would catch the label and this
   // catches the intent.
   assert.equal(T.get('--blue'), '#2f6bff', '--blue moved; if that was deliberate, re-measure everything that reads it');

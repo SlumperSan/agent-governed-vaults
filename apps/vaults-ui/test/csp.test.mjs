@@ -246,6 +246,12 @@ test("the favicon's literal colours match apps/site/src/tokens.css, not a hand-c
   // Both surfaces read this file (src/styles.css `@import`s it; chrome.css's own header names it
   // canonical). An SVG cannot read a CSS custom property, so the values are copied literally here
   // and this pins them against drift, the same way the connect-src/.env.example test above does.
+  //
+  // ONLY --bg AND --blue, DELIBERATELY. The favicon (Threshold, Design/brand-threshold/favicon.svg)
+  // is the brand ground plus a single-accent fill — no --blue-bright anywhere in it. That is the
+  // 2026-09-18 decision's own rule, not an oversight: "two blues collapse into one muddy shape at
+  // 16px", so a second blue reappearing here is a regression, not a palette update, and the
+  // assertion below catches it rather than pinning a colour the mark is required not to use.
   const svg = readFileSync(join(APP, 'public', 'favicon.svg'), 'utf8');
   const tokens = readFileSync(join(APP, '..', 'site', 'src', 'tokens.css'), 'utf8');
   const bg = /--bg:\s*(#[0-9a-f]{6})/i.exec(tokens);
@@ -253,16 +259,16 @@ test("the favicon's literal colours match apps/site/src/tokens.css, not a hand-c
   const blueBright = /--blue-bright:\s*(#[0-9a-f]{6})/i.exec(tokens);
   assert.ok(bg && blue && blueBright, 'tokens.css is missing --bg, --blue or --blue-bright');
   assert.ok(svg.includes(bg[1]), `favicon.svg background does not match tokens.css --bg (${bg[1]})`);
+  assert.ok(svg.includes(blue[1]), `favicon.svg mark does not match tokens.css --blue (${blue[1]})`);
   assert.ok(
-    svg.includes(blueBright[1]),
-    `favicon.svg gradient does not match tokens.css --blue-bright (${blueBright[1]})`,
+    !svg.includes(blueBright[1]) && !/linearGradient/i.test(svg),
+    'favicon.svg carries a second blue or a gradient — the mark is single-accent by the 2026-09-18 decision',
   );
-  assert.ok(svg.includes(blue[1]), `favicon.svg gradient does not match tokens.css --blue (${blue[1]})`);
 });
 
-test('the favicon is the shared non-pictorial mark — no letterform for a mark-elimination ban to apply to', () => {
+test('the favicon is the Threshold mark — no letterform for a mark-elimination ban to apply to', () => {
   const svg = readFileSync(join(APP, 'public', 'favicon.svg'), 'utf8');
-  assert.ok(!/<path\b/i.test(svg), 'a <path> element is how a pictorial mark gets drawn — this must be rect + gradient only');
+  assert.ok(!/<path\b/i.test(svg), 'a <path> element is how a pictorial mark gets drawn — this must be rects only');
   assert.ok(!/<text\b/i.test(svg), 'a <text> element would render a letterform');
 });
 

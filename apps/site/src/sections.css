@@ -14,11 +14,10 @@
 .nav-inner { width: 100%; max-width: 1160px; margin: 0 auto; display: flex; align-items: center; gap: 24px; }
 
 .brand { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; }
-.brand-mark {
-  width: 19px; height: 19px; border-radius: 5px;
-  background: linear-gradient(140deg, var(--blue-bright), var(--blue));
-  box-shadow: 0 0 14px rgba(47, 107, 255, 0.5);
-}
+/* The Threshold mark, rendered inline by `Shell.tsx`'s `BrandMark` — sized to its own cropped
+   viewBox (54:39) rather than forced into the old 19px square, which would squeeze the opening the
+   mark exists to keep visible. `aspect-ratio` keeps it undistorted as `height` scales. */
+.brand-mark { display: block; height: 20px; width: auto; aspect-ratio: 54 / 39; flex-shrink: 0; }
 .brand-name { font-weight: 650; letter-spacing: -0.015em; font-size: 16px; }
 
 .nav-links { display: flex; gap: 22px; margin-left: 12px; flex: 1; }
