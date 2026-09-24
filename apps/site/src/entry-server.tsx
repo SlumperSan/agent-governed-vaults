@@ -1,6 +1,7 @@
 import { renderToString } from 'react-dom/server';
 import { About } from './About';
 import { App } from './App';
+import { CorrectionLog } from './CorrectionLog';
 import { Disclaimers } from './Disclaimers';
 import { Docs } from './Docs';
 import { HowItWorks } from './HowItWorks';
@@ -22,6 +23,8 @@ export function render(page: ShellPage): string {
       return renderToString(<Docs />);
     case 'disclaimers.html':
       return renderToString(<Disclaimers />);
+    case 'correction-log.html':
+      return renderToString(<CorrectionLog />);
     case '404.html':
       return renderToString(<NotFound />);
     default: {
