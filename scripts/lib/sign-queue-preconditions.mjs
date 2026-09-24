@@ -7,6 +7,9 @@
  * single item's failed read cannot take the rest of the panel down (`scripts/dashboard.mjs` wraps
  * each call in `Promise.allSettled` on top of this, matching `runLaunchChecks`'s own discipline).
  */
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ethCall, ethChainId, ethGetCode, ethGetTransactionCountPending, rpcCall,
 } from './chain-rpc.mjs';
@@ -16,11 +19,33 @@ import { P, STATUS } from './proposal-decode.mjs';
 const ARC_RPC = 'https://rpc.mainnet.arc.io';
 const ARC_CHAIN_ID = 5042;
 const BASE_SEPOLIA_RPC = 'https://sepolia.base.org';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const encodeAddr = (a) => a.replace(/^0x/, '').toLowerCase().padStart(64, '0');
 const encodeUint = (n) => BigInt(n).toString(16).padStart(64, '0');
 const decodeAddr = (word) => `0x${word.slice(-40)}`;
 const decodeBool = (word) => BigInt(`0x${word}`) !== 0n;
+
+// VaultCore/USDC selectors used by the persona-deposit preconditions below — `cast sig`, not
+// hand-typed (scripts/test/persona-deposit.test.mjs re-derives each one independently).
+const SEL_MIN_DEPOSIT_USDC = '0xd98656fd'; // minDepositUsdc()
+const SEL_NAV_WAD = '0xd09074c0'; // navWad()
+const SEL_SHARES_OF = '0xf5eb42dc'; // sharesOf(address)
+const SEL_PENDING_DEPOSIT = '0x3a64b492'; // pendingDeposit(address)
+const SEL_BALANCE_OF = '0x70a08231'; // balanceOf(address) — ERC-20
+const SEL_ALLOWANCE = '0xdd62ed3e'; // allowance(address,address) — ERC-20
+
+/** Arc pays gas in USDC itself (`contracts/config/arc-mainnet.json`'s `usdcNote`: "On Arc USDC is
+ * ALSO the native gas asset"), CONFIRMED by reading `eth_getBalance` and `USDC.balanceOf` on the
+ * same address on 2026-09-23 (rpc.mainnet.arc.io): 11069932331621126434 / 1e18 and 11069932 / 1e6
+ * both equal 11.069932 — the same balance through two decimal presentations, not two ledgers. The
+ * gas price read on that RPC was 20,100,000,000 wei; three light calls (approve/deposit/activate)
+ * at a generous 500,000 gas total costs roughly 1.005e16 wei, i.e. ~0.01 USDC — three orders of
+ * magnitude below this headroom, which is sized for a gas-price spike rather than the median case.
+ * A persona funded with EXACTLY the deposit amount would otherwise pass the approve item's balance
+ * check, pay gas for it, and then have the deposit item correctly (but avoidably) refuse — so this
+ * is required as headroom above `amount` on the APPROVE item specifically. */
+const GAS_HEADROOM_RAW = 1_000_000n; // 1 USDC (6 decimals)
 
 /**
  * The nonce gate: MetaMask picks the nonce, so a stray transaction from the same deployer between
@@ -136,5 +161,179 @@ export async function finalizePreconditionRefusal(fetchImpl, governance, proposa
     return `proposal ${proposalId} is Active but still within its reveal window (chain time ${nowSec}, `
       + `deadline ${revealDeadline}) — finalize() would revert WrongPhase before then`;
   }
+  return null;
+}
+
+// ───────────────────────── persona-deposit (card 210 / persona-deposit.mjs) ─────────────────────────
+
+/**
+ * `Governance`/`VaultCore`'s own preconditions for the approve/deposit pair of a persona-routed
+ * deposit — `_deposit` (`contracts/src/VaultCore.sol:407-435`): amount must clear
+ * `minDepositUsdc()` (read LIVE here rather than trusted from `contracts/config/arc-mainnet.json`,
+ * which the builder also checks at build time — this is the defence against the config and the
+ * chain having drifted apart since), the depositor's USDC balance must cover it (else the
+ * `transferFrom` reverts), and `navWad()` must not revert (VaultCore's own freeze: "Reverts while
+ * the oracle breaker is tripped — freezing everything, including exits, by design (K-4)",
+ * VaultCore.sol:302-303). `checkAllowance` additionally requires `USDC.allowance(from, vault) >=
+ * amount` — true only for the deposit item, since checking it on the approve item would refuse the
+ * very item that sets the allowance. On the APPROVE item (`checkAllowance: false`), the balance
+ * check additionally requires `GAS_HEADROOM_RAW` above `amount` — see that constant's own comment:
+ * gas on Arc is paid in USDC itself, so a persona funded with EXACTLY the deposit amount would pass
+ * this check, spend some of it on the approve item's own gas, and then have the DEPOSIT item
+ * correctly but avoidably refuse for insufficient balance.
+ * @param {typeof fetch} fetchImpl
+ * @param {{vault:string, usdc:string, from:string, amountUsdcRaw:string|number|bigint, checkAllowance:boolean}} p
+ */
+export async function personaDepositPreconditionRefusal(fetchImpl, {
+  vault, usdc, from, amountUsdcRaw, checkAllowance,
+}) {
+  const amount = BigInt(amountUsdcRaw);
+  const [minR, balR, navR] = await Promise.all([
+    ethCall(fetchImpl, ARC_RPC, vault, SEL_MIN_DEPOSIT_USDC),
+    ethCall(fetchImpl, ARC_RPC, usdc, `${SEL_BALANCE_OF}${encodeAddr(from)}`),
+    ethCall(fetchImpl, ARC_RPC, vault, SEL_NAV_WAD),
+  ]);
+  if (!minR.ok) return `could not read vault.minDepositUsdc(): ${minR.reason}`;
+  const minDeposit = BigInt(minR.result);
+  if (amount < minDeposit) {
+    return `amount ${amount} is below vault.minDepositUsdc() (${minDeposit}) — deposit() would revert BelowMinDeposit`;
+  }
+  if (!balR.ok) return `could not read USDC.balanceOf(${from}): ${balR.reason}`;
+  const balance = BigInt(balR.result);
+  const balanceNeeded = checkAllowance ? amount : amount + GAS_HEADROOM_RAW;
+  if (balance < balanceNeeded) {
+    return checkAllowance
+      ? `${from}'s USDC balance is ${balance}, below the ${amount} this item needs — deposit would revert on the transferFrom`
+      : `${from}'s USDC balance is ${balance}, below ${balanceNeeded} (the ${amount} deposit plus `
+        + `${GAS_HEADROOM_RAW} headroom for this item's own gas — Arc pays gas in USDC) — fund more before approving`;
+  }
+  if (!navR.ok) {
+    return `vault.navWad() reverted (${navR.reason}) — the oracle breaker looks tripped, so the vault is frozen for deposits`;
+  }
+  if (checkAllowance) {
+    const allowR = await ethCall(fetchImpl, ARC_RPC, usdc, `${SEL_ALLOWANCE}${encodeAddr(from)}${encodeAddr(vault)}`);
+    if (!allowR.ok) return `could not read USDC.allowance(${from}, ${vault}): ${allowR.reason}`;
+    const allowance = BigInt(allowR.result);
+    if (allowance < amount) {
+      return `USDC.allowance(${from}, ${vault}) is ${allowance}, below the ${amount} this deposit needs — the approve item must land first`;
+    }
+  }
+  return null;
+}
+
+/**
+ * `VaultCore.activate`'s own precondition (`contracts/src/VaultCore.sol:440-445`):
+ * `pendingDeposit(member).amountUsdc > 0 && block.timestamp >= availableAt`. Reads
+ * `pendingDeposit(from)` and the chain's own clock on the SAME connection — the same discipline
+ * `finalizePreconditionRefusal` above already uses, since a local wall clock is not guaranteed to
+ * agree with the chain's.
+ * @param {typeof fetch} fetchImpl @param {{vault:string, from:string}} p
+ */
+export async function personaActivatePreconditionRefusal(fetchImpl, { vault, from }) {
+  const [pendR, blockR] = await Promise.all([
+    ethCall(fetchImpl, ARC_RPC, vault, `${SEL_PENDING_DEPOSIT}${encodeAddr(from)}`),
+    rpcCall(fetchImpl, ARC_RPC, 'eth_getBlockByNumber', ['latest', false]),
+  ]);
+  if (!pendR.ok) return `could not read vault.pendingDeposit(${from}): ${pendR.reason}`;
+  const hex = pendR.result.replace(/^0x/, '');
+  // The public getter for `struct PendingDeposit { uint256 amountUsdc; uint64 availableAt; }`
+  // returns each field as its own right-aligned 32-byte word, regardless of packed storage layout.
+  const amountUsdc = BigInt(`0x${hex.slice(0, 64)}`);
+  const availableAt = BigInt(`0x${hex.slice(64, 128)}`);
+  if (amountUsdc === 0n) {
+    return `vault has no pending deposit for ${from} — it may already have activated, taken the immediate-mint path, or been cancelled`;
+  }
+  if (!blockR.ok) return `could not read the chain's own clock: ${blockR.reason}`;
+  const nowSec = BigInt(blockR.result.timestamp);
+  if (nowSec < availableAt) {
+    return `${from}'s pending deposit is not yet activatable — chain time ${nowSec}, available at ${availableAt} `
+      + '(VaultCore.OBSERVATION_WINDOW is 4 hours from the deposit)';
+  }
+  return null;
+}
+
+/**
+ * Card 210 (Decisions/Seed agent personas 2026-09-23.md): every persona-routed item must name an
+ * EOA that is actually disclosed, under the matching persona, in `docs/seeded-addresses.json`
+ * (PR #391) — refuses with a clear message when that file is not present in this checkout rather
+ * than silently skipping the check. Deliberately synchronous (a filesystem read, not a chain read)
+ * and does not import `scripts/lib/seeded-addresses.mjs` statically: that module (and the file it
+ * validates) do not exist on `protocol/main` as of this writing, and a static import would make
+ * loading THIS file — used by every other precondition too — throw before Arc's own deploy/vault
+ * checks could ever run.
+ * @param {string} from @param {string} persona @param {string} [root] injectable for tests only —
+ *   real callers always use the repo root this module itself lives under
+ */
+export function seededPersonaRefusal(from, persona, root = ROOT) {
+  const seededPath = path.join(root, 'docs', 'seeded-addresses.json');
+  if (!existsSync(seededPath)) {
+    return 'docs/seeded-addresses.json not found in this checkout — the seeded-persona disclosure '
+      + 'list (PR #391) has not landed yet; refusing to sign a persona-routed item without it';
+  }
+  let doc;
+  try {
+    doc = JSON.parse(readFileSync(seededPath, 'utf8'));
+  } catch (e) {
+    return `docs/seeded-addresses.json is not valid JSON: ${/** @type {Error} */ (e).message}`;
+  }
+  if (!Array.isArray(doc?.addresses)) return 'docs/seeded-addresses.json has no "addresses" array';
+  const entry = doc.addresses.find(
+    (e) => typeof e?.address === 'string' && e.address.toLowerCase() === from.toLowerCase(),
+  );
+  if (!entry) {
+    return `${from} is not listed in docs/seeded-addresses.json — refusing to sign a persona-routed item for an undisclosed address`;
+  }
+  if (entry.persona !== persona) {
+    return `${from} is listed in docs/seeded-addresses.json under persona "${entry.persona}", not `
+      + `"${persona}" — refusing: this item was built for the wrong persona`;
+  }
+  return null;
+}
+
+/**
+ * Ordering gate (card 210, owner pivot 2026-09-23): the SECOND persona's deposit item must not be
+ * signable until the FIRST persona's deposit has actually minted shares. `sharesOf` stays zero for
+ * the entire 4-hour pending-deposit window (VaultCore.sol:407-435), so this is keyed off the first
+ * persona's ACTIVATE item, not its deposit item — `_activatePending` (VaultCore.sol:473-479) is the
+ * one call that mints. (The task that briefed this builder said "the first persona's deposit item
+ * is done"; shares do not exist at that point, only after activation, so this function reads that
+ * as shorthand for "the first persona's deposit has landed and activated" — see this repo's
+ * CLAUDE.md merge-bar section on saying which reading of an ambiguous instruction was taken rather
+ * than resolving it silently.)
+ *
+ * "Its recorded post-check", as briefed: the primary check reads the first persona's ACTIVATE
+ * item's own STORED `postCheck` (`recordPersonaPostCheck`, `scripts/lib/sign-queue-server.mjs`) —
+ * `sharesOfHolder > 0` and `navWad` present — rather than a fresh chain read. A LIVE `sharesOf`/
+ * `navWad` read runs as an extra, belt-and-braces check beyond that snapshot (chain state can move
+ * between the postCheck being recorded and this gate being evaluated — an exit, a freeze).
+ * @param {typeof fetch} fetchImpl
+ * @param {{vault:string, firstPersonaFrom:string, firstActivateDone:boolean, firstActivatePostCheck:({sharesOfHolder:string|null, navWad:string|null}|null|undefined)}} p
+ */
+export async function personaOrderingGateRefusal(fetchImpl, {
+  vault, firstPersonaFrom, firstActivateDone, firstActivatePostCheck,
+}) {
+  if (!firstActivateDone) {
+    return `waiting on the first persona (${firstPersonaFrom})'s deposit to activate before a second persona may deposit`;
+  }
+  if (!firstActivatePostCheck || firstActivatePostCheck.sharesOfHolder == null) {
+    return `the first persona (${firstPersonaFrom})'s activate item is done but has no recorded post-check yet — `
+      + 'waiting for sharesOf/navWad to be recorded before a second persona may deposit';
+  }
+  if (BigInt(firstActivatePostCheck.sharesOfHolder) === 0n) {
+    return `the first persona (${firstPersonaFrom})'s recorded post-check shows sharesOf 0 — the deposit has not actually minted shares`;
+  }
+  if (firstActivatePostCheck.navWad == null) {
+    return `the first persona (${firstPersonaFrom})'s recorded post-check has no navWad reading — refusing until NAV was confirmed readable at activation`;
+  }
+  // Extra live check beyond the recorded snapshot above.
+  const [sharesR, navR] = await Promise.all([
+    ethCall(fetchImpl, ARC_RPC, vault, `${SEL_SHARES_OF}${encodeAddr(firstPersonaFrom)}`),
+    ethCall(fetchImpl, ARC_RPC, vault, SEL_NAV_WAD),
+  ]);
+  if (!sharesR.ok) return `could not read vault.sharesOf(${firstPersonaFrom}): ${sharesR.reason}`;
+  if (BigInt(sharesR.result) === 0n) {
+    return `vault.sharesOf(${firstPersonaFrom}) reads 0 right now — the first persona's shares may have since exited`;
+  }
+  if (!navR.ok) return `vault.navWad() is not readable right now (${navR.reason}) — refusing the second persona's deposit until NAV is readable`;
   return null;
 }
