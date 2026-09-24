@@ -514,6 +514,227 @@ test('the operator\'s lack of power is enumerated, never claimed as a universal'
   );
 });
 
+// ---------------------------------------------------------------------------------------------
+// Guard 7 — A VOTE AUTHORISES TRADES. IT DOES NOT AUTHORISE EVERY CHANGE.
+//
+// This family had NO guard at all until 2026-09-18, and the gap was not noticed because the file
+// looks thorough: eleven tests, none of them about votes authorising anything. A file containing
+// "Nothing rebalances until a proposal passes. No silent trades." passed every one. PR 306 was
+// rejected for exactly this shape by a human, which is the only reason it did not ship.
+//
+// THE CLAIM SPLITS IN TWO AND THE HALVES HAVE OPPOSITE TRUTH VALUES. That is why one guard is not
+// enough and why a single banned phrase would be wrong.
+//
+//   WHAT THE VAULT HOLDS changes constantly with no vote. Read VaultCore: `deposit` (:392, :403),
+//   `activate` (:440 — its own NatSpec says "Callable by anyone"), `skipWindow` (:463),
+//   `requestExit`/`settleQueuedExit` (:551, :591 — also callable by anyone), and
+//   `pullChildEscrow` (:868), which is `external` with NO caller gate and credits `assetBalance`
+//   directly. A blanket "nothing changes without a vote" is therefore FALSE TODAY, in seven places.
+//
+//   WHAT THE VAULT TRADES is gated. There are exactly THREE `msg.sender == address(governance)`
+//   requires in VaultCore — :786, :824 and :900 — and the only call to
+//   `IExecutionAdapter.executeSwap` in the contract sits inside the third of them,
+//   `executeRebalance`. So "no silent trades" is TRUE today.
+//
+// A GUARD THAT BANNED THE TRADE CLAIM WOULD BE WRONG, AND ONE THAT PERMITTED IT WOULD GO SILENT
+// EXACTLY WHEN IT MATTERS. The exit-swap change now being specified removes
+// `require(msg.sender == address(governance))` from the only swap path in the protocol. The moment
+// it lands, "no silent trades" becomes false and every surface carrying it becomes a false claim —
+// and the plan of record assumes CI reds when copy and contract disagree.
+//
+// So guard 7b does not encode a verdict. IT READS THE CONTRACT AND RE-DERIVES ONE. A file may say
+// the vault does not trade without a vote only while every `executeSwap` call site is enclosed by
+// a governance require. When that stops being true the test reds, names the file making the claim
+// AND the call site that falsified it, and the copy has to change in the same commit as the code.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The blanket form: a vote gates EVERYTHING. False in seven places, listed above.
+ *
+ * Leg 1 used to require the movement verb DIRECTLY after "nothing" / "no <noun>" (one optional
+ * "ever"). That is a WORD SEQUENCE, not the claim's structure, and one interposed phrase slips
+ * past it: "Nothing in a vault moves without a member vote" is the same false blanket as "nothing
+ * changes without a vote", but the old regex passed it through undetected — recorded as card #71
+ * while re-mutation-testing PR #312 on its rebased head. A regex tuned to that one extra example
+ * would just as quietly miss the next reordering, so this replaces the word-sequence match with
+ * the claim's actual STRUCTURE: a universal quantifier over the subject (nothing / no <noun> /
+ * every <noun> / all <noun>) and a "without a vote/proposal" clause, both present in the SAME
+ * sentence (via `sentencesOf`, so neither piece can bleed across a sentence boundary), in EITHER
+ * order — "Without a vote, nothing moves." is exactly as false as the forward form.
+ *
+ * The verb set stays SCOPED to state-change verbs (changes/moves/happens/leaves/enters) and
+ * deliberately excludes trade/rebalance/buy/sell/swap: those are TRADE_VOTE_CLAIMS' job, below,
+ * because trading a vault's holdings genuinely IS gated by a vote today (guard 7b re-derives that
+ * from VaultCore.sol on every run, rather than assuming it). Folding "traded" in here would red
+ * "Nothing is traded without a vote; deposits and exits are yours." — a TRUE sentence that scopes
+ * the vote requirement to the one path where it holds and explicitly disclaims it for the rest.
+ *
+ * The "one rule" leg below is KEPT, not folded in. The structural check needs a movement verb,
+ * and the PR 305/306 lede shape also comes verbless: "One rule: nothing without a vote." carries
+ * the same false blanket with no verb for the structure to find (Security, #429 review).
+ */
+const UNIVERSAL_QUANTIFIER_VERB =
+  /\b(?:nothing|no\s+\w+|every\s+\w+|all\s+\w+)\b(?:\s+\w+){0,4}?\s+\b(?:changes?|moves?|happens?|leaves?|enters?)\b/gi;
+const WITHOUT_VOTE_CLAUSE = /\bwithout\s+(?:a\s+)?(?:\w+\s+){0,2}?(?:vote|votes|voting|proposal)\b/gi;
+
+/** True structural hit: both pieces present in the same sentence, order-independent. */
+const isBlanketVoteSentence = (sentence) => {
+  UNIVERSAL_QUANTIFIER_VERB.lastIndex = 0;
+  WITHOUT_VOTE_CLAUSE.lastIndex = 0;
+  return UNIVERSAL_QUANTIFIER_VERB.test(sentence) && WITHOUT_VOTE_CLAUSE.test(sentence);
+};
+
+const BLANKET_VOTE_CLAIMS = [
+  // "every change is decided by vote", "all changes require a vote"
+  /\b(?:every|each|all)\s+(?:change|movement|action)s?\b[^.]{0,40}?\b(?:requires?|needs?|decided by|gated by)\s+(?:a\s+)?(?:vote|proposal)\b/gi,
+  // "one rule: nothing changes without a vote", and the verbless "one rule: nothing without a vote"
+  // — the PR 306 / PR 305 lede shape. Kept: the structural check needs a verb (see above).
+  /\bone rule\b[^.]{0,30}?\bnothing\b[^.]{0,40}?\bwithout\s+(?:a\s+)?vote\b/gi,
+];
+
+/** The TRADE form. True today; guard 7b re-derives that from the contract rather than assuming. */
+const TRADE_VOTE_CLAIMS = [
+  /\bno\s+silent\s+trades?\b/gi,
+  /\bnothing\s+(?:is\s+)?(?:trades?|traded|rebalances?|rebalanced|bought|sold|swapped)\b[^.]{0,40}?\b(?:until|unless|without)\b[^.]{0,30}?\b(?:vote|proposal|passes|approved)\b/gi,
+  /\bonly\s+a\s+(?:passed|approved|winning)\s+proposal\b[^.]{0,40}?\b(?:moves|trades|swaps|rebalances|buys|sells)\b/gi,
+  /\b(?:does not|never|cannot|will not)\s+(?:buy|sell|trade|swap|rebalance)\b[^.]{0,40}?\b(?:without|until|unless)\b[^.]{0,30}?\b(?:vote|proposal|members? say|approved)\b/gi,
+];
+
+test('no public surface claims a vote gates EVERY change, which is false in seven places', () => {
+  const hits = [];
+  for (const { file, text } of surfacesWithText()) {
+    const hay = flat(text);
+    for (const re of BLANKET_VOTE_CLAIMS) {
+      for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    }
+    for (const sentence of sentencesOf(text)) {
+      if (isBlanketVoteSentence(sentence)) hits.push({ file, quote: sentence.trim() });
+    }
+  }
+  assert.deepEqual(
+    hits,
+    [],
+    'A VOTE AUTHORISES TRADES; IT DOES NOT AUTHORISE EVERY CHANGE, and these sentences claim the\n' +
+      'second. What a vault HOLDS changes with no vote in at least seven places, each read from\n' +
+      'contracts/src/VaultCore.sol:\n' +
+      '  :868 pullChildEscrow  — `external`, NO caller gate, credits assetBalance directly\n' +
+      '  :440 activate         — its own NatSpec says "Callable by anyone"\n' +
+      '  :591 settleQueuedExit — also callable by anyone\n' +
+      '  :392 / :403 deposit,  :463 skipWindow,  :551 requestExit\n' +
+      'Only :786, :824 and :900 are governance-gated.\n' +
+      'SCOPE THE CLAIM TO THE INVESTMENT DECISION rather than widening it to the inventory:\n' +
+      '  "what it invests in is decided by vote"   (true)\n' +
+      '  "nothing changes without a vote"          (false, in seven places)\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
+test('probe: the blanket-vote structural check catches the reorder card #71 found, and spares the scoped trade claim', () => {
+  // The reorder escape itself, plus the shapes it generalizes to (quantifier and "without ...
+  // vote" clause in either order, with real prose between them).
+  for (const bad of [
+    'One rule: nothing changes without a vote.',
+    'Nothing in a vault moves without a member vote.',
+    'No funds leave the vault without a proposal.',
+    'Without a vote, nothing moves.',
+  ]) {
+    assert.equal(
+      sentencesOf(bad).some(isBlanketVoteSentence),
+      true,
+      `the structural check no longer catches: ${bad}`,
+    );
+  }
+  // "Every change needs a vote." is the same false blanket by a different structure (no "without"),
+  // caught by BLANKET_VOTE_CLAIMS' surviving leg rather than the structural check — confirm the
+  // combined guard still reds it.
+  assert.match('Every change needs a vote.', BLANKET_VOTE_CLAIMS[0]);
+  // The verbless lede: no movement verb, so only the kept "one rule" leg can catch it.
+  const verbless = 'One rule: nothing without a vote.';
+  assert.equal(sentencesOf(verbless).some(isBlanketVoteSentence), false, 'premise: the structural check cannot see a verbless blanket');
+  assert.ok(BLANKET_VOTE_CLAIMS.some((re) => { re.lastIndex = 0; return re.test(verbless); }), `the combined guard no longer catches: ${verbless}`);
+
+  // TRUE sentences the guard must leave alone.
+  //
+  // "Rebalances happen only through a member vote." has no universal quantifier over the subject
+  // (rebalances is a noun, not "nothing"/"no X"/"every X"/"all X") and no "without" clause, so it
+  // never reaches the structural check.
+  //
+  // "Nothing is traded without a vote; deposits and exits are yours." pairs "nothing" with
+  // "traded" — deliberately OUTSIDE the verb set above — and is true for exactly that reason: the
+  // swap path is the one member-value-moving path that IS gated by a passed proposal (guard 7b
+  // re-derives that from VaultCore.sol on every run), and the clause after the semicolon says the
+  // other seven paths (deposits and exits among them) are explicitly NOT covered by that
+  // requirement. Scoping the verb set to state-change verbs and leaving trade to TRADE_VOTE_CLAIMS
+  // is what keeps this sentence out of the blanket-claim guard.
+  for (const ok of [
+    'Rebalances happen only through a member vote.',
+    'Nothing is traded without a vote; deposits and exits are yours.',
+  ]) {
+    assert.equal(
+      sentencesOf(ok).some(isBlanketVoteSentence),
+      false,
+      `the structural check reds true prose: ${ok}`,
+    );
+  }
+});
+
+test('a surface may say trades need a vote only while the contract still makes that true', () => {
+  const claiming = [];
+  for (const { file, text } of surfacesWithText()) {
+    const hay = flat(text);
+    for (const re of TRADE_VOTE_CLAIMS) {
+      for (const m of hay.matchAll(re)) claiming.push({ file, quote: m[0] });
+    }
+  }
+
+  // THE TRUTH CONDITION, RE-DERIVED FROM THE CONTRACT ON EVERY RUN rather than pinned as a verdict.
+  const vault = readFileSync(path.join(REPO, 'contracts/src/VaultCore.sol'), 'utf8');
+
+  // Split into function bodies by brace depth, so "is this call inside a gated function" is a
+  // structural question rather than a proximity guess. A regex over N lines of context would
+  // answer differently the moment someone reorders the file.
+  const fns = [];
+  const sigRe = /function\s+(\w+)\s*\([^)]*\)[^{;]*\{/g;
+  for (const m of vault.matchAll(sigRe)) {
+    let depth = 0;
+    let i = m.index + m[0].length - 1;
+    const start = i;
+    for (; i < vault.length; i++) {
+      if (vault[i] === '{') depth++;
+      else if (vault[i] === '}') { depth--; if (depth === 0) break; }
+    }
+    fns.push({ name: m[1], body: vault.slice(start, i + 1), at: vault.slice(0, m.index).split('\n').length });
+  }
+
+  const swapSites = fns.filter((f) => /IExecutionAdapter\([^)]*\)\.executeSwap\s*\(/.test(f.body));
+
+  // FLOOR. If the call moves or is renamed, this check would otherwise pass over ZERO sites and
+  // report a green — the self-disarming shape four guards in this repo had on 2026-09-18.
+  assert.ok(
+    swapSites.length > 0,
+    'Found NO call to IExecutionAdapter.executeSwap in VaultCore.sol, so this guard just checked\n' +
+      'nothing. The swap path moved, was renamed, or the parse above stopped matching. Re-point it;\n' +
+      'do not delete it. A pass over zero call sites is indistinguishable from a pass over all of them.',
+  );
+
+  const ungated = swapSites.filter(
+    (f) => !/require\(\s*msg\.sender\s*==\s*address\(governance\)\s*,\s*OnlyGovernance\(\)\s*\)/.test(f.body),
+  );
+
+  assert.deepEqual(
+    ungated.map((f) => `${f.name}() at VaultCore.sol:${f.at}`),
+    [],
+    'THE CONTRACT NO LONGER MAKES THE TRADE CLAIM TRUE, and prose in this repository still asserts\n' +
+      'it. A swap path exists that is NOT gated by\n' +
+      '  require(msg.sender == address(governance), OnlyGovernance())\n' +
+      'so the vault can now trade without a passed proposal.\n' +
+      'THIS IS THE EXPECTED FAILURE WHEN THE EXIT-SWAP CHANGE LANDS. It is not a broken test: it is\n' +
+      'the copy and the code disagreeing, which is what this file exists to catch. Fix the COPY in\n' +
+      'the same commit as the contract change — do not relax this guard to make it pass.\n' +
+      `Surfaces currently making the claim:\n${claiming.length ? report(claiming) : '  (none — but the claim is now false if one is added)'}`,
+  );
+});
+
 test('no public surface claims the contracts screen who may deposit', () => {
   const hits = [];
   for (const { file, text } of surfacesWithText()) {
