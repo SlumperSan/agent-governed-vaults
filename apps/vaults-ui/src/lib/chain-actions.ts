@@ -40,6 +40,7 @@ import { VAULT_VIEWS, GOVERNANCE_VIEWS } from '@chain/abis';
 import { canReveal, commitmentFor, deriveSalt, reconstructVoteCustody, type VoteCustodyState } from '@atlas/vote-custody';
 import { assembleVoteCommit, planVoteCommit, type PlannedCall } from '@atlas/chain-reader';
 import { TARGET_CHAIN } from './chains';
+import { assertNotSanctioned } from './sanctions';
 
 /** Every field is independently nullable: `readExitGateInputs` resolves each read on its own
  * (`Promise.allSettled`, not `Promise.all`), so one reverting call — an older vault, a transient
@@ -351,12 +352,21 @@ function describeRevert(err: unknown): string {
  * `CreatorStakeGate`, ...) when the ABI above can decode it, or the wallet/RPC's own message
  * otherwise -- never a guess. The caller (`MemberActions.tsx`) is responsible for turning that
  * name into member-facing copy; this module's job stops at "which error, if any".
+ *
+ * SANCTIONS SCREENING (card 213) LIVES HERE, FIRST, BEFORE THE SIMULATE CALL. Every signed write
+ * this module exposes -- the approve+deposit pair, commitVote, revealVote, requestExit -- funnels
+ * through this one function, so `assertNotSanctioned(params.account)` here refuses all five without
+ * being repeated at each call site (and without one being forgotten the next time a write is
+ * added). A listed address never reaches `publicClient.simulateContract`, let alone a signature
+ * request. See `sanctions.ts`'s own header for why this is a front-end-only, no-network,
+ * no-storage check.
  */
 async function simulateThenWrite<T extends { abi: Abi; functionName: string; args: readonly unknown[] }>(
   publicClient: PublicClient,
   walletClient: WalletClient,
   params: T & { address: Address; account: Address },
 ): Promise<Hex> {
+  assertNotSanctioned(params.account);
   let request: unknown;
   try {
     ({ request } = await publicClient.simulateContract({

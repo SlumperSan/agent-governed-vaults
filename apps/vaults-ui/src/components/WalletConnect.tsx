@@ -1,13 +1,14 @@
 import { shortAddress } from '../lib/atlas';
 import { TARGET_CHAIN } from '../lib/chains';
 import { useWallet } from '../lib/wallet';
+import { SANCTIONS_REFUSAL_MESSAGE } from '../lib/sanctions';
 
 /**
  * Connect / account / network banner. Lives in the header, independent of which vault is
  * selected — a wallet connects to a CHAIN, not to a vault.
  */
 export function WalletConnect() {
-  const { status, address, providers, error, connect, disconnect, switchToTarget } = useWallet();
+  const { status, address, providers, error, sanctioned, connect, disconnect, switchToTarget } = useWallet();
 
   if (status === 'disconnected' || (status === 'connecting' && !address)) {
     return (
@@ -49,6 +50,7 @@ export function WalletConnect() {
         Disconnect
       </button>
       {error ? <p className="note tag-warn">{error}</p> : null}
+      {sanctioned ? <p className="note tag-warn">{SANCTIONS_REFUSAL_MESSAGE}</p> : null}
     </div>
   );
 }
