@@ -611,9 +611,10 @@ reader tags each failure `revert` or `transport` (`packages/canary/src/call-erro
 `revert` can produce a verdict, and a `transport` routes here, visible, re-asserted on a backoff,
 and explicitly not evidence of a fault.
 
-**`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** All four of its
-blind branches (`feed-identity.mjs:185, 211, 266, 308`) carry
-`minConsecutive: UNREADABLE_SWEEPS` (3, `feed-identity.mjs:101`), so they escalate only on the third
+**`feed-identity` is the only signal whose BLIND lines damp against RPC noise.** Every one of its
+blind branches carries `minConsecutive: UNREADABLE_SWEEPS` (3; the `UNREADABLE_SWEEPS` export in
+`feed-identity.mjs`): the vault-level probe in `checkFeedIdentity`, and every per-asset branch
+through the `blind` and `swapBlind` builders in `assetIdentity`. So they escalate only on the third
 consecutive sweep. The case that earned the damping is an `eth_call` coming back empty: one empty
 return is noise where three consecutive is the feed, but that is the case it was written for, not
 the only one it covers: each branch is reachable on a confirmed revert too, and on a transport
