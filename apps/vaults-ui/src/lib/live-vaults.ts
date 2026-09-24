@@ -221,16 +221,19 @@ async function readLegSafety(client: Pick<PublicClient, 'multicall'>, vault: str
 async function readOneVault(client: PublicClient, address: string, name: string): Promise<AssembledVault> {
   const coreResults = await multicallPlan(client, planCore(address));
   // planCore's order: navWad, totalShares, idleUsdc, usdcScalar, totalPendingUsdc, basketLength,
-  // childVaultCount, oracle, governance, creator, operatorRegistry — 11 calls, indices 0-10.
+  // childVaultCount, oracle, governance, creator, operatorRegistry, holderCount,
+  // nonCreatorMemberCount — 13 calls, indices 0-12 (card 210 appended the last two).
   // Cast to a fixed-length tuple (rather than `CallResult[]`) so the destructure below is not
   // subject to `noUncheckedIndexedAccess` widening every element to `| undefined` — the length is
   // pinned by `planCore`'s own literal call list, asserted by `apps/web/test/chain-reader.test.mjs`.
   const [
     navWadCall, totalSharesR, idleUsdcR, usdcScalarR, totalPendingUsdcR,
     basketLengthR, childVaultCountR, oracleR, governanceR, creatorR, operatorRegistryR,
+    holderCountR, nonCreatorMemberCountR,
   ] = coreResults as unknown as readonly [
     CallResult, CallResult, CallResult, CallResult, CallResult,
     CallResult, CallResult, CallResult, CallResult, CallResult, CallResult,
+    CallResult, CallResult,
   ];
   const core = {
     navWad: navWadCall.status === 'success' ? (navWadCall.result as bigint) : null,
@@ -245,6 +248,12 @@ async function readOneVault(client: PublicClient, address: string, name: string)
   };
   const operatorRegistry = requireOk(operatorRegistryR, 'operatorRegistry', address) as string;
   const basketLength = Number(requireOk(basketLengthR, 'basketLength', address) as bigint);
+  // Card 210: two plain storage reads, never expected to revert for a well-formed vault — same
+  // treatment as `totalShares`/`idleUsdc` above, via `requireOk`, not a graceful-degrade default.
+  // A silently-defaulted `0` here would read as "confirmed zero", the exact false claim
+  // `organicMemberBound`'s `null`-on-unread convention exists to prevent (chain-reader.mjs).
+  const holderCount = Number(requireOk(holderCountR, 'holderCount', address) as bigint);
+  const nonCreatorMemberCount = Number(requireOk(nonCreatorMemberCountR, 'nonCreatorMemberCount', address) as bigint);
 
   const [assetResults, proposalIdResults, operatorIdResults] = await Promise.all([
     multicallPlan(client, planBasketAssets(address, basketLength)),
@@ -330,6 +339,9 @@ async function readOneVault(client: PublicClient, address: string, name: string)
     // display name. `operatorAddress: core.creator` is the one address this data can honestly
     // attribute the vault to.
     operatorAddress: core.creator,
+    // Card 210 (seeded-disclosure) — see the two `requireOk` reads above this function's `return`.
+    holderCount,
+    nonCreatorMemberCount,
   });
 }
 

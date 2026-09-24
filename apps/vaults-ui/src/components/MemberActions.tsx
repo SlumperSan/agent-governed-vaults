@@ -9,8 +9,10 @@ import {
   creatorGateRefusal,
   exitFeeCeiling,
   formatUnits,
+  isSeeded,
   parseUnits,
   previewExit,
+  SEEDED_ADDRESSES,
   shortAddress,
   USDC_SCALAR,
   usdcShort,
@@ -638,7 +640,12 @@ export function MemberActions({ vault }: Props) {
       {exit.message ? <p className="note mono">{exit.message}</p> : null}
       {exit.error ? <p className="note tag-warn">{exit.error}</p> : null}
 
-      {address ? <p className="note dim">Acting as {shortAddress(address)}.</p> : null}
+      {address ? (
+        <p className="note dim">
+          Acting as {shortAddress(address)}
+          {isSeeded(address, SEEDED_ADDRESSES) ? ' — seeded by the RWAlly team' : ''}.
+        </p>
+      ) : null}
     </section>
   );
 }
