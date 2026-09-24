@@ -262,3 +262,48 @@ test('buildRebalanceOrder: unaffordable at the pool\'s spot price refuses rather
   assert.equal(order.ok, false);
   assert.match(order.reason, /reverts SwapSlippage/);
 });
+
+test('buildRebalanceOrder: bareFloor rounds the oracle floor UP, not down, at a non-divisible edge (V-380-r1)', () => {
+  // Security's V-380-r1 mutation M6 (rounding `bareFloor` DOWN instead of up) survived all fixtures
+  // above -- every one of them happens to land on a priceOutWad that divides requiredValueWad *
+  // unitOut evenly, so ceil-division and floor-division produce the same integer and the mutation
+  // is invisible. This fixture is chosen so it does NOT divide evenly (priceOutWad = 3), which is
+  // the exact edge the fuzz found: a floor-rounded bareFloor is one wei under the contract's own
+  // floor-division floor and reverts MinOutTooLow at execution, after a full vote cycle, even
+  // though every input was individually valid.
+  const order = buildRebalanceOrder({
+    adapter: '0x000000000000000000000000000000000000A1',
+    usdc: '0x000000000000000000000000000000000000B2',
+    tokenOut: '0x000000000000000000000000000000000000C3',
+    amountIn: 10000000n,
+    usdcScalar: 1n,
+    unitOut: 1n,
+    priceOutWad: 3n,
+    poolFeeRawPpm: 500n, // 5 bps
+    grossOut: 3333334n, // ceil(10,000,000 * 1 / 3): zero execution gap at this price, isolates rounding
+    floorBufferBps: 0n, // isolates bareFloor itself -- the buffer widening is a separate ceiling div
+    deadline: 4102444800n,
+    BPS,
+  });
+  assert.equal(order.ok, true);
+  assert.equal(order.chosenSlipBps, 30n); // fee 5 + gap 0 + buffer 25, same derivation as above
+  assert.equal(order.minAmountOut, order.bareFloor, 'floorBufferBps 0 -> minAmountOut === bareFloor');
+
+  // requiredValueWad = ceil(valueInWad * (BPS - chosenSlipBps) / BPS), reproduced here from the
+  // same inputs so this test is not just restating whatever bareFloor the implementation returns.
+  const requiredValueWad = (10000000n * (BPS - order.chosenSlipBps) + BPS - 1n) / BPS;
+
+  // VaultCore's OWN floor-division inequality at execution time (_valueWad rounds down): bareFloor
+  // * priceOutWad must be at least requiredValueWad * unitOut, or the fill reverts MinOutTooLow
+  // regardless of price. This is the contract's exact check, not a re-implementation of it -- a
+  // floor-rounded bareFloor lands one wei under it on this non-divisible input and the assertion
+  // goes red under mutation M6.
+  assert.ok(order.bareFloor * 3n >= requiredValueWad * 1n,
+    `bareFloor ${order.bareFloor} must satisfy VaultCore's own floor-division floor `
+    + `(requiredValueWad*unitOut = ${requiredValueWad})`);
+
+  // And it must be the TIGHTEST integer satisfying that -- one less already fails -- which pins
+  // this down to exactly ceiling division rather than any other value that happens to pass.
+  assert.ok((order.bareFloor - 1n) * 3n < requiredValueWad * 1n,
+    'bareFloor must be the minimal integer satisfying the contract inequality, not merely a safe one');
+});

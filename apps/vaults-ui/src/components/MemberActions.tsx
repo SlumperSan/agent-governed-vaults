@@ -570,6 +570,11 @@ export function MemberActions({ vault }: Props) {
       )}
 
       <h3>Exit</h3>
+      {/* P-O13: rendered unconditionally, before any deposit — not only once a freeze is live. */}
+      <p className="note dim" data-testid="exit-stale-oracle-disclosure">
+        If the price feed goes stale, everything that reads NAV reverts, including your exit. There is no
+        fallback price source, and the freeze lasts for as long as the feed stays stale.
+      </p>
       <div className="act-row">
         <input
           type="text"
