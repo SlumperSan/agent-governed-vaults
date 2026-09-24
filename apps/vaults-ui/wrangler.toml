@@ -15,14 +15,19 @@
 # change there, which is precisely why an accidental deploy is live immediately.
 # The cutover is the owner's call, not a deployer's.
 #
-# WHY THERE IS NO `functions` DIRECTORY HERE, AND WHY ONE MUST NOT APPEAR
-# CASUALLY. Pages bundles Functions from `./functions` RELATIVE TO THE DIRECTORY
-# WRANGLER RUNS IN, not from inside the uploaded asset directory. `apps/site`
-# keeps its wrangler.toml beside `apps/site/functions` for exactly that reason.
-# This app has no Function and needs none: everything it renders is static, and
-# the edge policy is a `_headers` file rather than middleware. `apps/app/README.md`
-# records the hazard from the other side — Pages will pick up a Functions bundle
-# from the working directory if one is sitting there.
+# `functions/` NOW EXISTS HERE, DELIBERATELY, AS OF CARD 212 — this comment used to say one must
+# not appear "casually", and this is the deliberate exception it was warning about, made in the
+# same commit that edits this comment to say so. Pages bundles Functions from `./functions`
+# RELATIVE TO THE DIRECTORY WRANGLER RUNS IN, not from inside the uploaded asset directory.
+# `apps/site` keeps its wrangler.toml beside `apps/site/functions` for exactly that reason, and
+# this file now does too. `functions/_middleware.js` holds ONE Function: the sanctions-jurisdiction
+# geofence (card 212), refusing a request with a plain HTTP 451 before anything else runs. It
+# imports nothing (same property `apps/site`'s Function keeps, for the same bundling-robustness
+# reason) and uses no Node built-in, so no compatibility flag is load-bearing for what it ships
+# today — see NO `compatibility_flags` below, which is still accurate. `apps/app/README.md` records
+# the hazard from the other side — Pages will pick up a Functions bundle from the working directory
+# if one is sitting there — which is exactly why this one is added on purpose, in one commit, with
+# this comment updated in the same commit, rather than appearing "casually".
 #
 # `pages_build_output_dir` IS THE BUILD OUTPUT AND NOTHING ELSE MAY LIVE UNDER IT.
 # `public/_headers` is copied into `dist/` by the build, and Pages reads that file
