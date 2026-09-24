@@ -184,18 +184,25 @@ test('MUTATION: removing the queuedExitUnread message is caught', () => {
 // reason. `usdcPay` and any OTHER, still-healthy leg's value have no relationship to `frozen` at
 // all. Security's finding: make the dependency explicit rather than relying on that coincidence.
 
-test('preview is explicitly gated on !vault.frozen, not left to fall out of pricing', () => {
-  const m = /const preview: ExitPreview \| null =\s*\n\s*([^\n]*)\n/.exec(MEMBER_ACTIONS);
+// #183 (the size-impact notice) split this into two steps: `exitAmounts` (unconditional on
+// `vault.frozen` -- see its own long comment -- since a basket leg's TOKEN AMOUNT needs no price
+// or oracle read at all, and the pool the size notice reads is not what freezes) and `preview`
+// (still explicitly withheld while frozen, exactly as this section's own header demands -- the
+// dependency did not become implicit, it moved from inside previewExit's own argument list to a
+// one-line ternary immediately above the render, which is what these two tests now check).
+
+test('preview is explicitly gated on vault.frozen, not left to fall out of pricing', () => {
+  const m = /const preview: ExitPreview \| null = ([^\n]*);/.exec(MEMBER_ACTIONS);
   assert.ok(m, 'preview declaration not found');
-  assert.match(m[1], /!vault\.frozen && exitGate && shares !== null/, 'preview must require !vault.frozen before calling previewExit at all');
+  assert.match(m[1], /vault\.frozen \? null : exitAmounts/, 'preview must explicitly withhold exitAmounts while vault.frozen, not fall out of pricing by coincidence');
 });
 
-test('MUTATION: dropping the !vault.frozen guard from preview is caught', () => {
-  const guardLine = /!vault\.frozen && exitGate && shares !== null/;
+test('MUTATION: dropping the vault.frozen guard from preview is caught', () => {
+  const guardLine = /const preview: ExitPreview \| null = vault\.frozen \? null : exitAmounts;/;
   assert.match(MEMBER_ACTIONS, guardLine, 'the frozen guard was not found as expected');
-  const mutated = MEMBER_ACTIONS.replace(guardLine, 'exitGate && shares !== null');
+  const mutated = MEMBER_ACTIONS.replace(guardLine, 'const preview: ExitPreview | null = exitAmounts;');
   assert.notEqual(mutated, MEMBER_ACTIONS, 'mutation target not found');
-  assert.doesNotMatch(mutated, /!vault\.frozen && exitGate/, 'RED: the pre-fix preview must not depend on frozen at all');
+  assert.doesNotMatch(mutated, /const preview: ExitPreview \| null = vault\.frozen \? null : exitAmounts;/, 'RED: the pre-fix preview must not depend on frozen at all');
 });
 
 test('a frozen vault renders an explicit no-preview message ahead of the table, not a computed one', () => {

@@ -65,7 +65,11 @@ test('MemberActions.tsx calls previewExit(', () => {
 });
 
 test('MUTATION: removing the previewExit call is caught', () => {
-  const withoutCall = MEMBER_ACTIONS.replace(/const preview: ExitPreview \| null =[\s\S]*?\n {6}: null;/, 'const preview = null;');
+  // The call site is `exitAmounts` (#183, plan item 1.2), not `preview` itself: `preview` is now
+  // `exitAmounts` withheld while `vault.frozen` (a one-line derivation, no call of its own), and
+  // `exitAmounts` is the single previewExit call site both `preview` and the size-impact notice's
+  // exit-side token amount read from -- see MemberActions.tsx's own note beside `exitAmounts`.
+  const withoutCall = MEMBER_ACTIONS.replace(/const exitAmounts: ExitPreview \| null =[\s\S]*?\n {6}: null;/, 'const exitAmounts = null;');
   assert.notEqual(withoutCall, MEMBER_ACTIONS, 'the mutation target text was not found -- update this test if the surrounding code moved');
   assert.doesNotMatch(withoutCall, /previewExit\(\{/, 'RED: with the call removed, the call-guard above must fail');
 });
