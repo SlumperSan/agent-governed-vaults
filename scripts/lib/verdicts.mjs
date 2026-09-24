@@ -206,17 +206,18 @@ function firstHeadingLine(body) {
  * situation (Security/Product/Finance/Design all dark the same day) this fix exists for.
  *
  * `{ reviewers: [], at }` (an explicit empty roster) is a REAL, DISTINCT state from `null` (no
- * roster ever declared) — `roster-declared` blocks on `null`, not on an empty array, so a roster
- * withdrawn to nobody reads as "a roster was declared, and it currently requires no one," not as
- * "no review was ever assigned." `roster-resolved` trivially passes an empty roster (nothing to
- * be missing), which is the correct denominator when nobody is currently required.
+ * roster ever declared) — `evaluate` only substitutes `DEFAULT_ROSTER` for `null` (card 167), never
+ * for an explicit empty array, so a roster withdrawn to nobody reads as "a roster was declared, and
+ * it currently requires no one," not as "no review was ever assigned" (which would wrongly default
+ * it back to `DEFAULT_ROSTER`). `roster-resolved` trivially passes an empty roster (nothing to be
+ * missing), which is the correct denominator when nobody is currently required.
  *
  * THIS DOES NOT WEAKEN no-standing-reject. That rule (Mode A, in `evaluate` below) blocks on
  * `latestPerReviewer(verdicts)` — every REVIEW-VERDICT token ever posted, independent of who is
  * currently on the roster — so a reviewer's standing REJECT still blocks a merge after that
- * reviewer is dropped from the roster. Only the roster-declared/roster-resolved DENOMINATOR moves
- * with the latest roster; a verdict already cast keeps its force regardless of roster changes,
- * per merge-policy.json's own invariant and the #98/#109 incidents behind it.
+ * reviewer is dropped from the roster. Only `roster-resolved`'s DENOMINATOR moves with the latest
+ * roster (explicit, or defaulted); a verdict already cast keeps its force regardless of roster
+ * changes, per merge-policy.json's own invariant and the #98/#109 incidents behind it.
  *
  * @param {Comment[]} comments
  * @returns {{reviewers: string[], at: string}|null}
@@ -589,10 +590,12 @@ export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) 
     });
   }
 
-  // --- roster rules (Mode B) — strict only ----------------------------------------------------
-  // Card 167: roster-declared can no longer block on its own — a roster is always IN FORCE, either
-  // the orchestrator's explicit token or DEFAULT_ROSTER — so the only remaining question is whether
-  // it is RESOLVED. See DEFAULT_ROSTER's comment for why this does not weaken Mode B.
+  // --- roster rule (Mode B) — strict only --------------------------------------------------
+  // Card 167: a roster is always IN FORCE — the orchestrator's explicit token, or DEFAULT_ROSTER
+  // — so there is only one question left: whether it is RESOLVED. (Pre-card-167 this was a second
+  // rule, roster-declared, which blocked when no roster existed at all; folded into roster-resolved
+  // below since a roster now always exists.) See DEFAULT_ROSTER's comment for why this does not
+  // weaken Mode B.
   if (mode === 'strict') {
     const missing = roster.reviewers.filter((r) => !latest[r]);
     if (missing.length > 0) {

@@ -427,7 +427,7 @@ test('the heuristics in verdicts.mjs are byte-identical to the ones merge-policy
 
 test('every rule the evaluator can emit is declared in merge-policy.json, and vice versa', () => {
   const declared = POLICY.rules.map((/** @type {any} */ r) => r.id).sort();
-  const emitted = ['base-current', 'buy-borrow-build-declared', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-declared', 'roster-resolved', 'verdict-covers-head'];
+  const emitted = ['base-current', 'buy-borrow-build-declared', 'ci-matches-head', 'no-standing-reject', 'pr-open', 'roster-resolved', 'verdict-covers-head'];
   assert.deepEqual(declared.sort(), emitted.sort(), 'a rule with no policy entry has no stated reason, and a policy entry with no rule is a promise nothing keeps');
 });
 
@@ -777,12 +777,18 @@ test('parseRoster: a later roster naming a DIFFERENT reviewer fully replaces the
   assert.deepEqual(parseRoster(comments), { reviewers: ['Security2'], at: '2026-09-21T14:00:00Z' });
 });
 
-test('an empty roster clears roster-declared/roster-resolved in strict mode for a now-withdrawn seat', () => {
+// MUTATION BAR, verified 2026-09-24 by actually editing the source rather than reasoning about
+// it: changing card 167's `rosterDefaulted` check from `explicitRoster === null` to
+// `!explicitRoster || explicitRoster.reviewers.length === 0` (reintroducing the #352 dead-seat
+// bug inside the NEW default-fallback code path -- an explicit empty roster falling back to
+// DEFAULT_ROSTER instead of being honoured) turned this test and one other red; reverting turned
+// both green again.
+test('an empty roster clears roster-resolved in strict mode for a now-withdrawn seat', () => {
   const pr = { number: 352, state: 'OPEN', headRefOid: 'feed0001', headRefName: 'feat/vault-addresses-lint', body: BBB_OK_BODY };
   const comments = [
     { createdAt: '2026-09-21T10:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' },
     // Security's session ended with no verdict posted. Withdrawing the roster to empty must clear
-    // both roster-declared (a roster WAS declared) and roster-resolved (nobody is now required).
+    // roster-resolved (nobody is now required) rather than falling back to DEFAULT_ROSTER.
     { createdAt: '2026-09-21T14:00:00Z', body: '<!-- REVIEW-ROSTER reviewers= -->' },
   ];
   const strict = evaluate({ pr, comments, runs: greenOn('feed0001'), mode: 'strict' });
@@ -887,15 +893,18 @@ test('card 167: advisory mode never blocks on the defaulted roster (Mode B is st
   assert.ok(d.notes.some((n) => n.includes('roster defaulted to Security')));
 });
 
-test('MUTATION: reverting the roster default to null (pre-card-167) is caught', () => {
-  // The bug this test must catch if reintroduced: treating "no REVIEW-ROSTER token" as `null`
-  // forever instead of DEFAULT_ROSTER — which stalls the PR on roster-declared with no reviewer
-  // named, rather than pointing it at Security and letting roster-resolved do the real work.
-  const pr = { number: 503, state: 'OPEN', headRefOid: 'feed0503', headRefName: 'fix/whatever' };
-  const d = evaluate({ pr, comments: [], runs: greenOn('feed0503'), mode: 'strict' });
-  assert.notDeepEqual(ruleIds(d.blockers), ['roster-declared'], 'RED: reintroducing the pre-card-167 blocker means the default regressed');
+test('MUTATION BAR — an empty DEFAULT_ROSTER must not silently clear an unrostered PR', () => {
+  // The regression this guards: DEFAULT_ROSTER = [] (or any change that makes the default
+  // resolve to nobody) turns "no REVIEW-ROSTER token" back into "nobody needs to review" --
+  // exactly the stall-shaped bug card 167 exists to close, just inverted into a silent PASS
+  // instead of a silent STALL. Verified by actually mutating DEFAULT_ROSTER to [] in
+  // scripts/lib/verdicts.mjs and re-running this suite (2026-09-24): the assertions below on
+  // `.clear` and `.roster` both flipped red, exactly as this test predicts they must.
+  const pr = { number: 504, state: 'OPEN', headRefOid: 'feed0504', headRefName: 'fix/whatever' };
+  const d = evaluate({ pr, comments: [], runs: greenOn('feed0504'), mode: 'strict' });
+  assert.equal(d.clear, false, 'RED if DEFAULT_ROSTER is empty: an empty roster has nothing left to resolve, so this would wrongly clear');
+  assert.ok(d.roster && d.roster.length > 0, 'RED if DEFAULT_ROSTER is empty: the defaulted roster must name at least one reviewer');
   assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
-  assert.deepEqual(d.roster, ['Security'], 'RED: the default must name Security, not stay null');
 });
 
 // ---------------------------------------------------------------------------------------------

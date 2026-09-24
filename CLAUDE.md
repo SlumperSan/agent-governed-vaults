@@ -98,8 +98,8 @@ cannot drift from what the program enforces. **Read it there, and run
 
 **A verdict must come from someone who has not already graded this change** — not the author, not the
 fixer, and not the reviewer who wrote the verdict being cleared. `merge-policy.json` encodes
-`pr-open`, `no-standing-reject`, `verdict-covers-head`, `ci-matches-head`, `roster-declared`,
-`roster-resolved` and `base-current`, and **none of them says anything about who may write a
+`pr-open`, `no-standing-reject`, `verdict-covers-head`, `ci-matches-head`, `roster-resolved` and
+`base-current`, and **none of them says anything about who may write a
 verdict**; its only mention of the subject is `enforcement.nativeReviewsUnavailable`, recording that
 GitHub cannot enforce it here because the whole swarm is one identity. So this is not a restatement
 of the JSON — it is the only place the requirement is written down, and a draft of this section
