@@ -73,9 +73,11 @@ export function balanceOf(rpcUrl, token, address) {
  * trusting `cast send`'s own zero-buffer internal estimate. Found empirically, not theoretically:
  * a real `activate()` call reverted `OutOfGas` with `gasUsed === gasLimit` exactly at the
  * `eth_estimateGas` figure (`cast tx <hash> gas`), traced with `cast run` while the fork was still
- * alive. `eth_estimateGas` on this fork occasionally underestimates a call whose gas cost branches
- * on state (`activate`'s `ts == 0 ? … : navWad()` path in `_mintShares`); a fixed buffer is the
- * same fix `forge`/most tooling apply by default and `cast send` alone does not.
+ * alive — the trace showed the OutOfGas firing in the call's own prologue (right after its first
+ * external call, `parentOf`), before any state-dependent branch inside `activate()` could run, so
+ * this is NOT attributed to any specific code path — `eth_estimateGas` on this fork was simply too
+ * tight, at least once, for a call with no unusual gas shape. A fixed buffer is the same fix
+ * `forge`/most tooling apply by default and `cast send` alone does not.
  */
 export function send(rpcUrl, privateKey, to, sig, args) {
   const argsStr = args.map(String);
