@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react';
 import { isAddress, type Address } from 'viem';
-import { GOVERNANCE_VIEWS, OPERATOR_REGISTRY_VIEWS, SUBVAULT_REGISTRY_VIEWS, VAULT_FACTORY_VIEWS, VAULT_VIEWS } from '@chain/abis';
+import {
+  GOVERNANCE_VIEWS,
+  OPERATOR_REGISTRY_VIEWS,
+  SUBVAULT_REGISTRY_VIEWS,
+  VAULT_FACTORY_VIEWS,
+  VAULT_VIEWS,
+} from '@chain/abis';
 import {
   assembleAllowSubVaults,
+  assembleClaimableEscrow,
   assembleWiringLock,
   planAllowSubVaults,
+  planClaimableEscrow,
   planWiringLockCore,
   planWiringLockSubVaultFactory,
   shortAddress,
+  type ClaimableEscrowEntry,
+  type UnreadEscrowEntry,
   type Vault,
 } from '../lib/atlas';
 import { readVaultAddresses } from '../lib/chain-actions';
@@ -20,47 +30,68 @@ interface Props {
 /**
  * Card 127 / #182 (P-O15) — the checkable rows that distinguish this vault from a fund with a
  * manager: `Decisions/contract-tab-requirements-2026-09-19.md` is the row-to-read map, and
- * `Decisions/app-workspace-copy-2026-09-18.md` §4 is where every word below comes from.
+ * `Decisions/app-workspace-copy-2026-09-18.md` §4 is where every word below comes from. Card 205
+ * is Row 6b's tri-state: `apps/web/src/chain-reader.mjs`'s `assembleClaimableEscrow` (PR #361)
+ * already keeps "confirmed zero" and "unread/failed" apart at the data layer — this component's
+ * only job is to not collapse them back together on the way to the screen, which is exactly the
+ * defect `Findings/2026-09-21-row-6b-collapses-unread-into-zero.md` found in the ORIGINAL spec.
  *
- * READ-ONLY, ON PURPOSE. This tab renders facts; it signs nothing.
+ * READ-ONLY, ON PURPOSE. This tab renders facts; it signs nothing. `EscrowClaims.tsx` already owns
+ * the claim button for Row 6b's balances (`sendClaimEscrowed`, a member-funds write) — this
+ * component reads the SAME `claimable`/`unread` pair via the SAME pure assembler but never imports
+ * a write function, so a member sees the disclosure here and claims there, never both from one
+ * surface.
  *
  * THE PAIRING RULE, STRUCTURALLY. Every row's live line is its own `{cond ? <p>…</p> : null}` —
  * never an `??`/ternary that could fall back to a fixture, a zero, or the word "unknown" standing
  * in for a value. A read that has not resolved yet and a read that failed both render NOTHING for
- * that row's live line; the static claim still renders, unconditionally.
+ * that row's live line (the static claim still renders, unconditionally) — `Findings/2026-09-21-
+ * row-6b-collapses-unread-into-zero.md` is why Row 6b alone gets a THIRD rendering instead of this
+ * two-state pair: its existence on the page is the read, so "not yet / failed" has to be its own
+ * visible line rather than an absent one, or a member with a real balance and a flaky RPC call sees
+ * literally nothing where their money is.
+ *
+ * ROW ORDER IS FIXED, PER THE SPEC'S OWN RULE 4: Row 6b (if present) first, then the scope line,
+ * then rows 1-6 in order. Design's reasoning: when 6b renders at all it answers the question a
+ * member with a stuck claim already has, before the general reassurance the rest of the tab gives.
  *
  * WHY "cirBTC" IS LITERAL TEXT. Rows 5 and 6's static copy names cirBTC specifically because the
  * v1 basket holds exactly one asset (`Decisions/Arc basket is cirBTC only 2026-09-18`) — the same
  * literal-copy hazard `test/btc-exposure-disclosure.test.mjs` already guards for
  * `MemberActions.tsx`. `test/contract-tab.test.mjs` carries the same pin for this file.
  *
- * ROW 6B (the per-token claimable-escrow tri-state, card 205) IS NOT IN THIS COMPONENT YET — it is
- * a separately tracked, separately reviewed task (`Tasks/row-6b-tri-state-unread.md`), explicitly
- * blocked on this component existing at all. Added in the following commit.
- *
- * OPEN COPY QUESTION (not guessed public-facing copy; see this PR's body): Row 6's live line for a
- * CONFIRMED paused/blacklisted leg (as opposed to unread) has no string in the copy doc, which only
- * gives the reassurance sentence. This renders the same plain, factual wording `Holdings.tsx`'s
- * existing "Safety" column already ships, rather than inventing new alarm copy.
+ * OPEN COPY QUESTIONS (none of these are guessed public-facing copy; see this PR's body):
+ *  - Row 6's live line for a CONFIRMED paused/blacklisted leg (as opposed to unread) has no string
+ *    in the copy doc, which only gives the reassurance sentence. This renders the same plain,
+ *    factual wording `Holdings.tsx`'s existing "Safety" column already ships, rather than inventing
+ *    new alarm copy.
+ *  - Row 6b's UNREAD line ("could not check this token's escrow balance") is not in the copy doc
+ *    either — `Findings/2026-09-21-row-6b-collapses-unread-into-zero.md`'s disposition names the
+ *    shape ("its own visible … line") but not the exact sentence. Plain and factual, not alarming.
  */
 export function ContractTab({ vault }: Props) {
-  const { publicClient } = useWallet();
+  const { status, address, publicClient } = useWallet();
+  const connected = status === 'connected' && !!address;
   const vaultAddr = vault.address as Address;
 
-  // ─────────────────────── round 1: the two addresses Row 4 needs ───────────────────────────────
+  // ─────────────────────── round 1: the two addresses every later round needs ───────────────────
   const [addrs, setAddrs] = useState<{ usdc: Address; governance: Address } | null>(null);
+  const [addrsError, setAddrsError] = useState<string | null>(null);
   const [operatorRegistry, setOperatorRegistry] = useState<Address | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setAddrs(null);
+    setAddrsError(null);
     setOperatorRegistry(null);
     readVaultAddresses(publicClient, vaultAddr)
       .then((a) => {
         if (!cancelled) setAddrs(a);
       })
-      .catch(() => {
-        if (!cancelled) setAddrs(null);
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setAddrs(null);
+        setAddrsError(e instanceof Error ? e.message : String(e));
       });
     // `operatorRegistry()` — a plain VaultCore view, read independently of `readVaultAddresses` so
     // one failing does not take the other down (mirrors `readExitGateInputs`'s `allSettled` shape).
@@ -165,6 +196,73 @@ export function ContractTab({ vault }: Props) {
     };
   }, [publicClient, addrs?.governance, operatorRegistry]);
 
+  // ─────────────────────── Row 6b: claimable escrow, tri-state, member-scoped ─────────────────────
+  const [claimable, setClaimable] = useState<readonly ClaimableEscrowEntry[] | null>(null);
+  const [unread, setUnread] = useState<readonly UnreadEscrowEntry[]>([]);
+  const [row6bError, setRow6bError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // No wallet connected — the ENTIRE row family is absent, not "connect to check"
+    // (contract-tab-claimable-escrow-read.md's own checklist).
+    if (!connected || !address) {
+      setClaimable(null);
+      setUnread([]);
+      setRow6bError(null);
+      return;
+    }
+    if (addrsError) {
+      setClaimable(null);
+      setUnread([]);
+      setRow6bError(addrsError);
+      return;
+    }
+    if (!addrs?.usdc) {
+      // Still loading round 1 — not evidence of anything, render nothing rather than a stand-in.
+      setClaimable(null);
+      setUnread([]);
+      setRow6bError(null);
+      return;
+    }
+    let cancelled = false;
+    const assets = [addrs.usdc, ...vault.basket.map((l) => l.address as Address)];
+    const planned = planClaimableEscrow(vaultAddr, address, assets);
+    publicClient
+      .multicall({
+        contracts: planned.map((c) => ({ address: c.address as Address, abi: VAULT_VIEWS, functionName: c.fn, args: c.args })),
+        allowFailure: true,
+      })
+      .then((results) => {
+        if (cancelled) return;
+        const readAt = Math.floor(Date.now() / 1000);
+        const entries = planned.map((c, i) => ({
+          asset: c.args[1] as string,
+          value: results[i]?.status === 'success' ? results[i]?.result : undefined,
+          readAt,
+        }));
+        const r = assembleClaimableEscrow(entries);
+        setClaimable(r.claimable);
+        setUnread(r.unread);
+        setRow6bError(null);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setClaimable(null);
+        setUnread([]);
+        setRow6bError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, address, addrs?.usdc, addrsError, publicClient, vaultAddr, vault.basket]);
+
+  /** `USDC` for the vault's own USDC leg (not a basket entry, so it carries no `symbol`), else the
+   *  matching basket leg's symbol, else a short address — never a blank label. */
+  function symbolFor(asset: string): string {
+    if (addrs?.usdc && asset.toLowerCase() === addrs.usdc.toLowerCase()) return 'USDC';
+    const leg = vault.basket.find((l) => l.address.toLowerCase() === asset.toLowerCase());
+    return leg?.symbol || shortAddress(asset);
+  }
+
   // Row 6 — the basket leg's own safety tri-state, already merged onto `vault.basket` by
   // `assembleVault` (card #32) — no extra read needed here.
   const leg = vault.basket.length === 1 ? vault.basket[0] : undefined;
@@ -176,6 +274,33 @@ export function ContractTab({ vault }: Props) {
         Properties of the vault and governance contracts a member can check against the chain
         directly, rather than take on trust.
       </p>
+
+      {/* Row 6b — FIRST, per the spec's row-order rule. Zero, one, or many blocks; a wallet-scoped
+          disclosure, never a table with an implied header row (the spec: "never a summary row"). */}
+      {connected && claimable && claimable.length > 0
+        ? claimable.map((c) => (
+            <p className="note" key={c.asset}>
+              <strong>{symbolFor(c.asset)} we could not deliver.</strong> This is yours. The
+              transfer did not go through, so the vault is holding it for you rather than sending
+              it. Claim it whenever you like — it does not expire, it pays out in full, and trying
+              again later costs you nothing.{' '}
+              <span className="mono dim">({c.amount.toString()})</span>
+            </p>
+          ))
+        : null}
+      {connected && unread.length > 0
+        ? unread.map((u) => (
+            <p className="note tag-warn" role="status" key={u.asset}>
+              {symbolFor(u.asset)}: could not check your escrowed balance for this token. This is
+              not evidence you have nothing — it means the read did not complete.
+            </p>
+          ))
+        : null}
+      {connected && row6bError ? (
+        <p className="note tag-warn" role="status">
+          Could not check escrowed claims — status unknown ({row6bError})
+        </p>
+      ) : null}
 
       {/* The scope line — above rows 1-6, not a footnote (contract-tab-requirements-2026-09-19.md). */}
       <p className="note">

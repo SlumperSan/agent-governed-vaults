@@ -1,14 +1,14 @@
 // @ts-check
 /**
- * Card 127 (#182, P-O15) — the Contract tab component itself: the checkable rows that distinguish
- * this vault from a fund with a manager. `Decisions/contract-tab-requirements-2026-09-19.md` is
- * the row-to-read map this file checks the component against.
+ * Card 127 (#182, P-O15) — the Contract tab component itself. Card 205 — Row 6b's tri-state must
+ * survive all the way to the screen: `apps/web/src/chain-reader.mjs`'s `assembleClaimableEscrow`
+ * (PR #361) already keeps "confirmed zero" and "unread/failed" apart at the data layer (tested in
+ * `apps/web/test/chain-reader.test.mjs`), so this file is not re-testing that split — it is
+ * guarding that `ContractTab.tsx` does not quietly re-collapse it on the way to JSX, the exact
+ * defect `Findings/2026-09-21-row-6b-collapses-unread-into-zero.md` found in the original spec.
  *
  * SOURCE GUARDS, same reason as every sibling wiring test in this app: no JSX/TSX loader in
  * `node --test` (see `quorum-unknown.test.mjs`'s own header for the fuller version of this note).
- *
- * Row 6b (the per-token claimable-escrow tri-state, card 205) is covered in the following commit,
- * once the component itself exists — see `Tasks/row-6b-tri-state-unread.md`.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,84 @@ const REPO = fileURLToPath(new URL('../../..', import.meta.url));
 const SRC = readFileSync(join(APP, 'src/components/ContractTab.tsx'), 'utf8');
 const APP_TSX = readFileSync(join(APP, 'src/App.tsx'), 'utf8');
 const STYLES = readFileSync(join(APP, 'src/styles.css'), 'utf8');
+
+// ─────────────────── row order: 6b first, then the scope line, then rows 1-6 ───────────────────
+// contract-tab-requirements-2026-09-19.md, rule 4.
+
+test('Row 6b (claimable and unread) renders before the scope line', () => {
+  const claimableIdx = SRC.indexOf('claimable.map((c)');
+  const unreadIdx = SRC.indexOf('unread.map((u)');
+  const scopeIdx = SRC.indexOf('These are properties of the vault and governance contracts — not of the assets a vault');
+  assert.ok(claimableIdx >= 0, 'no claimable.map(...) render block found');
+  assert.ok(unreadIdx >= 0, 'no unread.map(...) render block found');
+  assert.ok(scopeIdx >= 0, 'the scope line text was not found');
+  assert.ok(claimableIdx < scopeIdx, 'the claimable (Row 6b) block must render before the scope line');
+  assert.ok(unreadIdx < scopeIdx, 'the unread (Row 6b) block must render before the scope line');
+});
+
+// ───────── row 6b's tri-state: unread is its own render, never folded into "claimable" ─────────
+// This is the card's own required mutation: "make unread render as a pass, and confirm red."
+
+test('the unread block is its own independent condition, not an else-branch of the claimable ternary', () => {
+  const between = SRC.slice(SRC.indexOf('claimable.map((c)'), SRC.indexOf('unread.map((u)'));
+  assert.match(between, /: null\}/, 'the claimable block does not close its own ternary before the unread block begins — they are one merged expression, not two independent ones');
+  assert.match(SRC, /\{connected && unread\.length > 0/, 'the unread block is not gated by its own, independent condition');
+});
+
+test('MUTATION: a version that only checks claimable.length (ignoring unread) renders a real unread balance as a pass', () => {
+  // Reconstructed inline, not executed against the component (no TSX loader) — the exact shape
+  // card 205 exists to forbid: a caller that consults only `claimable` and never `unread` cannot
+  // tell "you have nothing" from "we could not check", which is the defect Findings/2026-09-21-
+  // row-6b-collapses-unread-into-zero.md found in the ORIGINAL spec for this exact row.
+  const claimable = /** @type {readonly {asset: string}[]} */ ([]);
+  const unreadList = [{ asset: '0xabc', readAt: null }];
+  const buggyRendersSomething = claimable.length > 0; // the pre-fix shape: unread is never consulted
+  const fixedRendersSomething = claimable.length > 0 || unreadList.length > 0;
+  assert.equal(buggyRendersSomething, false, 'sanity: the buggy shape renders NOTHING for a real unread balance — this IS "unread rendering as a pass"');
+  assert.equal(fixedRendersSomething, true, 'the fixed logic must render something for this exact state');
+  // And the real component is the fixed shape: two structurally independent conditions.
+  assert.match(SRC, /claimable && claimable\.length > 0/);
+  assert.match(SRC, /unread\.length > 0/);
+});
+
+test('MUTATION: deleting the unread render block removes the ONLY place unread is ever rendered', () => {
+  const unreadBlockMatch = /\{connected && unread\.length > 0[\s\S]*?: null\}/.exec(SRC);
+  assert.ok(unreadBlockMatch, 'could not isolate the unread render block');
+  const withoutUnreadBlock = SRC.replace(unreadBlockMatch[0], '');
+  assert.doesNotMatch(
+    withoutUnreadBlock,
+    /unread\.map\(/,
+    'RED: with the block removed, nothing in the component reads `unread` for rendering at all',
+  );
+});
+
+test('the unread line uses distinct wording and the warn treatment — a reader must be able to tell it apart from a real claim', () => {
+  const claimableBlock = /claimable\.map\(\(c\) => \([\s\S]*?\)\)\s*: null/.exec(SRC);
+  const unreadBlock = /unread\.map\(\(u\) => \([\s\S]*?\)\)\s*: null/.exec(SRC);
+  assert.ok(claimableBlock && unreadBlock, 'could not isolate both Row 6b blocks');
+  assert.doesNotMatch(unreadBlock[0], /we could not deliver/, 'the unread line must not reuse the claimable-positive copy — that would claim a balance exists when it is only unread');
+  assert.match(unreadBlock[0], /tag-warn/, 'the unread line must take the warn treatment');
+  assert.doesNotMatch(claimableBlock[0], /tag-warn/, 'the claimable-positive line is a factual disclosure, not an alarm — it must not take the warn treatment');
+});
+
+// ───────────────── the whole Row 6b family is absent without a connected wallet ─────────────────
+// contract-tab-claimable-escrow-read.md's own checklist: "No wallet connected → the entire row
+// family is absent, not 'connect to check'."
+
+test('every Row 6b block is gated on `connected`, not rendered as a "connect your wallet" placeholder', () => {
+  assert.match(SRC, /\{connected && claimable && claimable\.length > 0/);
+  assert.match(SRC, /\{connected && unread\.length > 0/);
+  assert.match(SRC, /\{connected && row6bError/);
+  assert.doesNotMatch(SRC, /connect your wallet/i, 'no placeholder text asking a disconnected viewer to connect in order to check');
+});
+
+test('MUTATION: dropping the `connected &&` guard from the claimable block would render Row 6b for a disconnected viewer', () => {
+  const guarded = '{connected && claimable && claimable.length > 0';
+  assert.ok(SRC.includes(guarded), 'exact guarded condition not found — did the block move?');
+  const weakened = SRC.replace(guarded, '{claimable && claimable.length > 0');
+  assert.notEqual(weakened, SRC, 'mutation target not found');
+  assert.doesNotMatch(weakened.slice(0, weakened.indexOf('unread.map((u)')), /\{connected && claimable/, 'RED: the weakened condition no longer requires a connected wallet');
+});
 
 // ───────────────────────── Row 4: all-or-nothing, never a partial pass ─────────────────────────
 
@@ -44,7 +122,7 @@ test('Row 5s live line renders only when allowSubVaults !== undefined, and both 
 });
 
 test('MUTATION: a bare truthiness check on allowSubVaults would fold false (a real answer) into "not read"', () => {
-  const strictGate = '{allowSubVaults !== undefined ? (';
+  const strictGate = "{allowSubVaults !== undefined ? (";
   assert.ok(SRC.includes(strictGate), 'exact Row 5 gate not found');
   const truthy = SRC.replace(strictGate, '{allowSubVaults ? (');
   assert.notEqual(truthy, SRC);
@@ -95,9 +173,9 @@ test('"cirBTC" is literal only while this app serves one vault on a cirBTC-only 
 // ───────────────────────── read-only: no write path, no walletClient ─────────────────────────
 // This card's own constraint: "No new write paths. This is a read-only tab."
 
-// Comments stripped before the check below — the module's own doc comment can otherwise match
-// itself (same "a guard's own docstring can match itself" hazard `holdings-oracle-health.test.mjs`
-// already strips comments for).
+// Comments stripped before the check below — the module's own doc comment explains, in prose, WHY
+// no write function is imported, and names `sendClaimEscrowed` to do it (same "a guard's own
+// docstring can match itself" hazard `holdings-oracle-health.test.mjs` already strips comments for).
 const CODE_ONLY = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
 test('ContractTab.tsx imports no write function and no walletClient — read-only, per this cards constraint', () => {
