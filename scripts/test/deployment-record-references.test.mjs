@@ -10,12 +10,15 @@
  *
  * TWO DISTINCTIONS, BOTH MECHANICAL, because a missing record is not automatically an error.
  *
- * FIRST, deleted versus never written. `docs/evidence/arc-deploy-runbook.md` names
- * `contracts/config/deployments/arc-mainnet.json` as the file a future deploy must WRITE, which is
- * an instruction rather than a citation. Telling those apart by wording ("write", "create") would be
- * a guard anyone can walk around by rephrasing, so history tells them apart instead: a path this
- * repository has NEVER contained is forward-looking; a path it once contained and no longer does is a
- * dead citation. `git log --diff-filter=A` answers that, and nothing in the prose can change it.
+ * FIRST, deleted versus never written. `contracts/config/deployments/arc-mainnet.json` WAS the
+ * never-written example here — `docs/evidence/arc-deploy-runbook.md` named it as the file a future
+ * deploy must WRITE, an instruction rather than a citation — until the Arc mainnet deploy wrote it
+ * on 2026-09-24; the probe test below now uses `contracts/config/deployments/base-mainnet.json`
+ * instead, for the same reason. Telling a forward-looking mention apart from a dead citation by
+ * wording ("write", "create") would be a guard anyone can walk around by rephrasing, so history
+ * tells them apart instead: a path this repository has NEVER contained is forward-looking; a path
+ * it once contained and no longer does is a dead citation. `git log --diff-filter=A` answers that,
+ * and nothing in the prose can change it.
  *
  * SECOND, and this is what keeps the guard from banning the remediation itself: a deleted record may
  * be NAMED, as long as the naming carries its retrieval route. "The record was X, removed in
@@ -106,9 +109,13 @@ function proseFiles() {
   return out.sort();
 }
 
-/** Has this path EVER existed in this repository? A `git log` over every ref, not over the tree. */
+/** Has this path EVER existed in the history of the commit under test? A `git log` over HEAD's
+ * ancestry, not over the tree. NOT `--all`: every ref includes other people's unmerged branches, so
+ * one pushed branch that adds a record (#390, arc-mainnet.json) made every other PR's CI treat that
+ * never-merged file as "deleted" and fail a citation of it. CI checks out with fetch-depth 0, so
+ * HEAD's ancestry is complete there. */
 function everExisted(repoPath) {
-  const r = spawnSync('git', ['log', '--all', '--diff-filter=A', '--format=%h', '--', repoPath], {
+  const r = spawnSync('git', ['log', 'HEAD', '--diff-filter=A', '--format=%h', '--', repoPath], {
     cwd: REPO,
     encoding: 'utf8',
   });
@@ -156,12 +163,15 @@ test('probe: the guard sees a dead citation, and lets a never-written target thr
   // Without this, the test above is green over a broken matcher and proves nothing. Both legs are
   // asserted because the two cases are the whole point of the guard.
   const dead = `${RECORD_DIR}/robinhood-mainnet.json`;
-  const future = `${RECORD_DIR}/arc-mainnet.json`;
+  // arc-mainnet.json was this fixture until the Arc mainnet deploy wrote it on 2026-09-24;
+  // base-mainnet.json is the next real never-written target (contracts/config/base-mainnet.json,
+  // the launch-parameter config, already exists — this is the deployment record, a different file).
+  const future = `${RECORD_DIR}/base-mainnet.json`;
 
   assert.ok(!existsSync(path.join(REPO, dead)), 'fixture assumption: the 4663 record is deleted');
   assert.ok(everExisted(dead), 'the deleted record must be findable in history, or the guard cannot fire');
 
-  assert.ok(!existsSync(path.join(REPO, future)), 'fixture assumption: the Arc record is not written yet');
+  assert.ok(!existsSync(path.join(REPO, future)), 'fixture assumption: the Base mainnet record is not written yet');
   assert.equal(everExisted(future), false, 'a never-written target must not look like a dead citation');
 
   // The matcher reaches both spellings the offending documents actually used: a markdown link with a

@@ -10,9 +10,9 @@
  *
  * `fetch` is stubbed per test — nothing here makes a real network call. `checkArcDeployment` reads
  * real files from the checked-out repo (no network, no injection point): it asserts against the
- * actual current state, `contracts/config/deployments/arc-mainnet.json` absent, which is itself
- * the fact issue this row exists to surface — see `contracts/config/arc-mainnet.json`'s own
- * `status` field.
+ * actual current state, `contracts/config/deployments/arc-mainnet.json` present since the Arc
+ * mainnet deploy on 2026-09-24 — this row is green today, the opposite of the state this file
+ * documented before that deploy.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -411,11 +411,10 @@ test('Deployer balance: RPC error object on balanceOf — unknown', async () => 
 
 // ─────────────────────────────────── row 4 — Arc deployment ──────────────────────────────────
 
-test('Arc deployment: red today — the deployment record does not exist, and the config status is quoted', () => {
+test('Arc deployment: green — the deployment record exists', () => {
   const r = checkArcDeployment();
-  assert.equal(r.state, 'red');
-  assert.match(r.detail, /arc-mainnet\.json does not exist/);
-  assert.match(r.detail, /Nothing from this repository exists on chain 5042/, 'must quote the real status field verbatim');
+  assert.equal(r.state, 'green');
+  assert.match(r.detail, /arc-mainnet\.json exists/);
 });
 
 // ────────────────────────────── row 5 — member surface in production ─────────────────────────
@@ -463,9 +462,15 @@ test('runLaunchChecks: an unreachable RPC yields unknown rows, never a false gre
   assert.equal(byId['balance'].state, 'unknown');
   assert.equal(byId['member-surface'].state, 'unknown');
   // Arc deployment is a file read with no network dependency, so it still resolves to its real
-  // (red) verdict even while every RPC-backed row is unknown.
-  assert.equal(byId['arc-deploy'].state, 'red');
-  for (const r of rows) assert.notEqual(r.state, 'green', 'no row may read green when every RPC call fails');
+  // (green, since the deployment record now exists) verdict even while every RPC-backed row is
+  // unknown — the point this test makes is independence from the broken RPC, not a particular
+  // state, so 'arc-deploy' is exempted from the blanket "no green" check below rather than the
+  // check being dropped.
+  assert.equal(byId['arc-deploy'].state, 'green');
+  for (const r of rows) {
+    if (r.id === 'arc-deploy') continue;
+    assert.notEqual(r.state, 'green', 'no RPC-backed row may read green when every RPC call fails');
+  }
 });
 
 test('every row is a well-formed object regardless of outcome', async () => {
