@@ -116,9 +116,10 @@ const VERDICT_RE = /<!--\s*REVIEW-VERDICT\s+reviewer=([A-Za-z0-9_.\-]+)\s+verdic
 /**
  * Same shape as `VERDICT_RE` but with `verdict=` left unconstrained, so it matches a token whose
  * value the strict regex above rejects — `verdict=REQUEST_CHANGES` (GitHub's own review UI's word)
- * being the case that motivated this. Used ONLY by `parseUnparseableVerdicts` to REPORT a token
- * the gate saw but could not parse; it never clears or blocks anything, and a match here is never
- * counted as a real verdict. Card #59 (PR 307): this exact shape, in a comment, held a REJECT that
+ * being the case that motivated this. Used by `parseUnparseableVerdicts` to REPORT a token the gate
+ * saw but could not parse, and by `unreadableLatestVerdicts` to BLOCK when such a token is its
+ * reviewer's newest (card 216). A match here never clears anything and is never counted as a real
+ * verdict. Card #59 (PR 307): this exact shape, in a comment, held a REJECT that
  * `roster-resolved` reported as "reviewer has not reported" — a blocking finding that never reached
  * the gate, because the invalid value made the token invisible rather than merely rejected.
  */
@@ -248,6 +249,40 @@ export function parseUnparseableVerdicts(comments) {
     }
   }
   return out;
+}
+
+/**
+ * Card 216: each reviewer's token that the gate SEES but cannot PARSE, when it is newer than that
+ * reviewer's latest parsed verdict (or the reviewer has no parsed verdict at all). Suppose a reviewer
+ * posts ACCEPT, then `verdict=Reject`: `latestPerReviewer` still returns the ACCEPT, so the gate
+ * merged on a note while the reviewer's last word was an objection it could not read. That token
+ * must block until the reviewer reposts a well-formed one.
+ *
+ * "Newer" is by comment time, then by position: comment order, then offset in the body. So a
+ * malformed token and a valid one in the SAME comment are ordered by which comes last, and a
+ * well-formed repost after the malformed token clears it.
+ * @param {Comment[]} comments
+ * @returns {{reviewer: string, value: string, at: string}[]}
+ */
+export function unreadableLatestVerdicts(comments) {
+  /** @type {Record<string, {key: [string, number, number], value: string | null, at: string}>} */
+  const last = {};
+  const later = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2]);
+  comments.forEach((c, ci) => {
+    LOOSE_VERDICT_RE.lastIndex = 0;
+    let m;
+    while ((m = LOOSE_VERDICT_RE.exec(c.body)) !== null) {
+      /** @type {[string, number, number]} */
+      const key = [c.createdAt, ci, m.index];
+      const prev = last[m[1]];
+      if (!prev || later(key, prev.key)) {
+        last[m[1]] = { key, value: /^(?:ACCEPT|REJECT)$/.test(m[2]) ? null : m[2], at: c.createdAt };
+      }
+    }
+  });
+  return Object.entries(last)
+    .filter(([, v]) => v.value !== null)
+    .map(([reviewer, v]) => ({ reviewer, value: /** @type {string} */ (v.value), at: v.at }));
 }
 
 /**
@@ -389,6 +424,14 @@ export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) 
       });
     }
   }
+  // Card 216: a reviewer whose NEWEST token is unreadable blocks, whatever their older parsed
+  // verdict says — the gate cannot tell an objection from a typo, so it must not merge on either.
+  for (const u of unreadableLatestVerdicts(comments)) {
+    blockers.push({
+      ruleId: 'no-standing-reject',
+      detail: `${u.reviewer}'s newest verdict token is unreadable (verdict=${u.value} at ${u.at}), and it is newer than any verdict of theirs the gate can parse. Repost it as a well-formed token: verdict=ACCEPT or verdict=REJECT.`,
+    });
+  }
   for (const l of legacy) {
     // Block-only: a prose REJECT is cleared solely by a LATER structured token, never by more prose.
     if (!(lastVerdictAt && lastVerdictAt > l.at)) {
@@ -523,8 +566,8 @@ export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) 
 
   // --- card #59: verdict tokens that reach the gate silently unparsed ------------------------
   // Both render on the PR page identically to "reviewer has not reported", which `roster-resolved`
-  // cannot tell apart from a review still in flight. Report-only, by design (see PR body / card
-  // #59): a noisy gate is its own problem, so neither of these may block or clear anything.
+  // cannot tell apart from a review still in flight. These notes never clear anything. An
+  // unparsed token that is a reviewer's NEWEST also blocks, under no-standing-reject (card 216).
   for (const u of parseUnparseableVerdicts(comments)) {
     notes.push(
       `verdict token found but not parsed: reviewer=${u.reviewer} verdict=${u.value} (at ${u.at}) — ` +

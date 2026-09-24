@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   evaluate, parseLegacyRejects, parseLegacyVerdicts, latestPerReviewer, parseRoster, runsForHead,
-  parseUnparseableVerdicts, reviewObjectVerdicts,
+  parseUnparseableVerdicts, unreadableLatestVerdicts, reviewObjectVerdicts,
   LEGACY_REJECT_PATTERN, LEGACY_VERDICT_PATTERN, SELF_WORKFLOW_NAME,
 } from '../lib/verdicts.mjs';
 // Importing the adapter is safe: its bottom guard runs `main()` only when it is `process.argv[1]`.
@@ -832,16 +832,17 @@ test('parseUnparseableVerdicts: an invalid verdict= value is reported; the stand
   assert.deepEqual(parseUnparseableVerdicts([]), []);
 });
 
-test('evaluate(): an unparseable verdict token in a comment is a NOTE, never a blocker or a clear', () => {
+test('evaluate(): an unparseable verdict token is reported as a note, never clears, and (card 216) blocks as the reviewer\'s newest word', () => {
   const pr = { number: 307, state: 'OPEN', headRefOid: 'feed0059', headRefName: 'x' };
   const comments = [
     { createdAt: '2026-09-19T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Finance -->' },
     { createdAt: '2026-09-19T00:05:00Z', body: '<!-- REVIEW-VERDICT reviewer=Finance verdict=REQUEST_CHANGES -->' },
   ];
   const d = evaluate({ pr, comments, runs: greenOn('feed0059'), mode: 'strict' });
-  // Still blocked -- the malformed token counts as NOTHING, so the roster is still unresolved.
+  // Still blocked: the malformed token counts as no verdict, so the roster is unresolved, and it is
+  // Finance's newest token, so it blocks in its own right (card 216).
   assert.equal(d.clear, false);
-  assert.deepEqual(ruleIds(d.blockers), ['roster-resolved']);
+  assert.deepEqual(ruleIds(d.blockers).sort(), ['no-standing-reject', 'roster-resolved']);
   assert.ok(
     d.notes.some((n) => n.includes('verdict token found but not parsed') && n.includes('REQUEST_CHANGES')),
     'the report must name the unparsed value',
@@ -895,3 +896,57 @@ test('evaluate(): omitting `reviews` entirely (every pre-existing caller/fixture
   assert.equal(d.clear, true);
   assert.deepEqual(d.notes, []);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Card 216: a reviewer's NEWEST token being unreadable blocks, whatever their older verdict says
+// ---------------------------------------------------------------------------------------------
+
+{
+  const pr = { number: 216, state: 'OPEN', headRefOid: 'feed0216', headRefName: 'x' };
+  const roster = { createdAt: '2026-09-24T00:00:00Z', body: '<!-- REVIEW-ROSTER reviewers=Security -->' };
+  const tok = (at, v) => ({ createdAt: at, body: `<!-- REVIEW-VERDICT reviewer=Security verdict=${v} -->` });
+
+  test('card 216: ACCEPT then a malformed verdict=Reject BLOCKS, in both modes', () => {
+    const comments = [roster, tok('2026-09-24T01:00:00Z', 'ACCEPT'), tok('2026-09-24T02:00:00Z', 'Reject')];
+    for (const mode of /** @type {const} */ (['advisory', 'strict'])) {
+      const d = evaluate({ pr, comments, runs: greenOn('feed0216'), mode });
+      assert.equal(d.clear, false, `${mode}: a newer unreadable token must not merge on the older ACCEPT`);
+      assert.deepEqual(ruleIds(d.blockers), ['no-standing-reject']);
+      assert.ok(d.blockers.some((b) => /unreadable \(verdict=Reject/.test(b.detail) && /Repost/.test(b.detail)));
+    }
+  });
+
+  test('card 216: ACCEPT, malformed, then a valid ACCEPT clears', () => {
+    const comments = [roster, tok('2026-09-24T01:00:00Z', 'ACCEPT'), tok('2026-09-24T02:00:00Z', 'Reject'), tok('2026-09-24T03:00:00Z', 'ACCEPT')];
+    const d = evaluate({ pr, comments, runs: greenOn('feed0216'), mode: 'strict' });
+    assert.equal(d.clear, true);
+    assert.deepEqual(unreadableLatestVerdicts(comments), []);
+  });
+
+  test('card 216: a malformed token OLDER than a valid verdict does not block', () => {
+    const comments = [roster, tok('2026-09-24T01:00:00Z', 'Reject'), tok('2026-09-24T02:00:00Z', 'ACCEPT')];
+    assert.equal(evaluate({ pr, comments, runs: greenOn('feed0216'), mode: 'strict' }).clear, true);
+  });
+
+  test('card 216: same timestamp, same comment — the token that comes LAST in the body decides', () => {
+    const at = '2026-09-24T01:00:00Z';
+    const accLast = [roster, { createdAt: at, body: '<!-- REVIEW-VERDICT reviewer=Security verdict=Reject --> fixed: <!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT -->' }];
+    const badLast = [roster, { createdAt: at, body: '<!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT --> then <!-- REVIEW-VERDICT reviewer=Security verdict=Reject -->' }];
+    assert.equal(evaluate({ pr, comments: accLast, runs: greenOn('feed0216'), mode: 'strict' }).clear, true);
+    assert.equal(evaluate({ pr, comments: badLast, runs: greenOn('feed0216'), mode: 'strict' }).clear, false);
+  });
+
+  test('card 216: same timestamp, separate comments — comment order decides', () => {
+    const at = '2026-09-24T01:00:00Z';
+    assert.equal(evaluate({ pr, comments: [roster, tok(at, 'ACCEPT'), tok(at, 'Reject')], runs: greenOn('feed0216'), mode: 'strict' }).clear, false);
+    assert.equal(evaluate({ pr, comments: [roster, tok(at, 'Reject'), tok(at, 'ACCEPT')], runs: greenOn('feed0216'), mode: 'strict' }).clear, true);
+  });
+
+  test('card 216: another reviewer\'s malformed token does not touch Security, and blocks for its own author', () => {
+    const comments = [roster, tok('2026-09-24T01:00:00Z', 'ACCEPT'), { createdAt: '2026-09-24T02:00:00Z', body: '<!-- REVIEW-VERDICT reviewer=Product verdict=LGTM -->' }];
+    assert.deepEqual(unreadableLatestVerdicts(comments), [{ reviewer: 'Product', value: 'LGTM', at: '2026-09-24T02:00:00Z' }]);
+    const d = evaluate({ pr, comments, runs: greenOn('feed0216'), mode: 'strict' });
+    assert.equal(d.clear, false);
+    assert.ok(d.blockers.every((b) => !b.detail.startsWith('Security')));
+  });
+}

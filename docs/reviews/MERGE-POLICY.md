@@ -343,7 +343,7 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
         "strict"
       ],
       "title": "no reviewer's latest verdict may be REJECT",
-      "blocksWhen": "any reviewer's latest REVIEW-VERDICT token is REJECT, or a legacy prose REJECT heading is not followed by a later ACCEPT token",
+      "blocksWhen": "any reviewer's latest REVIEW-VERDICT token is REJECT, or a reviewer's newest REVIEW-VERDICT-shaped token has a verdict= value the gate cannot parse (card 216), or a legacy prose REJECT heading is not followed by a later ACCEPT token",
       "why": "Mode A. #107 merged 8 minutes after a REJECT was standing in writing on the PR; #92 merged 29 minutes after one. This is a policy failure, not a visibility one: the standing self-merge rule had no clause about an open REJECT, so an agent following it as written merges correctly and lands a HIGH."
     },
     {
