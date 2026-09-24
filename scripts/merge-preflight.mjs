@@ -93,16 +93,21 @@ function rule(label) {
  * one preflight run and zero CI runs, while `scripts/test/merge-preflight.test.mjs` stayed 30/30
  * green, because the suite imports `verdicts.mjs` and never executes this file.
  *
- * It is not one field. Twelve rule-bearing values reach `evaluate()` from `gh`. SEVEN fail CLOSED
- * when absent — `state`, `headRefOid`, `headRefName`, `baseRefName`, `headSha`, `status` and
- * `conclusion` each push a blocker, make the head match nothing, or make the `gh` call itself fail.
- * FIVE fail OPEN: `workflowName` disarms the self-exclusion; `commits` silently retires Mode D;
- * `comments` retires Modes A, D and E, which in the `--advisory` mode the workflow actually runs
- * leaves nothing but `pr-open` and `ci-matches-head` standing; `isDraft` lets a draft through; and
- * `.behind_by` retires Mode E, because `--jq` on a key that is not there prints `null` while `gh`
- * still exits 0. So the check is on the SET, not on the field that was noticed.
+ * It is not one field. Thirteen rule-bearing values reach `evaluate()` from `gh`. EIGHT fail CLOSED
+ * when absent — `state`, `headRefOid`, `headRefName`, `baseRefName`, `headSha`, `status`,
+ * `conclusion` and `body` each push a blocker, make the head match nothing, or make the `gh` call
+ * itself fail. (`body` is closed by construction rather than by an explicit check: an absent body
+ * makes every `extractSection` call return `null`, which `buy-borrow-build-declared`, card 190,
+ * reads as a missing section and blocks on — but it is still declared here so a `gh` contract drift
+ * is reported as "could not determine" rather than silently misjudged as "the author never wrote a
+ * Buy / borrow / build section".) FIVE fail OPEN: `workflowName` disarms the self-exclusion;
+ * `commits` silently retires Mode D; `comments` retires Modes A, D and E, which in the `--advisory`
+ * mode the workflow actually runs leaves nothing but `pr-open` and `ci-matches-head` standing;
+ * `isDraft` lets a draft through; and `.behind_by` retires Mode E, because `--jq` on a key that is
+ * not there prints `null` while `gh` still exits 0. So the check is on the SET, not on the field
+ * that was noticed.
  *
- * `number` is the thirteenth field and the only cosmetic one: it is required below because the
+ * `number` is the fourteenth field and the only cosmetic one: it is required below because the
  * printed header names the PR, and no rule reads it.
  *
  * DECLARED HERE, NOT DERIVED FROM THE `--json` STRINGS. A required set read back out of the request
@@ -112,7 +117,7 @@ function rule(label) {
  * `scripts/test/merge-preflight.test.mjs` — which also names `workflowName` and `commits`
  * literally, so deleting a field from BOTH statements is still red.
  */
-export const PR_FIELDS = ['number', 'state', 'isDraft', 'headRefName', 'headRefOid', 'baseRefName', 'comments', 'commits'];
+export const PR_FIELDS = ['number', 'state', 'isDraft', 'headRefName', 'headRefOid', 'baseRefName', 'comments', 'commits', 'body'];
 
 /** Likewise for `gh run list`. `workflowName` is what `runsForHead` excludes this gate's own runs by. */
 export const RUN_FIELDS = ['headSha', 'status', 'conclusion', 'workflowName'];
@@ -226,7 +231,7 @@ export function main(argv = process.argv.slice(2)) {
 
   const pr = gh([
     'pr', 'view', opts.pr, '--repo', opts.repo,
-    '--json', 'number,state,isDraft,headRefName,headRefOid,baseRefName,comments,commits',
+    '--json', 'number,state,isDraft,headRefName,headRefOid,baseRefName,comments,commits,body',
   ]);
   if (!pr.ok) {
     process.stderr.write(`merge-preflight: cannot read PR #${opts.pr}: ${pr.err}\n`);
@@ -295,6 +300,7 @@ export function main(argv = process.argv.slice(2)) {
       headCommittedDate: (pr.data.commits ?? []).at(-1)?.committedDate,
       baseRefName: pr.data.baseRefName,
       behindBy: cmp.data,
+      body: pr.data.body,
     },
     comments: trusted.comments,
     runs: (runs.data ?? []).map((/** @type {any} */ r) => ({

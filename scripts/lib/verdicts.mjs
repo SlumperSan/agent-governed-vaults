@@ -62,6 +62,7 @@
  * @property {string} [baseRefName]
  * @property {string} [headRefName]
  * @property {boolean} [isDraft]
+ * @property {string} [body]  PR description, for buy-borrow-build-declared (card 190)
  *
  * @typedef {object} Run
  * @property {string} headSha
@@ -81,6 +82,10 @@
  * @property {string[]|null} roster
  * @property {Record<string, {verdict: Verdict, at: string}>} latestVerdicts
  */
+
+// Card 190 / Chairman directive 13 -- see scripts/lib/pr-body-sections.mjs for the section
+// extraction and blank-detection logic, factored out so it can be unit-tested without a PR fixture.
+import { BBB_SECTIONS, extractSection, isBlankSection } from './pr-body-sections.mjs';
 
 /**
  * The `name:` of this gate's own workflow, `.github/workflows/merge-preflight.yml`.
@@ -406,6 +411,36 @@ export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) 
     });
   } else if (pr.isDraft) {
     blockers.push({ ruleId: 'pr-open', detail: 'PR is a draft.' });
+  }
+
+  // --- buy-borrow-build-declared (Chairman directive 13, card 190) — both modes ---------------
+  // A feat/ PR must say what the repo already has and what exists elsewhere before it builds
+  // something new. "None found" is a real answer and must pass; a missing section, or one nobody
+  // filled in, reads identically to a real search in a diff — that is the failure this rule exists
+  // to stop. Both modes, like ci-matches-head and pr-open: this is a body-content requirement, not
+  // a review-workflow one, so it applies whether or not the roster rules are armed. See
+  // scripts/lib/pr-body-sections.mjs for the section extraction and blank-detection logic.
+  if (typeof pr.headRefName === 'string' && pr.headRefName.startsWith('feat/')) {
+    for (const { label, heading } of BBB_SECTIONS) {
+      const section = extractSection(pr.body ?? '', heading);
+      if (section === null) {
+        blockers.push({
+          ruleId: 'buy-borrow-build-declared',
+          detail:
+            `no "## ${label}" section in the PR body. Chairman directive 13: every feat/ PR states ` +
+            `what the repo already has and what exists elsewhere before building something new — ` +
+            `"None found" is a real answer and must be written, not omitted.`,
+        });
+      } else if (isBlankSection(section)) {
+        blockers.push({
+          ruleId: 'buy-borrow-build-declared',
+          detail:
+            `"## ${label}" section is present but blank (only whitespace, an HTML comment, or an ` +
+            `unfilled template placeholder). Fill it in, or write "None found" if that is the ` +
+            `honest answer — a blank section reads the same whether the search happened or not.`,
+        });
+      }
+    }
   }
 
   // --- verdicts -------------------------------------------------------------------------------
