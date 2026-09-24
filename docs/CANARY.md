@@ -139,7 +139,7 @@ and `_requireSequencerUp` ignores it for exactly that reason. It gets its own tr
 
 **On an oracle deployed with no uptime feed, the leg is NOT-APPLICABLE, not degraded.**
 `sequencerUptimeFeed` is immutable (`ChainlinkOracle.sol:75`) and `_requireSequencerUp` returns
-without reading a feed when it is `address(0)` (`ChainlinkOracle.sol:351`), so no sequencer state
+without reading a feed when it is `address(0)` (`ChainlinkOracle.sol:314`), so no sequencer state
 can ever freeze such a vault. The canary says so once per vault, as a NOTICE, and is silent
 thereafter; it does not repeat a "cannot run" line on every vault on every sweep for the life of
 the deployment,

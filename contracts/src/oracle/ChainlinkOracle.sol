@@ -232,12 +232,9 @@ contract ChainlinkOracle is IOracleAggregator {
             // Rejected fix: re-read decimals() in `priceWad` and revert on mismatch. It is cheap
             // (+1,350 gas per priced asset, measured) — but it turns a benign upstream operation
             // into a PERMANENT vault-wide freeze that nothing on-chain can lift (`VaultCore.oracle`
-            // is immutable; there is no rotation lever). Under drift a member is never frozen out,
-            // because `_settleExit` sizes the payout pro-rata and only VALUES it through the oracle
-            // — but that value sets the performance fee, so the drift is not costless: it withholds
-            // a bounded, one-directional haircut of up to the 10% fee clamp from the member's actual
-            // tokens (Findings/2026-09-19-a-member-does-not-exit-whole-under-decimals-drift). Under a
-            // false freeze nobody exits, ever, at any cost. The sane-price band already fail-closes on
+            // is immutable; there is no rotation lever). Under drift a member still exits whole,
+            // because `_settleExit` sizes the payout pro-rata and only VALUES it through the oracle;
+            // under a false freeze nobody exits, ever. The sane-price band already fail-closes on
             // every drift with a Chainlink precedent, leaving a +/-1-decimal change as the residual
             // — zero occurrences in 25 surveyed swaps, and no convention that produces 7 or 9.
             // Detection lives off-chain in scripts/verify-chainlink-oracle.mjs, where a false alarm

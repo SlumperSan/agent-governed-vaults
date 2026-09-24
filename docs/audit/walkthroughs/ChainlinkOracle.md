@@ -102,8 +102,8 @@ immutable). A deprecated or frozen feed fails its vault closed. That is the acce
    an accepted residual. The band catches most drifts
    (`AuditAggregatorSwapDrift.t.sol:test_backstop_*`), while ±1-decimal drifts can sit inside a
    real band (`test_residual_*`), and the backstop lapses at some price levels (`test_expiry_*`).
-   **The comment at `:235-236` used to say that under drift "a member still exits whole" — fixed**,
-   per `Findings/2026-09-19-a-member-does-not-exit-whole-under-decimals-drift`: the oracle-derived
+   **The comment at `:235-236` is wrong**: it says that under drift "a member still exits whole".
+   `Findings/2026-09-19-a-member-does-not-exit-whole-under-decimals-drift` shows the oracle-derived
    fee fraction is withheld from the member's actual tokens, so a +1-decimal drift manufactures a
    phantom gain and takes the full fee clamp. Treat the risk as fee loss on exit, not as
    exit-whole.

@@ -44,11 +44,14 @@ import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
 ///    BTC/USD and LINK/USD are each at phaseId 7 and report 8 at every phase that implements
 ///    AggregatorV3). Pinned by the `test_residual_*` cases, which assert the mispricing is silent —
 ///    they are the boundary of the accepted risk, not a claim that it is safe.
-/// 4. **The harm is bounded to a fee haircut, not a freeze.** `_settleExit` pays a member their
-///    pro-rata slice of `assetBalance` and `idleUsdc` — the oracle is consulted only to value the
-///    payout, never to size it — so under drift a member is never frozen out. But that valuation
-///    sets the performance fee, and the fee IS withheld from the member's actual tokens, so drift
-///    is not costless: it is a bounded, one-directional haircut of up to the 10% fee clamp. A
+/// 4. **Drift harms MINTING without bound, and harms an EXIT by at most a fee haircut.**
+///    Minting: a deposit is priced against `navWad`, so a −1-decimal drift (underpricing the basket)
+///    mints the new depositor excess shares and dilutes every existing member, well past 10%; that
+///    harm has no bound here. Exit: `_settleExit` pays a member their pro-rata slice of
+///    `assetBalance` and `idleUsdc`, and the oracle only values the payout, never sizes it, so a
+///    member is never frozen out. But that valuation sets the performance fee, and the fee IS
+///    withheld from the member's actual tokens: a +1-decimal drift overstates the gain and charges
+///    a fee of at most 10% of the payout (the fee clamp), while a −1-decimal drift charges none. A
 ///    re-check that fail-closed on a routine swap would instead freeze `navWad`, `deposit` AND
 ///    `requestExit` forever, with no rotation lever to undo it (the vault's oracle is `immutable`
 ///    and `Governance` has no oracle surface — see `AuditOracleRotation.t.sol`). That asymmetry —
