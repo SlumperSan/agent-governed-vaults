@@ -211,7 +211,7 @@
     },
     "reentrancy-benign::FeeEngine.pullEscrowed": {
       "count": 1,
-      "reason": "Covered by its own nonReentrant mutex (read 2026-09-24: contracts/src/FeeEngine.sol#144, `function pullEscrowed(...) external nonReentrant`) -- corrected 2026-09-24, the doc's blanket 'FeeEngine has no mutex' does not hold for this function specifically (it does for onFeeCollected, below, which has no external call in its body to reenter through at all)."
+      "reason": "Covered by its own nonReentrant mutex (read 2026-09-24: contracts/src/FeeEngine.sol#144, `function pullEscrowed(...) external nonReentrant`). A site not named in SLITHER-TRIAGE.md's reentrancy-no-eth/-events/-benign row (that row's 'FeeEngine has no mutex' names onFeeCollected specifically, not this function) -- reconciled 2026-09-24."
     },
     "reentrancy-benign::VaultCore._redeemChildMeasured": {
       "count": 1,
