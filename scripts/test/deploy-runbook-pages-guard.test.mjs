@@ -223,13 +223,21 @@ const markdownPaths = () => {
   return paths;
 };
 
+// Every fence language this guard has actually seen in the repo (`sh`, `bash`, `shell`) plus the
+// documented superset it must also cover (`console`, `powershell`, `ps1`) or a bare fence with no
+// language tag at all. Security (PR #320) found the fence match scoped to ```bash``` and bare
+// fences only — the repo already carries 8 ```shell``` and 3 ```sh``` blocks, so a
+// `wrangler pages deploy .` planted inside any of those, or a ```console```/```powershell```/
+// ```ps1``` block, was invisible to this test regardless of the command inside it.
+const DEPLOY_FENCE_RE = /```(?:sh|bash|shell|console|powershell|ps1)?\n([\s\S]*?)```/g;
+
 test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) in a runnable code block', () => {
   const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
   const offenders = [];
 
   for (const mdPath of markdownPaths()) {
     const text = read(mdPath);
-    for (const fenceMatch of text.matchAll(/```(?:bash)?\n([\s\S]*?)```/g)) {
+    for (const fenceMatch of text.matchAll(DEPLOY_FENCE_RE)) {
       const block = fenceMatch[1];
       for (const hit of block.matchAll(deployDotRe)) {
         offenders.push({ file: mdPath, arg: hit[1], block });
@@ -245,4 +253,23 @@ test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) in 
       `the exact command PR #267/issue #268 caught by hand before it published:\n\n` +
       offenders.map((o) => `- ${o.file}: \`wrangler pages deploy ${o.arg}\`\n  Block:\n${o.block}`).join('\n'),
   );
+});
+
+test('probe: the deploy-dot fence match reads every documented fence language, not only ```bash``` and bare', () => {
+  // Card 221 / Security's PR #320 gap, reproduced as a fixture rather than a live doc: the same
+  // banned command, planted once per fence language this guard is supposed to cover.
+  const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
+  for (const lang of ['', 'sh', 'bash', 'shell', 'console', 'powershell', 'ps1']) {
+    const doc =
+      `Some prose.\n\n` + '```' + lang + '\nwrangler pages deploy . --project-name rwally\n```\n';
+    const found = [];
+    for (const fenceMatch of doc.matchAll(DEPLOY_FENCE_RE)) {
+      for (const hit of fenceMatch[1].matchAll(deployDotRe)) found.push(hit[1]);
+    }
+    assert.deepEqual(
+      found,
+      ['.'],
+      `a \`wrangler pages deploy .\` inside a \`\`\`${lang || '(bare)'}\`\`\` fence must be caught`,
+    );
+  }
 });
