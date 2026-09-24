@@ -59,6 +59,38 @@ export declare function assembleClaimableEscrow(
   entries: readonly { asset: string; value: unknown; readAt?: number | null }[],
 ): { claimable: readonly ClaimableEscrowEntry[]; unread: readonly UnreadEscrowEntry[] };
 
+/** Card 127 (#182), Contract tab Row 4 — deploy-time wiring-lock reads. */
+export declare function planWiringLockCore(
+  operatorRegistry: string,
+  governance: string,
+): readonly PlannedCall[];
+export declare function planWiringLockSubVaultFactory(subVaultRegistry: string): readonly PlannedCall[];
+export interface WiringLock {
+  readonly operatorFactory: string;
+  readonly operatorFactoryReadAt: number | null;
+  readonly operatorFeeEngine: string;
+  readonly operatorFeeEngineReadAt: number | null;
+  readonly govSubVaultRegistry: string;
+  readonly govSubVaultRegistryReadAt: number | null;
+  readonly subVaultRegistryFactory: string;
+  readonly subVaultRegistryFactoryReadAt: number | null;
+}
+export declare function assembleWiringLock(r: {
+  operatorFactoryValue: unknown;
+  operatorFactoryReadAt: number | null;
+  operatorFeeEngineValue: unknown;
+  operatorFeeEngineReadAt: number | null;
+  govSubVaultRegistryValue: unknown;
+  govSubVaultRegistryReadAt: number | null;
+  subVaultRegistryFactoryValue: unknown;
+  subVaultRegistryFactoryReadAt: number | null;
+}): WiringLock | null;
+
+/** Card 127 (#182), Contract tab Row 5 — `VaultFactory.allowSubVaults()`, never inferred from a
+ *  deploy script; `factory` is the caller-resolved address (see chain-reader.mjs's own header). */
+export declare function planAllowSubVaults(factory: string): readonly PlannedCall[];
+export declare function assembleAllowSubVaults(value: unknown): boolean | undefined;
+
 export interface CoreReads {
   readonly navWad: bigint | null;
   readonly totalShares: bigint;
