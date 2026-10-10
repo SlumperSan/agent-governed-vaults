@@ -16,18 +16,17 @@
  * between wastes a number rather than reusing one.
  *
  * ALLOCATION IS SAFE ACROSS PROCESSES. Two dashboards (a worktree copy, a second port) can point at
- * the same vault, so the whole read-allocate-write section runs under an exclusive lock file
- * (`Tasks/_task-numbers.lock`, created with the `wx` flag, which is atomic). The lock file records
- * its owner (pid, host, a random token). A lock is broken only when its owner process is gone, or
- * when it is older than LIVE_OWNER_STALE_MS (ten minutes, for a recycled pid or an owner on another
- * machine); a lock with no readable owner (a crash between create and write) is broken after
- * STALE_LOCK_MS. A mere 30 s mtime is not enough on its own: it let a second process into the
- * section while the first still held it. A stale lock is removed only under a second `wx` file
- * (`<lock>.break`), where it is re-read and re-judged first, so exactly one process takes it over (see
- * breakStaleLock). The holder removes the lock on exit only if the file still
- * carries ITS token, so it can never delete a lock someone else now holds. Unnumbered files are re-read inside the
- * lock, immediately before each write, so a number is never given to a file another process has
- * already numbered.
+ * the same vault, so the whole read-allocate-write section runs under an exclusive lock made of
+ * generation files (`Tasks/_task-numbers.lock.<n>`, each created with the `wx` flag, which is
+ * atomic; see withDirLock). A file records its owner (pid, host, a random token). The lock passes
+ * to a new generation only when the holder's owner process is gone, or when it is older than
+ * LIVE_OWNER_STALE_MS (ten minutes, for a recycled pid or an owner on another machine); a file with
+ * no readable owner (a crash between create and write) is passed over after STALE_LOCK_MS. A mere
+ * 30 s mtime is not enough on its own: it let a second process into the section while the first
+ * still held it. Nothing ever deletes a lock file it did not create, so a takeover is a single
+ * atomic `wx` and no stale judgement can destroy a live lock. Unnumbered files are re-read inside
+ * the lock, immediately before each write, so a number is never given to a file another process
+ * has already numbered.
  *
  * ASSIGNMENT IS DETERMINISTIC WITHIN A RUN. Unnumbered files are sorted by name before numbering,
  * so a first run over a fresh vault gives the same answer twice rather than depending on readdir
@@ -36,7 +35,7 @@
  * This writes to task files, which is otherwise something the board does not do. It is narrow by
  * construction: it only ever INSERTS a `num:` line into a frontmatter block that has none, never
  * edits one that exists, never touches the body, and never deletes a task file. Besides the task
- * files it creates and updates only the counter and the lock file named above.
+ * files it creates and updates only the counter and the lock files named above.
  */
 
 import {
@@ -101,85 +100,71 @@ function lockBreakable(owner, ageMs) {
   return ageMs > LIVE_OWNER_STALE_MS; // alive: a recycled pid is the only way it is stale
 }
 
-/** How long a breaker file may exist before it is presumed left by a process that died mid-break. */
-const BREAKER_STALE_MS = 10_000;
-
 /**
- * Take over a lock judged stale, with EXACTLY ONE process doing the removal at a time.
+ * THE LOCK IS AN APPEND-ONLY SERIES OF GENERATION FILES. Nothing is ever deleted, renamed or
+ * overwritten, so there is no step at which a judgement about one file can be applied to another.
  *
- * WHY A SECOND FILE. Reading the lock and then unlinking it are two syscalls, so between them
- * another stealer can remove the stale file and create its own live lock, and the unlink then
- * deletes THAT one: two processes inside the section at once, and `allocate()` can hand out one
- * number twice. (Measured on the first version of this guard: two processes overlapped in 16 of 40
- * rounds against a seeded dead-owner lock.) The fix is that nobody removes a stale lock except
- * under `<lock>.break`, itself created with `wx`. Under it the lock is read AGAIN and judged again:
- * it is removed only if its text is still the text the caller judged and it is still breakable. For a
- * dead owner that is airtight: the owner is gone and cannot release, a creator cannot get past
- * `wx` while the file exists, and every other would-be breaker is shut out by the breaker file, so
- * nothing can change the lock between the re-read and the unlink.
+ * WHY. Every earlier shape of this lock took over a dead holder's lock by READING it, JUDGING it
+ * stale and then DELETING (or renaming) it. Those are separate syscalls, so between the judgement
+ * and the removal another process can replace the file with a live one, and the removal then
+ * destroys a live lock: two processes inside the section, and `allocate()` hands out one number
+ * twice. Guarding the removal with a second lock file only moves the same read-then-act step one
+ * level down (measured: duplicate numbers 1,1,2,2 at 8 processes with a dead lock and a dead breaker
+ * left behind). A first attempt at a lock-free series that DELETED on release failed the same way
+ * through name reuse: a freed generation name was taken again while a slow process was still judging
+ * the previous file of that name.
  *
- * Returns true when this call removed the lock, false when it did not (not the breaker, or the lock
- * had changed hands). The caller retries its `wx` either way.
+ * HOW. The lock is `_task-numbers.lock.<generation>`, and the state is the file with the HIGHEST
+ * generation. A file is either an owner record (pid, host, token: the lock is held) or
+ * `{"released":true}` (the lock is free). To take the lock, create generation top+1 with `wx`
+ * (atomic, exactly one creator per name, and a name is never created twice) when there is no
+ * generation file, or the top one is a release record, or it is an owner record that is breakable
+ * (its owner is gone, or it is far older than any real section; see lockBreakable). To release, the
+ * holder creates top+1 as a release record. A dead holder's file is simply left under the next
+ * generation. So a takeover is one `wx`: a stale judgement can only lead to a `wx` on a name that
+ * now exists, which fails, and correctness does not depend on how fresh any liveness judgement is.
  *
- * RESIDUAL, STATED: a breaker file left by a process killed mid-break is itself taken over (owner
- * gone, or older than BREAKER_STALE_MS) by an atomic rename to a unique name. That inner takeover
- * can in principle race the same way, but only after a process died inside a window of a few
- * microseconds AND two more processes collide on the leftover file at the same instant.
+ * Why two holders cannot coexist: generation G+1 is created over G only by a taker (G was free or
+ * its owner gone) or by G's own holder releasing, and each name is created once, ever.
+ *
+ * COST. Two small files per locked section, never removed. The lock is only taken when a card needs
+ * a number or the mark must rise (see assignNumbers), which is human-paced.
+ *
+ * RESIDUAL, STATED: the judgement itself can be wrong in one case, an owner that is alive yet far
+ * past LIVE_OWNER_STALE_MS (ten minutes), or an owner file whose text was never written. The wait
+ * for a lock is capped at LOCK_TIMEOUT_MS (ten seconds), so a waiter gives up long before it would
+ * judge a live section stale.
  */
-export function breakStaleLock(lock, judgedRaw) {
-  const brk = `${lock}.break`;
-  const token = randomBytes(8).toString('hex');
-  let fd;
-  try {
-    fd = openSync(brk, 'wx');
-  } catch (e) {
-    if (e.code !== 'EEXIST') throw e;
-    reapDeadBreaker(brk);
-    return false;
+const LOCK_PREFIX = `${LOCK_FILE}.`;
+const RELEASED_TEXT = JSON.stringify({ released: true });
+
+/** Highest generation number among the lock files in `dir`, or 0 when there are none. */
+function topLockGeneration(dir) {
+  let top = 0;
+  for (const f of readdirSync(dir)) {
+    if (!f.startsWith(LOCK_PREFIX)) continue;
+    const g = f.slice(LOCK_PREFIX.length);
+    if (/^\d{1,15}$/.test(g)) top = Math.max(top, Number(g));
   }
-  try {
-    try {
-      writeSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), token }));
-    } finally {
-      closeSync(fd);
-    }
-    let raw;
-    let ageMs;
-    try {
-      raw = readFileSync(lock, 'utf8');
-      ageMs = Date.now() - statSync(lock).mtimeMs;
-    } catch {
-      return false; // released or removed already
-    }
-    if (raw !== judgedRaw || !lockBreakable(parseOwner(raw), ageMs)) return false; // changed hands
-    unlinkSync(lock);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    try {
-      if (parseOwner(readFileSync(brk, 'utf8'))?.token === token) unlinkSync(brk);
-    } catch {
-      /* already gone */
-    }
-  }
+  return top;
 }
 
-/** Remove a breaker file whose owner is gone or which is far older than any real break. */
-function reapDeadBreaker(brk) {
+/** Create `file` exclusively with `text`. False when the name already exists. */
+function createExclusive(file, text) {
+  let fd;
   try {
-    const raw = readFileSync(brk, 'utf8');
-    const ageMs = Date.now() - statSync(brk).mtimeMs;
-    const o = parseOwner(raw);
-    const dead = o ? o.host === hostname() && !pidAlive(o.pid) : ageMs > BREAKER_STALE_MS;
-    if (!dead && ageMs <= BREAKER_STALE_MS) return;
-    // Rename to a name no one else will use: only one renamer can win, the rest get ENOENT.
-    const tomb = `${brk}.dead-${randomBytes(6).toString('hex')}`;
-    renameSync(brk, tomb);
-    unlinkSync(tomb);
-  } catch {
-    /* someone else got there first */
+    fd = openSync(file, 'wx');
+  } catch (e) {
+    // EEXIST: someone created this generation first. EPERM: it is delete-pending on Windows.
+    if (e.code === 'EEXIST' || e.code === 'EPERM') return false;
+    throw e;
   }
+  try {
+    writeSync(fd, text);
+  } finally {
+    closeSync(fd);
+  }
+  return true;
 }
 
 /**
@@ -187,47 +172,44 @@ function reapDeadBreaker(brk) {
  * `lockTimeoutMs` exists for the tests, which must not wait ten seconds to prove a refusal.
  */
 export function withDirLock(dir, fn, lockTimeoutMs = LOCK_TIMEOUT_MS) {
-  const lock = path.join(dir, LOCK_FILE);
-  const token = randomBytes(8).toString('hex');
   const deadline = Date.now() + lockTimeoutMs;
+  const genPath = (g) => path.join(dir, `${LOCK_PREFIX}${g}`);
+  let held;
   for (;;) {
-    try {
-      const fd = openSync(lock, 'wx');
+    const top = topLockGeneration(dir);
+    let free = top === 0;
+    if (!free) {
       try {
-        writeSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), token }));
-      } catch (e) {
-        closeSync(fd);
-        unlinkSync(lock);
-        throw e;
-      }
-      closeSync(fd);
-      break;
-    } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-      try {
-        const raw = readFileSync(lock, 'utf8');
-        const ageMs = Date.now() - statSync(lock).mtimeMs;
-        if (lockBreakable(parseOwner(raw), ageMs)) {
-          // false: another process is breaking it, or it changed hands. Either way, look again.
-          if (!breakStaleLock(lock, raw)) sleepMs(2);
-          if (Date.now() <= deadline) continue;
+        const file = genPath(top);
+        const raw = readFileSync(file, 'utf8');
+        let released = false;
+        try {
+          released = JSON.parse(raw)?.released === true;
+        } catch {
+          /* an owner record, or empty */
         }
+        free = released || lockBreakable(parseOwner(raw), Date.now() - statSync(file).mtimeMs);
       } catch {
-        continue; // released between our open and our read: just try again
+        continue; // unreadable for a moment: list again
       }
-      if (Date.now() > deadline) throw new Error(`could not take ${lock} within ${lockTimeoutMs}ms`);
-      sleepMs(25);
     }
+    if (free) {
+      const owner = JSON.stringify({ pid: process.pid, host: hostname(), token: randomBytes(8).toString('hex') });
+      if (createExclusive(genPath(top + 1), owner)) {
+        held = top + 1;
+        break;
+      }
+      continue; // another process took top+1 first: list again
+    }
+    if (Date.now() > deadline) throw new Error(`could not take ${path.join(dir, LOCK_FILE)} within ${lockTimeoutMs}ms`);
+    sleepMs(25);
   }
   try {
     return fn();
   } finally {
-    // Only our own lock. If it was broken and re-taken while we ran, that lock is not ours to remove.
-    try {
-      if (parseOwner(readFileSync(lock, 'utf8'))?.token === token) unlinkSync(lock);
-    } catch {
-      /* already gone */
-    }
+    // Release by appending a release record. If someone judged us dead and took held+1, that is
+    // theirs: the create fails and we leave it alone.
+    createExclusive(genPath(held + 1), RELEASED_TEXT);
   }
 }
 
@@ -284,10 +266,16 @@ export function assignNumbers(dir, { lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
     // in 5a392a4d was written for.
     return { assigned: 0, max: 0, skipped: [], problem: `no Tasks folder at ${dir}` };
   }
+  // Nothing to number and the mark already covers every number on disk: the common poll. Read-only,
+  // so it needs no lock, and it keeps the lock series (which is never pruned) growing at the pace
+  // of new cards rather than the pace of polling.
+  const scan = scanTasks(dir);
+  if (!scan.unnumbered.length && scan.max <= readHighWater(dir)) return { assigned: 0, max: scan.max, skipped: scan.skipped };
   return withDirLock(dir, () => allocate(dir), lockTimeoutMs);
 }
 
-function allocate(dir) {
+/** Read-only pass: the highest number on disk, the files still without one, and the files skipped. */
+function scanTasks(dir) {
   const skipped = [];
   const unnumbered = [];
   let max = Math.max(readHighWater(dir), maxNumIn(path.join(dir, '_deleted')));
@@ -309,6 +297,12 @@ function allocate(dir) {
     if (n) max = Math.max(max, n);
     else unnumbered.push(full);
   }
+  return { skipped, unnumbered, max };
+}
+
+function allocate(dir) {
+  const { skipped, unnumbered, max: scanned } = scanTasks(dir);
+  let max = scanned;
 
   // Raise the mark to what is already on disk even when nothing is unnumbered, so the mark is
   // never behind the files and a later deletion cannot lower the floor.
