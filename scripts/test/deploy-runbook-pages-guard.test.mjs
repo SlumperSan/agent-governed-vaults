@@ -240,11 +240,20 @@ const markdownPaths = () => {
 // appended to the line, or planted anywhere else in the same file, is still red. If you reflow one
 // of these two sentences the guard throws on the stale entry; update the entry to the new line.
 //
-// Covered shapes: flags before the path (`deploy --project-name x .`), `.;` `.&&` `.|`, the
-// wrangler 3 alias `pages publish`, `deploy -- .`, `.\`, and any case (`Wrangler`). Not covered:
-// non-Markdown files, and a path built by a shell variable.
+// Covered shapes: flags before the path (`deploy --project-name x .`), `.;` `.&&` `.|` `.>` `.<`,
+// the wrangler 3 alias `pages publish`, `deploy -- .`, `.\`, any case (`Wrangler`), a backslash or
+// backtick line continuation, a quoted multi-word flag value, and a flag value starting with a dot
+// (`--config ./wrangler.toml .`). Not covered: non-Markdown files, and a path built by a shell
+// variable.
+//
+// The pattern is linear by construction. Every flag is `--?\w[\w-]*`, which starts with a word
+// character, so a run of dashes has exactly one parse; the earlier `--?[\w-]+` let each flag split
+// two ways and backtracked 2^n on a long non-matching line (26 flags took 2.9 s). A flag's value is
+// optional and its alternatives start with disjoint characters (a quote, a dot, anything else). A
+// value that starts with a dot is only a value when it is not the bare argument: `./x` and `.x`
+// are values, `.` and `./` never are.
 const DEPLOY_DOT_RE =
-  /wrangler(?:@\S+)?\s+pages\s+(?:deploy|publish)(?:\s+--?[\w-]+(?:=\S+)?(?:\s+(?!-)[^\s.]\S*)?)*(?:\s+--)?\s+(["']?)(\.(?:\/|\\)?)\1(?=\s|$|[`"');&|])/gi;
+  /wrangler(?:@\S+)?\s+pages\s+(?:deploy|publish)(?:\s+--?\w[\w-]*(?:=\S+)?(?:\s+(?!-)(?:"[^"\n]*"|'[^'\n]*'|\.[^\s/\\]\S*|\.[/\\]\S+|[^\s."']\S*))?)*(?:\s+--)?\s+(["']?)(\.(?:\/|\\)?)\1(?=\s|$|[`"');&|<>])/gi;
 const WARNING_LINES = [
   {
     file: 'DEPLOYMENTS.md',
@@ -258,7 +267,11 @@ const WARNING_LINES = [
 const deployDotHits = (text) => {
   const lines = text.split(/\r?\n/);
   const hits = [];
-  for (const m of text.matchAll(DEPLOY_DOT_RE)) {
+  // A trailing backslash (sh) or backtick (PowerShell) continues the command onto the next line.
+  // Blank that character in place: the string keeps its length, so `m.index` still maps to the
+  // right line of the original text.
+  const scan = text.replace(/[\\`](?=\r?\n)/g, ' ');
+  for (const m of scan.matchAll(DEPLOY_DOT_RE)) {
     const lineNo = text.slice(0, m.index).split(/\r?\n/).length;
     hits.push({ arg: m[2], line: lines[lineNo - 1], lineNo });
   }
@@ -390,12 +403,41 @@ ${fence}
     'dot then backslash': `${fence}sh\nwrangler pages deploy .\\\n${fence}\n`,
     'capitalised Wrangler': `${fence}sh\nWrangler Pages Deploy .\n${fence}\n`,
     'wrapped across a newline': `${fence}sh\nwrangler pages deploy\n.\n${fence}\n`,
+    'backslash line continuation': `${fence}sh\nwrangler pages deploy \\\n  --project-name rwally \\\n  .\n${fence}\n`,
+    'backslash continuation, CRLF': `${fence}sh\r\nwrangler pages deploy \\\r\n  .\r\n${fence}\r\n`,
+    'PowerShell backtick continuation': `${fence}powershell\nwrangler pages deploy \`\n  --project-name rwally \`\n  .\n${fence}\n`,
+    'multi-word double-quoted flag value': `${fence}sh\nwrangler pages deploy --commit-message "fix the thing" .\n${fence}\n`,
+    'multi-word single-quoted flag value': `${fence}sh\nwrangler pages deploy --commit-message 'fix the thing' .\n${fence}\n`,
+    'flag value starting with ./': `${fence}sh\nwrangler pages deploy --config ./wrangler.toml .\n${fence}\n`,
+    'flag value starting with a dot': `${fence}sh\nwrangler pages deploy --env .prod .\n${fence}\n`,
+    'dot then redirect out': `${fence}sh\nwrangler pages deploy .> out.txt\n${fence}\n`,
+    'dot then redirect in': `${fence}sh\nwrangler pages deploy .< in.txt\n${fence}\n`,
   };
   for (const [name, doc] of Object.entries(shapes)) {
     assert.ok(deployDotHits(doc).length >= 1, `a planted deploy-dot must be caught: ${name}`);
   }
   // The correct command is not a hit, nor is a longer path that merely starts with a dot.
-  for (const ok of ['wrangler pages deploy dist', 'wrangler pages deploy ./dist', 'wrangler pages deploy .next', 'wrangler pages deploy ..', 'wrangler pages deploy --project-name rwally dist', 'wrangler pages deploy .\\dist']) {
+  for (const ok of ['wrangler pages deploy dist', 'wrangler pages deploy ./dist', 'wrangler pages deploy .next', 'wrangler pages deploy ..', 'wrangler pages deploy --project-name rwally dist', 'wrangler pages deploy .\\dist', 'wrangler pages deploy --config ./wrangler.toml dist', 'wrangler pages deploy --commit-message "fix the thing" dist', 'wrangler pages deploy \\\n  --project-name rwally \\\n  dist']) {
     assert.deepEqual(deployDotHits(`${fence}sh\n${ok} --project-name rwally\n${fence}\n`), [], `${ok} must not be a hit`);
   }
+});
+
+test('probe: DEPLOY_DOT_RE is linear on a long line of flags that never reaches a deploy-dot', () => {
+  // The old `--?[\w-]+` parsed each `--ab` two ways, so a non-matching line cost 2^n: 26 flags took
+  // 2.9 s. 26 flags fails a 250 ms budget on that pattern and takes microseconds on this one; 5000
+  // flags shows the growth is not exponential.
+  const run = (n) => {
+    const line = `wrangler pages deploy ${'--ab '.repeat(n)}dist`;
+    const t0 = process.hrtime.bigint();
+    const hits = deployDotHits(line);
+    return { hits, ms: Number(process.hrtime.bigint() - t0) / 1e6 };
+  };
+  const small = run(26);
+  assert.deepEqual(small.hits, []);
+  assert.ok(small.ms < 250, `26 flags took ${small.ms} ms: the pattern backtracks exponentially again`);
+  const big = run(5000);
+  assert.deepEqual(big.hits, []);
+  assert.ok(big.ms < 1000, `5000 flags took ${big.ms} ms: the pattern is no longer linear`);
+  // The same flags followed by the real offence are still a hit.
+  assert.equal(deployDotHits(`wrangler pages deploy ${'--ab '.repeat(5000)}.`).length, 1);
 });
