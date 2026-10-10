@@ -71,6 +71,23 @@ function sleepMs(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+/**
+ * renameSync that waits out a reader. On Windows, renaming over a file another process has open at
+ * that instant fails with EPERM or EBUSY. The poll that decides whether a number is needed reads task
+ * files without the lock (a read-only pass), so a holder's write can meet it.
+ */
+function renameWhenFree(from, to) {
+  for (let i = 0; ; i += 1) {
+    try {
+      renameSync(from, to);
+      return;
+    } catch (e) {
+      if (i >= 200 || (e.code !== 'EPERM' && e.code !== 'EBUSY' && e.code !== 'EACCES')) throw e;
+      sleepMs(10);
+    }
+  }
+}
+
 /** True when a process with this pid exists. EPERM means it exists but is not ours. */
 function pidAlive(pid) {
   try {
@@ -249,7 +266,7 @@ function writeHighWater(dir, n) {
   const file = path.join(dir, COUNTER_FILE);
   const tmp = `${file}.tmp-${process.pid}`;
   writeFileSync(tmp, JSON.stringify({ highWater: n }) + '\n', 'utf8');
-  renameSync(tmp, file);
+  renameWhenFree(tmp, file);
 }
 
 /**
@@ -334,7 +351,7 @@ function allocate(dir) {
     // parsed by the next poll and render as a task with no title.
     const tmp = `${full}.tmp-${process.pid}`;
     writeFileSync(tmp, patched, 'utf8');
-    renameSync(tmp, full);
+    renameWhenFree(tmp, full);
     assigned += 1;
   }
 
