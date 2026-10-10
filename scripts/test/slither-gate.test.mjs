@@ -11,10 +11,20 @@
  *   - `DEFAULT_ROSTER` in verdicts.mjs and `defaultRoster` in merge-policy.json were not pinned to
  *     each other by any test.
  */
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +45,12 @@ const PYTHON = (() => {
 })();
 
 const dir = mkdtempSync(path.join(os.tmpdir(), 'slither-gate-test-'));
+// The Windows fake is a ~92 MB node.exe; leaving this directory behind leaked it on every run. It is
+// removed even when a test fails, and the hook itself asserts it is gone.
+after(() => {
+  rmSync(dir, { recursive: true, force: true });
+  assert.ok(!existsSync(dir), `temp dir ${dir} was not removed`);
+});
 const writeJson = (name, value) => {
   const p = path.join(dir, name);
   writeFileSync(p, JSON.stringify(value));
@@ -115,7 +131,7 @@ test('gate.mjs mirrors the slither job in ci.yml and is not advisory', () => {
 // ---- behavioural: the gate itself, with a fake slither first on PATH ------------------------------
 // The text assertions above cannot see whether gate.mjs CALLS runSlitherStep: deleting the dispatch
 // branch left them green while the step exited 0 on any tree. This runs the real gate end to end.
-// The fake is node itself (a shell script on POSIX; a copy of node.exe named slither.exe plus a
+// The fake is node itself (a shell script on POSIX; a hard link (or copy) of node.exe named slither.exe plus a
 // preload on Windows, because a .cmd wrapper cannot take the filter regex's "|" through cmd.exe).
 const FAKE = path.join(dir, 'fake-slither.cjs');
 writeFileSync(
@@ -134,7 +150,12 @@ const binDir = path.join(dir, 'bin');
 mkdirSync(binDir);
 const fakeEnv = { NODE_OPTIONS: '' };
 if (process.platform === 'win32') {
-  copyFileSync(process.execPath, path.join(binDir, 'slither.exe'));
+  // Hard link where the volume allows it (no 92 MB copy); copy otherwise. Removing the link leaves node.exe alone.
+  try {
+    linkSync(process.execPath, path.join(binDir, 'slither.exe'));
+  } catch {
+    copyFileSync(process.execPath, path.join(binDir, 'slither.exe'));
+  }
   fakeEnv.NODE_OPTIONS = `--require "${FAKE.split(path.sep).join('/')}"`;
 } else {
   const sh = path.join(binDir, 'slither');
