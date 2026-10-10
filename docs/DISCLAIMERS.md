@@ -47,3 +47,4 @@ Each entry's severity is the site's own label. Read the full entry on
 13. **An open licensing question** — Open, owner decision.
 14. **This is experimental software** — Structural.
 15. **There is no oracle rotation path** — Accepted, no recovery path.
+16. **A vault's creator chooses its trading adapters** — Partially mitigated.
