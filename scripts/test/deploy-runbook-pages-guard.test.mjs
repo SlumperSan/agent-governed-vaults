@@ -234,10 +234,17 @@ const markdownPaths = () => {
 // no structure for an author to desync, which is the point.
 //
 // The cost is that prose which QUOTES the command to warn against it is also a hit. Those lines
-// are enumerated in WARNING_LINES below by exact file and exact line text, so a new occurrence,
-// or a planted command appended to a warning line, is still red. If you reflow one of these two
-// sentences the guard throws on the stale entry; update the entry to the new line.
-const DEPLOY_DOT_RE = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(["']?)(\.\/?)\1(?=\s|$|[`"')])/g;
+// are enumerated in WARNING_LINES below by exact file and exact line text, and each entry must
+// match EXACTLY ONE line of its file (zero is a stale entry, two is a duplicate that would exempt
+// a pasted copy of the command); either throws. Exemption is by that one line number, so a command
+// appended to the line, or planted anywhere else in the same file, is still red. If you reflow one
+// of these two sentences the guard throws on the stale entry; update the entry to the new line.
+//
+// Covered shapes: flags before the path (`deploy --project-name x .`), `.;` `.&&` `.|`, the
+// wrangler 3 alias `pages publish`, `deploy -- .`, `.\`, and any case (`Wrangler`). Not covered:
+// non-Markdown files, and a path built by a shell variable.
+const DEPLOY_DOT_RE =
+  /wrangler(?:@\S+)?\s+pages\s+(?:deploy|publish)(?:\s+--?[\w-]+(?:=\S+)?(?:\s+(?!-)[^\s.]\S*)?)*(?:\s+--)?\s+(["']?)(\.(?:\/|\\)?)\1(?=\s|$|[`"');&|])/gi;
 const WARNING_LINES = [
   {
     file: 'DEPLOYMENTS.md',
@@ -258,24 +265,40 @@ const deployDotHits = (text) => {
   return hits;
 };
 
-test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) anywhere', () => {
+/**
+ * The whole scan, over `{ path: text }` and an exemption list, so a probe can run it on a
+ * synthetic corpus. Throws on a stale or duplicated exemption; returns every unexempt hit.
+ */
+const deployDotOffenders = (corpus, warningLines) => {
+  const exempt = new Set(); // `${file}:${lineNo}`, one per WARNING_LINES entry
+  for (const w of warningLines) {
+    assert.ok(w.file in corpus, `WARNING_LINES names ${w.file}, which is not in the scanned corpus.`);
+    const lineNos = corpus[w.file].split(/\r?\n/).flatMap((l, i) => (l === w.line ? [i + 1] : []));
+    assert.equal(
+      lineNos.length,
+      1,
+      `WARNING_LINES entry for ${w.file} must match exactly one line, found ${lineNos.length}` +
+        (lineNos.length === 0 ? ' (stale: update or remove it)' : ' (duplicate: remove the copy)') +
+        `: ${w.line}`,
+    );
+    assert.ok(
+      deployDotHits(corpus[w.file]).some((h) => h.lineNo === lineNos[0]),
+      `WARNING_LINES entry for ${w.file} no longer contains the command; remove it: ${w.line}`,
+    );
+    exempt.add(`${w.file}:${lineNos[0]}`);
+  }
   const offenders = [];
-  const used = new Set();
-
-  for (const mdPath of markdownPaths()) {
-    for (const hit of deployDotHits(read(mdPath))) {
-      const idx = WARNING_LINES.findIndex((w) => w.file === mdPath && w.line === hit.line);
-      if (idx >= 0) {
-        used.add(idx);
-        continue;
-      }
-      offenders.push({ file: mdPath, ...hit });
+  for (const [file, text] of Object.entries(corpus)) {
+    for (const hit of deployDotHits(text)) {
+      if (!exempt.has(`${file}:${hit.lineNo}`)) offenders.push({ file, ...hit });
     }
   }
+  return offenders;
+};
 
-  WARNING_LINES.forEach((w, i) =>
-    assert.ok(used.has(i), `WARNING_LINES entry for ${w.file} no longer matches any line; update or remove it: ${w.line}`),
-  );
+test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) anywhere', () => {
+  const corpus = Object.fromEntries(markdownPaths().map((p) => [p, read(p)]));
+  const offenders = deployDotOffenders(corpus, WARNING_LINES);
   assert.deepEqual(
     offenders,
     [],
@@ -284,6 +307,34 @@ test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) any
       `command PR #267/issue #268 caught by hand before it published. If a line only quotes it to ` +
       `warn against it, add that exact line to WARNING_LINES.\n\n` +
       offenders.map((o) => `- ${o.file}:${o.lineNo}: ${o.line}`).join('\n'),
+  );
+});
+
+test('probe: the WARNING_LINES exemption is exactly one line, never a file', () => {
+  const warn = 'warn: `wrangler pages deploy .` is wrong';
+  const W = [{ file: 'a.md', line: warn }];
+  const cmd = 'wrangler pages deploy . --project-name rwally';
+  const fence = '```';
+  const base = `intro\n${warn}\noutro\n`;
+  const red = (corpus, why) => assert.equal(deployDotOffenders(corpus, W).length, 1, why);
+  assert.deepEqual(deployDotOffenders({ 'a.md': base }, W), [], 'the exempt line alone is clean');
+  red({ 'a.md': `${base}\n${fence}sh\n${cmd}\n${fence}\n` }, 'a command elsewhere in an exempt file is red');
+  red({ 'a.md': base, 'b.md': cmd }, 'a command in another file is red');
+  assert.throws(
+    () => deployDotOffenders({ 'a.md': base.replace('wrong', `wrong ${cmd}`) }, W),
+    /stale/,
+    'a command appended to the exempt line changes it, so the entry is stale and the guard is red',
+  );
+  red({ 'a.md': `${base}${cmd}
+` }, 'a command on the line after the exempt line is red');
+  assert.throws(() => deployDotOffenders({ 'a.md': `${base}${warn}\n` }, W), /duplicate/, 'a duplicated exempt line throws');
+  assert.throws(() => deployDotOffenders({ 'a.md': 'intro\n' }, W), /stale/, 'a stale entry throws');
+  assert.throws(() => deployDotOffenders({ 'b.md': base }, W), /not in the scanned corpus/, 'a missing file throws');
+  const bare = 'warn: no command here';
+  assert.throws(
+    () => deployDotOffenders({ 'a.md': `${bare}\n` }, [{ file: 'a.md', line: bare }]),
+    /no longer contains the command/,
+    'an entry whose line has no hit throws',
   );
 });
 
@@ -312,13 +363,39 @@ test('probe: the deploy-dot scan catches the command in every fence shape the re
     'trailing-slash argument': `${fence}sh\nwrangler pages deploy ./\n${fence}\n`,
     'quoted argument': `${fence}sh\nwrangler pages deploy "." --project-name rwally\n${fence}\n`,
     'pinned wrangler version': `${fence}sh\nnpx wrangler@3 pages deploy . --project-name rwally\n${fence}\n`,
+    'flags before the path': `${fence}sh
+wrangler pages deploy --project-name rwally .
+${fence}
+`,
+    'flag with = before the path': `${fence}sh
+wrangler pages deploy --branch=main .
+${fence}
+`,
+    'dot then semicolon': `${fence}sh
+wrangler pages deploy .;echo
+${fence}
+`,
+    'dot then &&': `${fence}sh
+wrangler pages deploy .&& echo
+${fence}
+`,
+    'pages publish alias': `${fence}sh
+wrangler pages publish . --project-name rwally
+${fence}
+`,
+    'double dash before the path': `${fence}sh
+wrangler pages deploy -- .
+${fence}
+`,
+    'dot then backslash': `${fence}sh\nwrangler pages deploy .\\\n${fence}\n`,
+    'capitalised Wrangler': `${fence}sh\nWrangler Pages Deploy .\n${fence}\n`,
     'wrapped across a newline': `${fence}sh\nwrangler pages deploy\n.\n${fence}\n`,
   };
   for (const [name, doc] of Object.entries(shapes)) {
     assert.ok(deployDotHits(doc).length >= 1, `a planted deploy-dot must be caught: ${name}`);
   }
   // The correct command is not a hit, nor is a longer path that merely starts with a dot.
-  for (const ok of ['wrangler pages deploy dist', 'wrangler pages deploy ./dist', 'wrangler pages deploy .next', 'wrangler pages deploy ..']) {
+  for (const ok of ['wrangler pages deploy dist', 'wrangler pages deploy ./dist', 'wrangler pages deploy .next', 'wrangler pages deploy ..', 'wrangler pages deploy --project-name rwally dist', 'wrangler pages deploy .\\dist']) {
     assert.deepEqual(deployDotHits(`${fence}sh\n${ok} --project-name rwally\n${fence}\n`), [], `${ok} must not be a hit`);
   }
 });
