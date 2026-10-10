@@ -70,14 +70,17 @@ export const UNREADABLE_SWEEPS = 3;
  * silently-dead case is the one G4 cannot afford (Review115 F6).
  *
  * The default is 90,000s, the same ceiling the repo already uses for this feed family:
- * `ChainlinkOracle.MAX_HEARTBEAT` (90,000s), which `contracts/config/arc-mainnet.json` raised from
- * 86,400s on 2026-09-18 precisely because 86,400s sat BELOW the measured heartbeat gaps. The Arc
+ * `ChainlinkOracle.MAX_HEARTBEAT` (90,000s). The contract constant was raised from 86,400s in #307
+ * (commit 97ce8f79e), which also added `contracts/config/arc-mainnet.json`; the config records the
+ * value, it does not set it. The Arc
  * USDC/USD feed (the one this signal defaults to on 5042) was measured at 56 gaps over 1,344 h, every
- * one in [86,400, 86,467]s (`chainlinkOracle.assets[0].roundCadence`; `feedFamilyHeartbeatNote`
- * calls it a pure heartbeat, since a stablecoin at 1.0000 never trips a deviation publish). So a
+ * one in [86,400, 86,467]s (`verifiedOnChain.observed.roundCadence` in that config;
+ * `chainlinkOracle.feedFamilyHeartbeatNote` calls it a pure heartbeat, since a stablecoin at 1.0000 never trips a deviation publish). So a
  * healthy feed is routinely 86,400..86,467s old; 90,000s clears that worst gap by 3,533s, while a
  * feed that has genuinely stopped still reads stale within about an hour of its next missed publish.
- * An earlier default of 86,400s reported a healthy Arc feed STALE on most days.
+ * A default of 86,400s would have read this feed stale whenever a sweep landed in a gap's excess
+ * over 86,400s (up to 67s); with the 30s default `CANARY_POLL_INTERVAL_MS` that is a counterfactual,
+ * not a measured rate, because this signal has never run with that default.
  *
  * The residual, stated: the jitter tail beyond +67s is unmeasured rather than known absent
  * (`heartbeatResidualNote`), the Base feed has no measurement at all, and a feed that publishes
