@@ -41,6 +41,13 @@ export {
   assembleManifestCheck,
   planClaimableEscrow,
   assembleClaimableEscrow,
+  // Card 127 (#182) — the Contract tab's Row 4 (deploy-time wiring lock) and Row 5
+  // (`allowSubVaults`) reads. `src/components/ContractTab.tsx` is the one caller.
+  planWiringLockCore,
+  planWiringLockSubVaultFactory,
+  assembleWiringLock,
+  planAllowSubVaults,
+  assembleAllowSubVaults,
 } from '@atlas/chain-reader';
 export type {
   PlannedCall,
@@ -54,6 +61,7 @@ export type {
   ManifestState,
   ClaimableEscrowEntry,
   UnreadEscrowEntry,
+  WiringLock,
 } from '@atlas/chain-reader';
 export { loading, empty, failed, ready, describeError } from '@atlas/freshness';
 export type { Fetched } from '@atlas/freshness';
