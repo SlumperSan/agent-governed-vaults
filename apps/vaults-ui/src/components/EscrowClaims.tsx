@@ -3,7 +3,7 @@ import type { Address } from 'viem';
 import { VAULT_VIEWS } from '@chain/abis';
 import { assembleClaimableEscrow, planClaimableEscrow, shortAddress, type Vault } from '../lib/atlas';
 import { readVaultAddresses, sendClaimEscrowed } from '../lib/chain-actions';
-import { confirmTx, submittedLine, unconfirmedLine } from '../lib/tx-status';
+import { confirmTx, replacedLine, submittedLine, unconfirmedLine } from '../lib/tx-status';
 import { useWallet } from '../lib/wallet';
 
 interface Props {
@@ -118,7 +118,7 @@ export function EscrowClaims({ vault }: Props) {
       setClaim((s) => ({ ...s, [asset]: { busy: true, message: submittedLine('claimEscrowed', r.claimHash), error: null } }));
       const outcome = await confirmTx(publicClient, r.claimHash);
       if (outcome.state === 'confirmed') {
-        setClaim((s) => ({ ...s, [asset]: { busy: false, message: `Claimed. ${r.claimHash}`, error: null } }));
+        setClaim((s) => ({ ...s, [asset]: { busy: false, message: `Claimed. ${outcome.hash}`, error: null } }));
         // A confirmed claim zeroes `claimable[member][asset]` on chain; drop it from the local list
         // rather than waiting for a remount, so the button does not stay offered for a balance that
         // is already gone. A reverted or unconfirmed claim leaves the row and its button in place.
@@ -131,9 +131,11 @@ export function EscrowClaims({ vault }: Props) {
           [asset]: {
             busy: false,
             message: null,
-            error: `The claim reverted on chain (${r.claimHash}). Your escrowed balance was not changed, and the network fee was still charged.`,
+            error: `The claim reverted on chain (${outcome.hash}). Your escrowed balance was not changed, and the network fee was still charged.`,
           },
         }));
+      } else if (outcome.state === 'replaced') {
+        setClaim((s) => ({ ...s, [asset]: { busy: false, message: replacedLine('claimEscrowed', r.claimHash), error: null } }));
       } else {
         setClaim((s) => ({ ...s, [asset]: { busy: false, message: unconfirmedLine('claimEscrowed', r.claimHash, outcome.detail), error: null } }));
       }

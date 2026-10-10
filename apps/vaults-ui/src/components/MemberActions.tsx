@@ -45,7 +45,7 @@ import {
   type ExitGateInputs,
   type PoolSizeImpactInputs,
 } from '../lib/chain-actions';
-import { confirmTx, submittedLine, unconfirmedLine } from '../lib/tx-status';
+import { confirmTx, replacedLine, submittedLine, unconfirmedLine } from '../lib/tx-status';
 import { useWallet } from '../lib/wallet';
 
 /** Real wall-clock seconds, computed locally rather than threaded in as a prop — `App.tsx` passes
@@ -96,7 +96,10 @@ async function settleFlow(
     return true;
   }
   if (outcome.state === 'reverted') {
-    set({ busy: false, message: null, error: `The ${action} reverted on chain (${hash}), so it had no effect. The network fee was still charged.` });
+    const approval = action === 'deposit' ? ' The USDC approval from the first step still stands.' : '';
+    set({ busy: false, message: null, error: `The ${action} reverted on chain (${outcome.hash}), so it had no effect. The network fee was still charged.${approval}` });
+  } else if (outcome.state === 'replaced') {
+    set({ busy: false, message: replacedLine(label, hash), error: null });
   } else {
     set({ busy: false, message: unconfirmedLine(label, hash, outcome.detail), error: null });
   }
