@@ -10,7 +10,7 @@ import { tmpdir, hostname } from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ANSWER_CUSTOM_KEY, assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS, withDirLock } from '../lib/task-numbers.mjs';
+import { ANSWER_CUSTOM_KEY, assignNumbers, breakStaleLock, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS, withDirLock } from '../lib/task-numbers.mjs';
 
 const MODULE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'task-numbers.mjs');
 
@@ -292,4 +292,102 @@ test('the holder removes its own lock, including when the section throws', () =>
     assert.throws(() => withDirLock(dir, () => { throw new Error('boom'); }), /boom/);
     assert.ok(!existsSync(path.join(dir, LOCK)));
   } finally { done(); }
+});
+
+// ── Taking over a stale lock: one winner ─────────────────────────────────────────────────────────
+
+test('breakStaleLock removes a dead owner\'s lock, and only that exact lock', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    const lock = path.join(dir, LOCK);
+    const dead = lockText(deadPid(), 'dead-token');
+    writeFileSync(lock, dead);
+    assert.equal(breakStaleLock(lock, dead), true);
+    assert.ok(!existsSync(lock), 'stale lock removed');
+    assert.ok(!existsSync(`${lock}.break`), 'breaker file released');
+  } finally { done(); }
+});
+
+test('breakStaleLock never deletes a lock that changed hands since it was judged', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    const lock = path.join(dir, LOCK);
+    const judged = lockText(deadPid(), 'dead-token');
+    // Another stealer already took over and wrote its own LIVE lock before we got to remove ours.
+    const live = lockText(process.pid, 'live-successor');
+    writeFileSync(lock, live);
+    assert.equal(breakStaleLock(lock, judged), false);
+    assert.equal(readFileSync(lock, 'utf8'), live, 'the successor\'s lock is untouched');
+    // Same text as judged, but now breakable by no rule (owner alive, young): re-judged, kept.
+    writeFileSync(lock, live);
+    assert.equal(breakStaleLock(lock, live), false);
+    assert.equal(readFileSync(lock, 'utf8'), live);
+  } finally { done(); }
+});
+
+test('only one breaker at a time: a live breaker file shuts every other process out', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    const lock = path.join(dir, LOCK);
+    const dead = lockText(deadPid(), 'dead-token');
+    writeFileSync(lock, dead);
+    writeFileSync(`${lock}.break`, lockText(process.pid, 'someone-breaking'));
+    assert.equal(breakStaleLock(lock, dead), false);
+    assert.ok(existsSync(lock), 'lock kept while another process is breaking');
+    assert.ok(existsSync(`${lock}.break`), 'the live breaker\'s file is not ours to remove');
+  } finally { done(); }
+});
+
+test('a breaker file left by a process that died is reaped, then the lock can be taken', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, lockText(deadPid(), 'dead-lock'));
+    writeFileSync(`${lock}.break`, lockText(deadPid(), 'dead-breaker'));
+    assignNumbers(dir, { lockTimeoutMs: 5_000 });
+    assert.equal(numOf(dir, 'a.md'), 1);
+    assert.deepEqual(readdirSync(dir).filter((f) => f.includes('.break')), [], 'no breaker or tombstone left');
+  } finally { done(); }
+});
+
+const SECTION_WORKER = (dir, startAt) => `
+import(${JSON.stringify('file:///' + MODULE.replace(/\\/g, '/'))}).then((m) => {
+  const fs = require('node:fs');
+  while (Date.now() < ${startAt}) { /* barrier: every worker hits the dead lock together */ }
+  m.withDirLock(${JSON.stringify(dir)}, () => {
+    const marker = ${JSON.stringify(path.join(dir, '_in-section'))};
+    try { fs.closeSync(fs.openSync(marker, 'wx')); } catch { fs.appendFileSync(${JSON.stringify(path.join(dir, '_overlaps'))}, process.pid + '\\n'); }
+    // A read-modify-write that hands out numbers, like allocate(): overlap shows as a repeated number.
+    const seq = ${JSON.stringify(path.join(dir, '_seq'))};
+    const n = fs.existsSync(seq) ? Number(fs.readFileSync(seq, 'utf8')) : 0;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 4);
+    fs.writeFileSync(seq, String(n + 1));
+    fs.appendFileSync(${JSON.stringify(path.join(dir, '_issued'))}, (n + 1) + '\\n');
+    try { fs.unlinkSync(marker); } catch {}
+  });
+});`;
+
+test('several processes racing for a dead owner\'s lock: exactly one at a time, no number issued twice', async () => {
+  const ROUNDS = 25;
+  const WORKERS = 3;
+  const bad = [];
+  for (let round = 0; round < ROUNDS; round += 1) {
+    const { dir, done } = tmpTasks();
+    try {
+      writeFileSync(path.join(dir, LOCK), lockText(deadPid(), `dead-${round}`));
+      const startAt = Date.now() + 400;
+      const codes = await Promise.all(Array.from({ length: WORKERS }, () => new Promise((resolve, reject) => {
+        const p = spawn(process.execPath, ['-e', SECTION_WORKER(dir, startAt)], { stdio: 'ignore' });
+        p.on('error', reject);
+        p.on('close', resolve);
+      })));
+      assert.deepEqual(codes, new Array(WORKERS).fill(0));
+      const overlaps = existsSync(path.join(dir, '_overlaps')) ? readFileSync(path.join(dir, '_overlaps'), 'utf8').trim().split('\n').length : 0;
+      const issued = readFileSync(path.join(dir, '_issued'), 'utf8').trim().split('\n');
+      if (overlaps || new Set(issued).size !== WORKERS) bad.push(`round ${round}: ${overlaps} overlaps, issued ${issued.join(',')}`);
+      assert.ok(!existsSync(path.join(dir, LOCK)) && !existsSync(`${path.join(dir, LOCK)}.break`), 'lock and breaker released');
+    } finally { done(); }
+  }
+  assert.deepEqual(bad, [], `sections overlapped:\n${bad.join('\n')}`);
 });

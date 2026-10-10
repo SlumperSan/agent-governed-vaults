@@ -22,7 +22,9 @@
  * when it is older than LIVE_OWNER_STALE_MS (ten minutes, for a recycled pid or an owner on another
  * machine); a lock with no readable owner (a crash between create and write) is broken after
  * STALE_LOCK_MS. A mere 30 s mtime is not enough on its own: it let a second process into the
- * section while the first still held it. The holder removes the lock on exit only if the file still
+ * section while the first still held it. A stale lock is removed only under a second `wx` file
+ * (`<lock>.break`), where it is re-read and re-judged first, so exactly one process takes it over (see
+ * breakStaleLock). The holder removes the lock on exit only if the file still
  * carries ITS token, so it can never delete a lock someone else now holds. Unnumbered files are re-read inside the
  * lock, immediately before each write, so a number is never given to a file another process has
  * already numbered.
@@ -99,12 +101,84 @@ function lockBreakable(owner, ageMs) {
   return ageMs > LIVE_OWNER_STALE_MS; // alive: a recycled pid is the only way it is stale
 }
 
-/** Remove the lock only if it still holds `raw`, the text we judged. A lock that changed hands stays. */
-function breakLock(lock, raw) {
+/** How long a breaker file may exist before it is presumed left by a process that died mid-break. */
+const BREAKER_STALE_MS = 10_000;
+
+/**
+ * Take over a lock judged stale, with EXACTLY ONE process doing the removal at a time.
+ *
+ * WHY A SECOND FILE. Reading the lock and then unlinking it are two syscalls, so between them
+ * another stealer can remove the stale file and create its own live lock, and the unlink then
+ * deletes THAT one: two processes inside the section at once, and `allocate()` can hand out one
+ * number twice. (Measured on the first version of this guard: two processes overlapped in 16 of 40
+ * rounds against a seeded dead-owner lock.) The fix is that nobody removes a stale lock except
+ * under `<lock>.break`, itself created with `wx`. Under it the lock is read AGAIN and judged again:
+ * it is removed only if its text is still the text the caller judged and it is still breakable. For a
+ * dead owner that is airtight: the owner is gone and cannot release, a creator cannot get past
+ * `wx` while the file exists, and every other would-be breaker is shut out by the breaker file, so
+ * nothing can change the lock between the re-read and the unlink.
+ *
+ * Returns true when this call removed the lock, false when it did not (not the breaker, or the lock
+ * had changed hands). The caller retries its `wx` either way.
+ *
+ * RESIDUAL, STATED: a breaker file left by a process killed mid-break is itself taken over (owner
+ * gone, or older than BREAKER_STALE_MS) by an atomic rename to a unique name. That inner takeover
+ * can in principle race the same way, but only after a process died inside a window of a few
+ * microseconds AND two more processes collide on the leftover file at the same instant.
+ */
+export function breakStaleLock(lock, judgedRaw) {
+  const brk = `${lock}.break`;
+  const token = randomBytes(8).toString('hex');
+  let fd;
   try {
-    if (readFileSync(lock, 'utf8') === raw) unlinkSync(lock);
+    fd = openSync(brk, 'wx');
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    reapDeadBreaker(brk);
+    return false;
+  }
+  try {
+    try {
+      writeSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), token }));
+    } finally {
+      closeSync(fd);
+    }
+    let raw;
+    let ageMs;
+    try {
+      raw = readFileSync(lock, 'utf8');
+      ageMs = Date.now() - statSync(lock).mtimeMs;
+    } catch {
+      return false; // released or removed already
+    }
+    if (raw !== judgedRaw || !lockBreakable(parseOwner(raw), ageMs)) return false; // changed hands
+    unlinkSync(lock);
+    return true;
   } catch {
-    /* gone already */
+    return false;
+  } finally {
+    try {
+      if (parseOwner(readFileSync(brk, 'utf8'))?.token === token) unlinkSync(brk);
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+/** Remove a breaker file whose owner is gone or which is far older than any real break. */
+function reapDeadBreaker(brk) {
+  try {
+    const raw = readFileSync(brk, 'utf8');
+    const ageMs = Date.now() - statSync(brk).mtimeMs;
+    const o = parseOwner(raw);
+    const dead = o ? o.host === hostname() && !pidAlive(o.pid) : ageMs > BREAKER_STALE_MS;
+    if (!dead && ageMs <= BREAKER_STALE_MS) return;
+    // Rename to a name no one else will use: only one renamer can win, the rest get ENOENT.
+    const tomb = `${brk}.dead-${randomBytes(6).toString('hex')}`;
+    renameSync(brk, tomb);
+    unlinkSync(tomb);
+  } catch {
+    /* someone else got there first */
   }
 }
 
@@ -134,8 +208,9 @@ export function withDirLock(dir, fn, lockTimeoutMs = LOCK_TIMEOUT_MS) {
         const raw = readFileSync(lock, 'utf8');
         const ageMs = Date.now() - statSync(lock).mtimeMs;
         if (lockBreakable(parseOwner(raw), ageMs)) {
-          breakLock(lock, raw);
-          continue;
+          // false: another process is breaking it, or it changed hands. Either way, look again.
+          if (!breakStaleLock(lock, raw)) sleepMs(2);
+          if (Date.now() <= deadline) continue;
         }
       } catch {
         continue; // released between our open and our read: just try again
