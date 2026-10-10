@@ -259,7 +259,7 @@ const PINNED_ROWS = {
   3: {
     heading: '3. No pause switch',
     paras: [
-      'No contract has a pause function, and no address, ours included, can switch off deposits, exits or voting through this protocol’s contracts. Two things can still stop them. The contracts stop on their own when the price feed goes stale: deposits and exits revert until it answers again. And the USDC issuer can blacklist the vault’s address, which stops deposits and the USDC part of an exit.',
+      'No contract has a pause function, and no address, ours included, can switch off deposits, exits or voting through this protocol’s contracts. Two things can still stop them. The contracts stop on their own when the price feed fails its checks, that is when it is stale, reverts, or reports a price outside the oracle’s sane-price band: deposits and exits revert until it passes again. And the USDC issuer can blacklist the vault’s address, which stops deposits and the USDC part of an exit.',
     ],
   },
   4: {
@@ -272,7 +272,7 @@ const PINNED_ROWS = {
     heading: '5. Authority is narrow and named',
     paras: [
       'Members pool and vote. A rebalance, a rule change or a child allocation happens only after members have voted it through and its timelock has run; then any address may call Governance.execute to carry out exactly what passed. The contracts have no function to pause the vault, reprice an asset, change a fee after creation, or replace the oracle.',
-      'The vault’s creator sets it up once, at creation: its oracle, basket, allowed swap adapters, exit fee ceiling and decay, capacity cap and minimum deposit, and then its governance config in a second transaction. The creator is also recorded as the vault’s operator, the address that receives the 10% performance fee and collects it by calling claimFees. Operatorship confers no authority to vote, execute, pause, reprice, or move member funds. The creator can create child vaults only on a factory that has them enabled.',
+      'The vault’s creator sets it up once, at creation: its settlement token, oracle, basket, allowed swap adapters, exit fee ceiling and decay, capacity cap and minimum deposit, and then its governance config in a second transaction. The creator is also recorded as the vault’s operator, the address that receives the 10% performance fee and collects it by calling claimFees. Operatorship confers no authority to vote, execute, pause, reprice, or move member funds. The creator can create child vaults only on a factory that has them enabled.',
     ],
   },
   6: {
@@ -302,10 +302,13 @@ test('Rows 3 and 5 never reintroduce the three sentences #434 found false', () =
   assert.doesNotMatch(flat, /can halt deposits, exits or voting/, 'false: a USDC blacklist of the vault stops deposits and the USDC leg of exits');
   assert.doesNotMatch(flat, /Nothing in the protocol can halt/, 'false: navWad reverts on a stale feed and deposits/exits revert with it (#388)');
   assert.match(flat, /USDC issuer can blacklist the vault’s address, which stops deposits and the USDC part of an exit/);
-  assert.match(flat, /deposits and exits revert until it answers again/);
+  // Row 3 enumerates every feed failure: stale, reverting, and outside the sane-price band (ChainlinkOracle.priceWad).
+  assert.match(flat, /when it is stale, reverts, or reports a price outside the oracle’s sane-price band: deposits and exits revert until it passes again/);
+  assert.doesNotMatch(flat, /when the price feed goes stale/, 'incomplete: a reverting feed and an out-of-band price stop deposits and exits too');
   // Row 5: members vote and any address may call Governance.execute; the creator sets more than two things.
   assert.doesNotMatch(flat, /No address can vote/, 'false: members vote');
   assert.doesNotMatch(flat, /entire authority is two acts/, 'false: the creator chooses oracle, basket, adapters, fees, cap and minimum deposit, and is the fee recipient');
+  assert.match(flat, /its settlement token, oracle, basket, allowed swap adapters/, 'VaultParams.usdc is creator-chosen, so Row 5 must list it');
   assert.match(flat, /any address may call Governance\.execute/);
   assert.match(flat, /10% performance fee and collects it by calling/);
   // The operator's lack of power is enumerated, never a universal (claims-lede-truth guard 6).
@@ -318,4 +321,16 @@ test('Row 6 confirmed states and Row 6b unread use the copy-doc lines, and never
   assert.match(flat, /Read now: this vault&rsquo;s address is blacklisted on cirBTC\./);
   assert.match(flat, /That is not the same as having nothing to claim\. Reload to check again\./);
   assert.doesNotMatch(flat, /\bCircle\b/, 'copy-doc hard constraint: "its issuer", never the issuer by name');
+});
+
+test('Row 6 paused line says exits pay cirBTC in kind and USDC as cash, never "not cash"', () => {
+  const flat = SRC.replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/&rsquo;/g, '’').replace(/\s+/g, ' ');
+  assert.match(flat, /holds, in kind: its cirBTC as cirBTC, and its USDC as cash, whether or not anything is paused/);
+  assert.doesNotMatch(flat, /cirBTC, not cash/, 'false: an exit also pays the member’s share of idle USDC as cash (VaultCore cash leg)');
+});
+
+test('Row 6b says the only cost of claiming is gas, never "costs you nothing"', () => {
+  const flat = SRC.replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/&rsquo;/g, '’').replace(/\s+/g, ' ');
+  assert.match(flat, /it does not expire, it pays out in full, a failed attempt loses nothing, and the only cost of claiming is the gas fee for the transaction, and USDC is the gas token on Arc./);
+  assert.doesNotMatch(flat, /costs you nothing/, 'false: a claim transaction costs gas');
 });
