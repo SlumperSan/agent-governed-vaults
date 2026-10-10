@@ -296,3 +296,38 @@ export const EXIT_SWAP_REPLACED_CAP_NO_NEED = [
  * own span. Deliberately NOT applied to EXIT_SWAP_REPLACED_CAP_NO_NEED — see that export's note. */
 export const EXIT_SWAP_REPLACED_CAP_NEGATED =
   /\b(?:not|never|no\s+longer|didn't|doesn't|does\s+not|did\s+not|isn't|is\s+not|wasn't|was\s+not)\b/i;
+
+// ---------------------------------------------------------------------------------------------
+// Guard 7b enumerator — which Solidity functions reach `executeSwap`, and which are ungated.
+// Shared by the guard (over VaultCore.sol) and its probe (over a fixture) so the probe exercises
+// the SAME code the guard runs: a probe carrying its own copy stays green when the guard's copy
+// regresses (Security, PR #432 review).
+// ---------------------------------------------------------------------------------------------
+
+/** Split Solidity source into `{ name, body, at }` function records by brace depth. */
+export const parseSolidityFns = (src) => {
+  const fns = [];
+  const sigRe = /function\s+(\w+)\s*\([^)]*\)[^{;]*\{/g;
+  for (const m of src.matchAll(sigRe)) {
+    let depth = 0;
+    let i = m.index + m[0].length - 1;
+    const start = i;
+    for (; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') { depth--; if (depth === 0) break; }
+    }
+    fns.push({ name: m[1], body: src.slice(start, i + 1), at: src.slice(0, m.index).split('\n').length });
+  }
+  return fns;
+};
+
+/** Matched by identifier, not by interface-cast text: a low-level
+ * `adapter.call(abi.encodeCall(IExecutionAdapter.executeSwap, (o)))` reaches the same selector. */
+export const EXECUTE_SWAP_REF = /\bexecuteSwap\b/;
+
+/** The governance gate every swap site must carry. */
+export const GOVERNANCE_GATE =
+  /require\(\s*msg\.sender\s*==\s*address\(governance\)\s*,\s*OnlyGovernance\(\)\s*\)/;
+
+export const swapSitesOf = (src) => parseSolidityFns(src).filter((f) => EXECUTE_SWAP_REF.test(f.body));
+export const ungatedSwapSites = (sites) => sites.filter((f) => !GOVERNANCE_GATE.test(f.body));
