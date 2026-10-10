@@ -15,6 +15,7 @@ import {
   PAGE_SIGNALS, LOG_SIGNALS, CONDITIONAL_PAGE, tierOf,
 } from '../src/sinks.mjs';
 import { EMITTABLE_SIGNALS } from '../src/canary-runner.mjs';
+import { EARLY_WARNING_KEY, CRITICAL_KEY } from '../src/signals/operator-power.mjs';
 
 /**
  * Every SIGNAL name `src/signals/` can emit, read from DISK rather than from a hand-written import
@@ -401,6 +402,30 @@ test('dispatch: every feed-identity harm SHAPE routes by whether it classified i
     assert.equal(posted.length, 1, `harm shape ${JSON.stringify(shape)} must produce exactly one POST`);
     assert.equal(posted[0].url, wantUrl, `harm shape ${JSON.stringify(shape)}: ${why}`);
     assert.equal(posted[0].body.tier, wantTier, 'and the body must say so, for a receiver on a single shared URL');
+  }
+});
+
+test('dispatch: every operator-power bar SHAPE fails closed — only the named early-warning bar LOGs', async () => {
+  // #128's rule: a predicate may not demote what it did not classify. `bar === 'critical'` would LOG
+  // an alert whose `bar` is absent or unrecognised; `bar !== 'early-warning'` pages it.
+  assert.equal(EARLY_WARNING_KEY, 'early-warning', 'the sink literal must equal the signal key');
+  const shapes = [
+    [EARLY_WARNING_KEY, 'log', 'the 1.5x bar is runway, not an emergency'],
+    [CRITICAL_KEY, 'page', 'the 1.1x bar is the decision-needed-now line'],
+    ['absent', 'page', 'a leg that never set `bar` is unclassified, so it pages'],
+    ['some-future-bar', 'page', 'an unrecognised bar is a leg nobody has ruled on'],
+  ];
+  for (const [shape, wantTier, why] of shapes) {
+    const t = {
+      id: 'operator-power:0xv:' + shape, signal: 'operator-power', vault: '0xv', from: 'ok', to: 'alert',
+      line: `ALERT [operator-power] bar=${shape}`,
+      result: { signal: 'operator-power', vault: '0xv', status: 'alert', message: 'm', detail: { vault: '0xv', bar: shape } },
+    };
+    if (shape === 'absent') delete t.result.detail.bar;
+    const { posted, sink } = dispatchProbe();
+    await emitAll([sink], [t]);
+    assert.equal(posted.length, 1, `bar ${shape}: exactly one POST`);
+    assert.equal(posted[0].url, `https://example.invalid/${wantTier}`, `bar ${shape}: ${why}`);
   }
 });
 

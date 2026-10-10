@@ -388,11 +388,21 @@ Watch continuously; page on any breach. Every row below is implemented in `packa
 as a service — see **[CANARY.md](CANARY.md)** for thresholds, tuning, and the response to each:
 
 ```bash
-RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json npm run start:canary
+RPC_URL=… CHAIN_ID=5042 OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json   PAGE_WEBHOOK_URL=… LOG_WEBHOOK_URL=… DEADMAN_PING_URL=… npm run start:canary
 ```
 
+**`CHAIN_ID` is not optional in practice.** It defaults to 8453, and the canary refuses to start when
+`CHAIN_ID` disagrees with the RPC's chain, so on Arc it must be 5042. The `depeg-reference` signal
+defaults its USDC/USD feed (Arc's for 5042, Base mainnet's for 8453) only when `CHAIN_ID` was set on
+purpose; an unset one is never read as "this is mainnet", because that would hand a Sepolia deployment
+a mainnet address with no code behind it. Left unset, that signal reports `skipped` with the reason.
+
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
-(no key, never sends). `docker compose up` starts it alongside the indexer and API.
+(no key, never sends). `docker compose up` starts it alongside the indexer and API. Alerts are
+**tiered**: `PAGE_WEBHOOK_URL` takes the wake-a-human ALERTs, `LOG_WEBHOOK_URL` everything else, and
+`ALERT_WEBHOOK_URL` remains the single-endpoint fallback. Which signal is on which tier, and why, is
+[CANARY.md §5.3](CANARY.md), including the two added by G1/G4: `operator-power` pages on its
+CRITICAL bar only (its 1.5x early warning logs), and `depeg-reference` pages.
 
 > **The canary watches the launch oracle on two axes: freshness since #89, and feed IDENTITY since
 > #103.** The `oracle-freshness` signal probes the deployed oracle and measures `ChainlinkOracle`
@@ -413,7 +423,7 @@ It is silent while healthy, emits one line per signal transition, and is read-on
 > `'decimals'` and `'denomination'`, the two latching cases where every price is silently wrong,
 > and equally any harm value that is absent or unrecognised, so a future leg that forgets to set
 > the field pages rather than logging silently. This paragraph described it as a closed
-> enumeration until 2026-09-13. That is a stronger check than the
+> enumeration until 2026-10-09. That is a stronger check than the
 > recurring script below, which tests Chainlink's 8-decimal *convention* rather than the number
 > this oracle uses — **the canary now continuously re-runs the two construction-time proofs an
 > immutable contract can never re-run itself.**

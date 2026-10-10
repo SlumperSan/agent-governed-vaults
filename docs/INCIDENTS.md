@@ -159,7 +159,7 @@ permanently, and every NAV path keeps answering. Accepted as residual register *
   name: `CONDITIONAL_PAGE` in `packages/canary/src/sinks.mjs` LOGS only when `detail.harm` is
   explicitly `null`, and PAGES otherwise, covering `'decimals'` and `'denomination'` and equally
   any harm value that is absent or unrecognised. It is a default, not an enumeration; this line
-  described it as one until 2026-09-13. A decimals mismatch is exactly the
+  described it as one until 2026-10-09. A decimals mismatch is exactly the
   `'decimals'` case, so it reaches `PAGE_WEBHOOK_URL`. **A `DRIFT` notice alone does not page**.
   A bare aggregator swap carries `harm === null` and goes to `LOG_WEBHOOK_URL`, which is the
   intended asymmetry, not a gap. (If only `ALERT_WEBHOOK_URL` is set, both land on that one URL.)
