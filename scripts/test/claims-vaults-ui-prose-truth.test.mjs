@@ -79,9 +79,10 @@
  *
  * Same discipline as #322's own "COVERAGE, NOT A GUARD" section:
  *
- *   1. The two directories combined must yield at least one `.tsx`/`.ts` module. If either moves,
- *      is renamed, or this guard's paths are wrong, this THROWS rather than reporting a pass over
- *      zero files.
+ *   1. The recursive walk of `apps/vaults-ui/src` must yield at least one `.tsx`/`.ts` module. If
+ *      the surface moves, is renamed, or this guard's path is wrong, this THROWS rather than
+ *      reporting a pass over zero files. `MIN_MODULES` and `MIN_ROOT_MODULES` below add floors on
+ *      the total and on the files at the `src` root.
  *   2. Every module walked must yield at least one non-empty extracted item (string OR JSX text
  *      combined) — a module extracting to nothing is a tokenizer/parser defect, not a clean file.
  *   3. JSX TEXT SPECIFICALLY must clear a floor across the whole walk (`MIN_JSX_TEXT_SEGMENTS`).
@@ -143,6 +144,15 @@ const SRC = 'apps/vaults-ui/src';
  * rather than render anything — `lib/atlas-modules/` is entirely `.d.ts`, so it contributes nothing
  * and needs no special case.
  */
+/** Tripwire 1 as a function, so the probe at the bottom exercises the same code the walk runs. */
+const assertNonEmptyCorpus = (found) => {
+  assert.ok(
+    found.length > 0,
+    `${SRC} yielded zero .ts/.tsx modules. Either the member-facing surface moved, or this guard's ` +
+      'path is wrong — either way this must FAIL rather than report a silent pass over zero coverage.',
+  );
+};
+
 const vaultsUiModules = () => {
   const found = [];
   const walk = (rel) => {
@@ -156,11 +166,7 @@ const vaultsUiModules = () => {
   };
   walk(SRC);
   // Tripwire 1 — see header.
-  assert.ok(
-    found.length > 0,
-    `${SRC} yielded zero .ts/.tsx modules. Either the member-facing surface moved, or this guard's ` +
-      'path is wrong — either way this must FAIL rather than report a silent pass over zero coverage.',
-  );
+  assertNonEmptyCorpus(found);
   return found.sort();
 };
 
@@ -517,9 +523,6 @@ test('probe: this guard reds rather than passes if the vaults-ui surface yields 
     /ENOENT/,
     'sanity check on the probe itself: a missing directory must throw, not return []',
   );
-  const assertNonEmpty = (found) => {
-    assert.ok(found.length > 0, 'apps/vaults-ui/src/{components,lib} yielded zero .ts/.tsx modules');
-  };
-  assert.throws(() => assertNonEmpty([]), /zero \.ts\/\.tsx modules/);
-  assertNonEmpty(['apps/vaults-ui/src/components/MemberActions.tsx']); // does not throw
+  assert.throws(() => assertNonEmptyCorpus([]), /zero \.ts\/\.tsx modules/);
+  assertNonEmptyCorpus(['apps/vaults-ui/src/components/MemberActions.tsx']); // does not throw
 });

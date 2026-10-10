@@ -1,7 +1,7 @@
 /**
  * Extract the STATIC TEXT of every string literal, template-literal segment, AND JSX text child
  * from a `.ts`/`.tsx` source file — the mechanism `claims-vaults-ui-prose-truth.test.mjs` (card
- * P-O13/P-O21) needs to scan `apps/vaults-ui/src/{components,lib}` for banned claim shapes.
+ * P-O13/P-O21) needs to scan every `.ts`/`.tsx` module under `apps/vaults-ui/src` for banned claim shapes.
  *
  * ## Why this is a SEPARATE extractor from `extract-string-literals.mjs`, not an extension of it
  *
