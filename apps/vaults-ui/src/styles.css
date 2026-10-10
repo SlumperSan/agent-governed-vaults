@@ -151,10 +151,12 @@ code { font-family: var(--mono); font-size: 12.5px; }
 .wallet-picker { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .act-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+/* The field's edge is what tells a member it IS a field (WCAG 2.2 1.4.11, 3:1). --line was
+   1.26:1 on the panel. --ink-faint is neutral, not the interaction blue, and clears it. */
 .act-row input[type='text'] {
   padding: 6px 10px;
   border-radius: var(--r-sm);
-  border: 1px solid var(--line);
+  border: 1px solid var(--ink-faint);
   background: var(--surface-2);
   color: var(--ink);
   font: inherit;

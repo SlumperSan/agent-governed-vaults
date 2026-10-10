@@ -125,6 +125,11 @@ export const PAGE_SIGNALS = new Set([
  *   - `key: 'early-warning'` — within 1.5x. Weeks of runway on ordinary dilution, and the action is
  *     "schedule a deposit", not "wake someone". LOG.
  *
+ * THE PREDICATE IS FAIL-CLOSED, per the rule below: it LOGs only the explicitly named
+ * `'early-warning'` bar (`EARLY_WARNING_KEY` in signals/operator-power.mjs, pinned equal by a test)
+ * and PAGEs everything else, so an alert whose `bar` is absent or unrecognised pages instead of
+ * being demoted to LOG.
+ *
  * THE DISCRIMINATOR IS THE BAR, AND IT IS AN HONEST ONE. A predicate earns its place only if some
  * axis readable AT ALERT TIME genuinely separates the two severities; a predicate written on an axis
  * that does not separate them is worse than none, because it looks like a decision. Here the axis is
@@ -154,11 +159,26 @@ export const PAGE_SIGNALS = new Set([
  * oscillate, so there is no flap path.
  *
  * Each predicate takes the transition and returns true to PAGE. It is consulted only on an ALERT.
+ *
+ * TWO PROPERTIES EVERY PREDICATE HERE MUST HAVE, because a predicate decides whether an alert
+ * reaches a human at all:
+ *
+ * 1. **It may not demote what it did not classify.** The test is `harm !== null`, not `!= null`:
+ *    an alert pages UNLESS it explicitly classified itself benign, which the aggregator-swap leg
+ *    does literally (`harm: null`). An ALERT whose `harm` is ABSENT is a leg nobody has classified
+ *    yet, and that is exactly the case that should page. This matters more than it reads: the
+ *    tier-coverage test proves the signal NAME is classified — it enumerates `EMITTABLE_SIGNALS`,
+ *    a separate test cross-checks that against `readdir` — and NOTHING proves that every
+ *    `alert()` inside a signal sets the field its predicate reads — so the fail-safe direction has
+ *    to be the default, since the invariant does not reach the payload.
+ * 2. **It fails OPEN if it throws.** `tierOf` catches and returns 'page'; see the catch there for
+ *    why an escaping throw deletes the alert rather than mis-routing it. Do not rely on this — it
+ *    is a backstop, not a licence to skip the optional chaining.
  * @type {Map<string, (t: import('./transitions.mjs').Transition) => boolean>}
  */
 export const CONDITIONAL_PAGE = new Map([
-  ['feed-identity', (t) => t?.result?.detail?.harm != null],
-  ['operator-power', (t) => t?.result?.detail?.bar === 'critical'],
+  ['feed-identity', (t) => t?.result?.detail?.harm !== null],
+  ['operator-power', (t) => t?.result?.detail?.bar !== 'early-warning'],
 ]);
 
 /**
@@ -189,7 +209,18 @@ export function tierOf(t) {
   if (t?.to !== 'alert') return 'log';
   if (PAGE_SIGNALS.has(t?.signal)) return 'page';
   const pagesWhen = CONDITIONAL_PAGE.get(t?.signal);
-  return pagesWhen?.(t) === true ? 'page' : 'log';
+  if (!pagesWhen) return 'log';
+  try {
+    return pagesWhen(t) === true ? 'page' : 'log';
+  } catch (err) {
+    // FAIL OPEN. A predicate that throws must not be able to delete the alert: `tierOf` is called
+    // from inside `createWebhookSink.emit` too (for `body.tier`), so an escaping throw is caught by
+    // `emitAll` as a skipped SINK and the transition reaches ZERO endpoints. A spurious page costs
+    // one person's attention once; a swallowed page costs the incident. Loud on stderr so the
+    // broken predicate is discoverable rather than silently paging on everything forever.
+    console.error(`canary: tier predicate for ${t?.signal} threw on ${t?.id}: ${err?.message ?? err} - defaulting to PAGE`);
+    return 'page';
+  }
 }
 
 /**
