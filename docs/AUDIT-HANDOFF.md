@@ -279,9 +279,9 @@ forge build --sizes                                # EIP-170 gate
 slither . --filter-paths "^lib/|^test/|^script/"   # static analysis (triaged: reviews/SLITHER-TRIAGE.md)
 ```
 
-The first three are **blocking** CI gates. `slither` is **advisory**. Its CI step is
-`continue-on-error: true`, so a new high-severity static-analysis finding does **not** turn CI
-red; [SLITHER-TRIAGE.md](reviews/SLITHER-TRIAGE.md) is the record of what was dispositioned and
+All four are **blocking** CI gates. The `slither` job grades its report against
+`contracts/slither-baseline.json`, so a finding the baseline does not cover turns CI red;
+[SLITHER-TRIAGE.md](reviews/SLITHER-TRIAGE.md) is the record of what was dispositioned and
 why. The filter pattern is anchored as of Sprint 10: the previous unanchored `"lib|test|script"`
 also matched `src/lib/`, which excluded `SafeTransferLib`, `BoundedCall` and `Checkpoints` from
 every Slither run the project had done

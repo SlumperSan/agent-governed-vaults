@@ -24,12 +24,14 @@
  *     every time) to catch a class of failure that only appears when package-lock.json changes.
  *     Run `npm ci` by hand when you touch the lockfile; that is the one case where a green gate
  *     can still meet a red CI.
- *   - Slither is advisory here exactly as it is in CI (`continue-on-error: true`), and is SKIPPED
- *     with a notice when it is not installed. A gate that turns red because an optional Python
- *     tool is missing teaches people to ignore red, which costs more than the check is worth.
+ *   - Slither is blocking here exactly as it is in CI (the report is graded against
+ *     contracts/slither-baseline.json by contracts/scripts/slither_baseline_check.py), but it is
+ *     SKIPPED with a notice when it is not installed. A gate that turns red because an optional
+ *     Python tool is missing teaches people to ignore red, which costs more than the check is worth.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -96,6 +98,9 @@ const SHELL_ENTRYPOINTS = ['scripts/verify-x402-run.sh'];
  */
 
 /** @type {Step[]} */
+// Outside the repo (a report in the tree is read as prose by the claims guards) and per-process.
+const SLITHER_REPORT = path.join(os.tmpdir(), `gate-slither-report-${process.pid}.json`);
+
 const STEPS = [
   {
     id: 'fmt',
@@ -272,16 +277,19 @@ const STEPS = [
   },
   {
     id: 'slither',
-    title: 'slither (advisory)',
+    title: 'slither + baseline check',
     cmd: 'slither',
-    args: ['.', '--filter-paths', '^lib/|^test/|^script/'],
+    // The report is written to SLITHER_REPORT and graded by runSlitherStep, exactly as the two
+    // slither steps in ci.yml do. `--fail-none` is required: Slither's own default exits nonzero
+    // on ANY finding, which would fail on every already-accepted finding before the baseline check
+    // ran.
+    args: ['.', '--filter-paths', '^lib/|^test/|^script/', '--fail-none', '--json', SLITHER_REPORT],
     cwd: CONTRACTS,
-    advisory: true,
     // Anchored filter paths, matching ci.yml. The old unanchored "lib|test|script" also matched
     // src/lib/, silently excluding SafeTransferLib, BoundedCall and Checkpoints -- ~150 LoC of
     // Medium-risk primitives carrying the H-1 and H-2 fixes -- from every Slither run this project
     // ever did. Keep the anchors.
-    why: 'Advisory in CI too. Skipped with a notice when slither is not installed.',
+    why: 'Blocking in CI too: fails on a finding the baseline does not cover, or on a report with none. Skipped with a notice when slither is not installed.',
   },
 ];
 
@@ -313,7 +321,7 @@ if (has('--help') || has('-h') || has('--list')) {
   console.log('\nDeliberate divergences from CI:');
   console.log('  - `npm ci` is not run here. Run it by hand when package-lock.json changes;');
   console.log('    that is the one case where a green gate can still meet a red CI.');
-  console.log('  - Slither is advisory (as in CI) and skipped when not installed.\n');
+  console.log('  - Slither is blocking (as in CI) but skipped when not installed.\n');
   console.log('Flags: --quick  --all/--no-fail-fast  --only a,b  --list\n');
   process.exit(0);
 }
@@ -390,6 +398,19 @@ function run(cmd, args, cwd) {
 /** Is a binary reachable? Used for preflight and for the slither skip. */
 function present(bin) {
   return resolveBin(bin) !== null;
+}
+
+/**
+ * The two slither steps of ci.yml, in one gate step: run Slither to a fresh JSON report, then grade
+ * it with the baseline check. `rm` first because Slither refuses to overwrite an existing --json
+ * file (it silently keeps the old one and exits 0), which would grade a stale tree.
+ */
+async function runSlitherStep(s) {
+  rmSync(SLITHER_REPORT, { force: true });
+  const code = await run(s.cmd, s.args, s.cwd);
+  if (code !== 0) return code;
+  const py = WIN ? 'python' : 'python3';
+  return run(py, ['scripts/slither_baseline_check.py', SLITHER_REPORT, 'slither-baseline.json'], s.cwd);
 }
 
 async function runSyntaxStep() {
@@ -585,14 +606,14 @@ ${C.d}(see --list)${C.x}
     const label = `[${i + 1}/${steps.length}] ${s.title}`;
 
     if (s.id === 'slither' && !hasSlither) {
-      console.log(`${C.y}SKIP${C.x} ${label} ${C.d}-- slither not installed (advisory in CI too)${C.x}\n`);
+      console.log(`${C.y}SKIP${C.x} ${label} ${C.d}-- slither not installed (CI always runs it)${C.x}\n`);
       results.push({ s, state: 'skip', ms: 0 });
       continue;
     }
 
     console.log(`${C.b}${label}${C.x}`);
     const st = Date.now();
-    const code = s.id === SYNTAX_STEP ? await runSyntaxStep() : await run(s.cmd, s.args, s.cwd ?? REPO);
+    const code = s.id === SYNTAX_STEP ? await runSyntaxStep() : s.id === 'slither' ? await runSlitherStep(s) : await run(s.cmd, s.args, s.cwd ?? REPO);
     const ms = Date.now() - st;
 
     const expected = s.expectExit ?? 0;
