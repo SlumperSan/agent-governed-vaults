@@ -91,6 +91,16 @@ def load_report(path: Path) -> Counter:
     if not data.get("success", False):
         raise SystemExit(f"slither_baseline_check: {path} is not a successful Slither report: {data.get('error')}")
     detectors = (data.get("results") or {}).get("detectors") or []
+    # FLOOR. A successful report with zero findings is not a clean bill of health on this tree,
+    # which carries hundreds of accepted findings: it is Slither having analyzed nothing, e.g. a
+    # --filter-paths typo or a build that produced no sources. Passing it would silently disarm
+    # this gate (a pass over zero findings is indistinguishable from a pass over all of them).
+    if not detectors:
+        raise SystemExit(
+            f"slither_baseline_check: {path} is a successful Slither report with ZERO findings. "
+            "This tree has accepted findings, so an empty report means Slither analyzed nothing "
+            "(check --filter-paths and that forge build produced sources). Refusing to pass."
+        )
     return Counter(derive_key(f) for f in detectors)
 
 
