@@ -6,11 +6,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, unlinkSync, rmSync, existsSync, utimesSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, hostname } from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS } from '../lib/task-numbers.mjs';
+import { ANSWER_CUSTOM_KEY, assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS, withDirLock } from '../lib/task-numbers.mjs';
 
 const MODULE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'task-numbers.mjs');
 
@@ -125,7 +125,7 @@ test('concurrent allocation from several processes gives every file a unique num
     for (const f of readdirSync(dir).filter((x) => x.endsWith('.md'))) {
       assert.equal((readFileSync(path.join(dir, f), 'utf8').match(/^num:/gm) ?? []).length, 1, `${f} has one num line`);
     }
-    assert.ok(!existsSync(path.join(dir, '_task-numbers.lock')), 'lock released');
+    assert.equal(lockHeld(dir), false, 'lock released');
   } finally { done(); }
 });
 
@@ -133,7 +133,7 @@ test('a stale lock from a crashed process is broken; a fresh one is waited out',
   const { dir, done } = tmpTasks();
   try {
     card(dir, 'a.md');
-    const lock = path.join(dir, '_task-numbers.lock');
+    const lock = path.join(dir, '_task-numbers.lock.1');
     writeFileSync(lock, '');
     const old = new Date(Date.now() - 120_000);
     utimesSync(lock, old, old);
@@ -171,4 +171,223 @@ test('reconcile moves a button answer but leaves a free-text answer where it is'
     assert.match(readFileSync(path.join(dir, 'free.md'), 'utf8'), /^status: suggestion$/m);
     assert.match(readFileSync(path.join(dir, 'free2.md'), 'utf8'), /^status: suggestion$/m);
   } finally { done(); }
+});
+
+// ── Typed answers ────────────────────────────────────────────────────────────────────────────────
+
+test('reconcile leaves a TYPED answer that spells a button exactly; the same text without the mark moves', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    const write = (name, extra) => writeFileSync(path.join(dir, name), `---\ntitle: ${name}\nstatus: suggestion\nanswer: Decline\n${extra}---\n`);
+    write('typed.md', `${ANSWER_CUSTOM_KEY}: true\n`);
+    write('clicked.md', '');
+    const r = reconcileAnsweredSuggestions(dir);
+    assert.deepEqual(r.moved, ['clicked.md -> done']);
+    assert.match(readFileSync(path.join(dir, 'typed.md'), 'utf8'), /^status: suggestion$/m);
+    // idempotent: a second pass moves nothing
+    assert.deepEqual(reconcileAnsweredSuggestions(dir).moved, []);
+  } finally { done(); }
+});
+
+test('the custom mark in a BODY line does not shield a button answer', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    writeFileSync(path.join(dir, 'b.md'), `---\ntitle: b\nstatus: suggestion\nanswer: Decline\n---\n${ANSWER_CUSTOM_KEY}: true\n`);
+    assert.deepEqual(reconcileAnsweredSuggestions(dir).moved, ['b.md -> done']);
+  } finally { done(); }
+});
+
+// ── Lock ownership ───────────────────────────────────────────────────────────────────────────────
+
+/** Generation 1 of the lock series; a takeover creates generation 2 and leaves this file in place. */
+const LOCK = '_task-numbers.lock.1';
+const lockFiles = (dir) => readdirSync(dir).filter((f) => f.startsWith('_task-numbers.lock')).sort();
+/** Whether the highest-generation lock file is an owner record (held) rather than a release record. */
+function lockHeld(dir) {
+  const files = lockFiles(dir).sort((a, b) => Number(a.split('.').pop()) - Number(b.split('.').pop()));
+  if (!files.length) return false;
+  return JSON.parse(readFileSync(path.join(dir, files[files.length - 1]), 'utf8')).released !== true;
+}
+const age = (file, ms) => { const t = new Date(Date.now() - ms); utimesSync(file, t, t); };
+const lockText = (pid, token = 'other-owner-token', host = hostname()) => JSON.stringify({ pid, host, token });
+/** A pid that belonged to a process that has exited. */
+function deadPid() {
+  const r = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))']);
+  return Number(r.stdout.toString());
+}
+
+test('a lock whose owner is ALIVE is not stolen at 31 s, however old by the old 30 s rule', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, lockText(process.pid));
+    age(lock, 31_000);
+    assert.throws(() => assignNumbers(dir, { lockTimeoutMs: 300 }), /could not take/);
+    assert.equal(numOf(dir, 'a.md'), 0, 'the section must not have run');
+    assert.equal(JSON.parse(readFileSync(lock, 'utf8')).token, 'other-owner-token', 'the owner\'s lock is untouched');
+  } finally { done(); }
+});
+
+test('a lock whose owner process is GONE is taken at once, though it is seconds old', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    writeFileSync(path.join(dir, LOCK), lockText(deadPid()));
+    const t0 = Date.now();
+    assignNumbers(dir, { lockTimeoutMs: 5_000 });
+    assert.ok(Date.now() - t0 < 2_000, 'a dead owner is not waited out');
+    assert.equal(numOf(dir, 'a.md'), 1);
+    assert.deepEqual(lockFiles(dir), [LOCK, `${LOCK.slice(0, -1)}2`, `${LOCK.slice(0, -1)}3`], 'nothing deleted: dead owner, the taker, its release record');
+    assert.equal(JSON.parse(readFileSync(path.join(dir, LOCK), 'utf8')).token, 'other-owner-token', 'the dead owner record is untouched');
+    assert.equal(lockHeld(dir), false);
+  } finally { done(); }
+});
+
+test('a lock whose owner is alive IS broken once it is far older than any real section (recycled pid)', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, lockText(process.pid));
+    age(lock, 11 * 60_000);
+    assignNumbers(dir, { lockTimeoutMs: 300 });
+    assert.equal(numOf(dir, 'a.md'), 1);
+  } finally { done(); }
+});
+
+test('a lock written on another host is not probed by pid: only the long margin breaks it', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, lockText(deadPid(), 'tok', 'some-other-machine'));
+    age(lock, 60_000);
+    assert.throws(() => assignNumbers(dir, { lockTimeoutMs: 300 }), /could not take/);
+    age(lock, 11 * 60_000);
+    assignNumbers(dir, { lockTimeoutMs: 300 });
+    assert.equal(numOf(dir, 'a.md'), 1);
+  } finally { done(); }
+});
+
+test('an ownerless (empty) lock is waited out when fresh and broken after 30 s', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, '');
+    assert.throws(() => assignNumbers(dir, { lockTimeoutMs: 300 }), /could not take/);
+    age(lock, 31_000);
+    assignNumbers(dir, { lockTimeoutMs: 300 });
+    assert.equal(numOf(dir, 'a.md'), 1);
+  } finally { done(); }
+});
+
+test('the holder never overwrites a lock that another process now holds', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    const successor = path.join(dir, '_task-numbers.lock.2');
+    withDirLock(dir, () => {
+      // Simulate: our generation was judged dead and the next one taken by someone else while we were still inside.
+      writeFileSync(successor, lockText(process.pid, 'someone-elses-token'));
+    });
+    assert.deepEqual(lockFiles(dir), ['_task-numbers.lock.1', '_task-numbers.lock.2']);
+    assert.equal(JSON.parse(readFileSync(successor, 'utf8')).token, 'someone-elses-token', 'the successor record is untouched by our release');
+  } finally { done(); }
+});
+
+test('the holder frees the lock on exit, including when the section throws, and no file name is ever reused', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    assert.throws(() => withDirLock(dir, () => { throw new Error('boom'); }), /boom/);
+    assert.equal(lockHeld(dir), false);
+    withDirLock(dir, () => assert.equal(lockHeld(dir), true), 50);
+    assert.equal(lockHeld(dir), false);
+    assert.deepEqual(lockFiles(dir), ['_task-numbers.lock.1', '_task-numbers.lock.2', '_task-numbers.lock.3', '_task-numbers.lock.4']);
+  } finally { done(); }
+});
+
+// ── Taking over a stale lock: one winner, nothing deleted ─────────────────────────────────────────
+
+// The scenario the round-2 review reproduced: a dead holder's lock AND a dead breaker file left
+// behind, many processes released at the same instant. Under the old read-judge-rename takeover
+// this issued duplicate numbers (1,1,2,2) at 8 processes. Leftovers are seeded in EVERY shape any
+// version has used (the legacy single lock, its `.break` file, and a generation file), so the test
+// is also red against a takeover that deletes or renames a file it only judged.
+const STRESS_WORKERS = 8;
+const STRESS_ROUNDS = Number(process.env.TN_STRESS_ROUNDS ?? 15);
+const MODULE_URL = JSON.stringify('file:///' + MODULE.replace(/\\/g, '/'));
+
+function seedDeadLeftovers(dir, round) {
+  writeFileSync(path.join(dir, '_task-numbers.lock'), lockText(deadPid(), `dead-legacy-${round}`));
+  writeFileSync(path.join(dir, '_task-numbers.lock.break'), lockText(deadPid(), `dead-breaker-${round}`));
+  writeFileSync(path.join(dir, LOCK), lockText(deadPid(), `dead-gen-${round}`));
+}
+
+/** Run `script` in WORKERS fresh node processes, released together by a spin barrier. */
+async function runWorkers(script, dir, startAt) {
+  const codes = await Promise.all(Array.from({ length: STRESS_WORKERS }, (_, i) => new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, ['-e', script(dir, startAt, i)], { stdio: 'ignore' });
+    p.on('error', reject);
+    p.on('close', resolve);
+  })));
+  assert.deepEqual(codes, new Array(STRESS_WORKERS).fill(0));
+}
+
+const SECTION_WORKER = (dir, startAt) => `
+import(${MODULE_URL}).then((m) => {
+  const fs = require('node:fs');
+  while (Date.now() < ${startAt}) { /* barrier: every worker hits the dead lock together */ }
+  m.withDirLock(${JSON.stringify(dir)}, () => {
+    const marker = ${JSON.stringify(path.join(dir, '_in-section'))};
+    try { fs.closeSync(fs.openSync(marker, 'wx')); } catch { fs.appendFileSync(${JSON.stringify(path.join(dir, '_overlaps'))}, process.pid + '\\n'); }
+    // A read-modify-write that hands out numbers, like allocate(): overlap shows as a repeated number.
+    const seq = ${JSON.stringify(path.join(dir, '_seq'))};
+    const n = fs.existsSync(seq) ? Number(fs.readFileSync(seq, 'utf8')) : 0;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 4);
+    fs.writeFileSync(seq, String(n + 1));
+    fs.appendFileSync(${JSON.stringify(path.join(dir, '_issued'))}, (n + 1) + '\\n');
+    try { fs.unlinkSync(marker); } catch {}
+  });
+}).catch((e) => { console.error(e); process.exit(1); });`;
+
+test('8 processes racing for a dead owner\'s lock with a dead breaker beside it: one at a time, no overlap', async () => {
+  const bad = [];
+  for (let round = 0; round < STRESS_ROUNDS; round += 1) {
+    const { dir, done } = tmpTasks();
+    try {
+      seedDeadLeftovers(dir, round);
+      await runWorkers(SECTION_WORKER, dir, Date.now() + 600);
+      const overlaps = existsSync(path.join(dir, '_overlaps')) ? readFileSync(path.join(dir, '_overlaps'), 'utf8').trim().split('\n').length : 0;
+      const issued = readFileSync(path.join(dir, '_issued'), 'utf8').trim().split('\n');
+      if (overlaps || new Set(issued).size !== STRESS_WORKERS) bad.push(`round ${round}: ${overlaps} overlaps, issued ${issued.join(',')}`);
+    } finally { done(); }
+  }
+  assert.deepEqual(bad, [], `sections overlapped:\n${bad.join('\n')}`);
+});
+
+const ASSIGN_WORKER = (dir, startAt, i) => `
+import(${MODULE_URL}).then((m) => {
+  const fs = require('node:fs');
+  fs.writeFileSync(${JSON.stringify(dir)} + '/w${i}.md', '---\\ntitle: w${i}\\nstatus: backlog\\n---\\nbody\\n');
+  while (Date.now() < ${startAt}) { /* barrier */ }
+  m.assignNumbers(${JSON.stringify(dir)}, { lockTimeoutMs: 20000 });
+}).catch((e) => { console.error(e); process.exit(1); });`;
+
+test('8 processes calling the real assignNumbers over dead leftovers never issue a task number twice', async () => {
+  const bad = [];
+  for (let round = 0; round < STRESS_ROUNDS; round += 1) {
+    const { dir, done } = tmpTasks();
+    try {
+      seedDeadLeftovers(dir, round);
+      await runWorkers(ASSIGN_WORKER, dir, Date.now() + 600);
+      const files = readdirSync(dir).filter((f) => f.endsWith('.md'));
+      const nums = files.map((f) => numOf(dir, f)).sort((a, b) => a - b);
+      const lines = files.map((f) => (readFileSync(path.join(dir, f), 'utf8').match(/^num:/gm) ?? []).length);
+      if (files.length !== STRESS_WORKERS || new Set(nums).size !== STRESS_WORKERS || nums[0] < 1 || lines.some((n) => n !== 1)) {
+        bad.push(`round ${round}: ${nums.join(',')}`);
+      }
+    } finally { done(); }
+  }
+  assert.deepEqual(bad, [], `duplicate or missing numbers:\n${bad.join('\n')}`);
 });
