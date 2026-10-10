@@ -1,6 +1,6 @@
 /**
- * Claims truth over the MEMBER-FACING SURFACE — `apps/vaults-ui/src/components/*.tsx` and
- * `apps/vaults-ui/src/lib/*.ts`/`*.tsx` (cards P-O13/P-O21).
+ * Claims truth over the MEMBER-FACING SURFACE — every `.ts`/`.tsx` module under
+ * `apps/vaults-ui/src`, at any depth (cards P-O13/P-O21).
  *
  * ## The gap this closes
  *
@@ -12,18 +12,34 @@
  * performance-fee warnings (see recent work on P-O12/#350) — with ZERO claims-guard coverage. A
  * banned shape planted in a `.tsx` string literal or JSX text child currently reds nothing.
  *
- * ## Scope, deliberately narrow, matching #322's own reasoning for its scope
+ * ## Scope: the whole of `src`, recursively — and the earlier narrow scope was the defect
  *
- * `apps/vaults-ui/src/components/*.tsx` and `apps/vaults-ui/src/lib/*.ts`/`*.tsx` — non-recursive,
- * the same convention `claims-web-prose-truth.test.mjs` uses for `apps/web/src` ("there are no
- * subdirectories there today, and this module is the domain layer the surface renders, not a place
- * to widen quietly"). `apps/vaults-ui/src/lib` DOES have a subdirectory, `atlas-modules/` (plus its
- * own nested `chain/`) — deliberately NOT walked: everything directly inside it today is a `.d.ts`
- * type-declaration file, which is erased before anything ships and is never itself rendered to a
- * member. `.d.ts` is also excluded explicitly (not just by non-recursion) so a future one dropped
- * directly into `src/lib` does not silently join the walk and red tripwire 2 as a fake "extracted
- * zero strings" tokenizer bug — a `.d.ts` genuinely has near-zero runtime string content, and that
- * would be a false alarm about this guard, not a finding about the app.
+ * **This guard was REJECTED at `27b7186b` for its corpus, not its shapes or its extractor.** It
+ * walked two hand-named directories (`src/components`, `src/lib`) non-recursively, and argued that
+ * was deliberate scoping by analogy with `claims-web-prose-truth.test.mjs`. `apps/vaults-ui/src` has
+ * FOUR modules at its root — `App.tsx`, `Shell.tsx`, `main.tsx`, `nav.ts` — and none were walked.
+ * `App.tsx` is the only file in the app containing *"Operatorship confers no authority to vote,
+ * execute, pause, reprice, or move member funds"*: the canonical live instance of precisely what
+ * guard 6 below polices. The guard policed a shape whose only real occurrence sat outside its corpus.
+ *
+ * Marketing measured that rather than inferring it: replacing the masthead paragraph with *"Our AI
+ * agent pools your capital and governs the vault on your behalf. Voting is stake-weighted."* left
+ * every claims guard in the repo green (14/14, 22/22, 13/13), while the same two shapes red
+ * instantly from `components/Holdings.tsx`.
+ *
+ * So the corpus is now ONE recursive walk with no directory list. `.d.ts` is excluded by extension
+ * because a type declaration is erased before anything ships and renders nothing to a member;
+ * `lib/atlas-modules/` is entirely `.d.ts` and therefore contributes nothing without needing to be
+ * named. The `MIN_ROOT_MODULES` tripwire below exists because a total-count floor notices the corpus
+ * shrinking but not the SHAPE of the shrink — ten subdirectory files clear any sane total floor while
+ * the root goes unread, which is exactly what happened here.
+ *
+ * **The general rule, since this is the second instance in a week:** a hand-named corpus is complete
+ * exactly until it isn't. #349 named three source files while `VaultCore` binds three libraries via
+ * `using`; this named two directories while the app has four root files. Both passed their own tests
+ * by construction, and both were caught only because someone planted a fresh violation and watched
+ * the guard not notice. Derive the file set from the filesystem, and add the tripwire that fails when
+ * the set changes shape.
  *
  * ## Why a NEW file, and a NEW extractor, rather than extending `claims-web-prose-truth.test.mjs`
  * or `extract-string-literals.mjs`
@@ -103,40 +119,53 @@ import {
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/**
- * The two root directories this guard walks, each NON-RECURSIVE (see header). `components` is
- * `.tsx` only (there is no plain `.ts` file there today, and a component that render nothing is
- * not this app's shape); `lib` is `.ts` and `.tsx` (it holds both, e.g. `wallet.tsx`), excluding
- * `.d.ts` explicitly.
- */
-const ROOTS = [
-  { dir: 'apps/vaults-ui/src/components', exts: ['.tsx'] },
-  { dir: 'apps/vaults-ui/src/lib', exts: ['.ts', '.tsx'] },
-];
+/** The ONE root this guard walks, RECURSIVELY. */
+const SRC = 'apps/vaults-ui/src';
 
 /**
- * Every `.tsx`/`.ts` module directly inside the two roots above. Enumerated from the filesystem,
- * never from a list, on the same rule the other two claims guards use: a file added today is
- * covered today.
+ * Every `.ts`/`.tsx` module under `apps/vaults-ui/src`, at any depth, `.d.ts` excluded.
+ *
+ * THIS WAS TWO HAND-NAMED DIRECTORIES — `src/components` and `src/lib`, non-recursive — and the
+ * header used to argue that was deliberate scoping. It was a hole. `apps/vaults-ui/src` has FOUR
+ * modules at its root (`App.tsx`, `Shell.tsx`, `main.tsx`, `nav.ts`) and none of them were walked,
+ * so this guard policed a set of shapes whose only live instance sat outside its own corpus:
+ * `App.tsx` is the one file in the app containing *"Operatorship confers no authority to vote,
+ * execute, pause, reprice, or move member funds"*, the canonical instance of exactly what guard 6
+ * below checks. Marketing measured the consequence instead of inferring it — it replaced the
+ * masthead paragraph with *"Our AI agent pools your capital and governs the vault on your behalf.
+ * Voting is stake-weighted."* and every claims guard in the repo stayed green, while the same two
+ * shapes red instantly from `components/Holdings.tsx`. The extractor and the shapes were right;
+ * only the corpus was wrong.
+ *
+ * So: no directory list, and no extension-specific per-directory rules. A hand-named corpus is
+ * complete exactly until it isn't, and this is the second one this week (#349 named three files
+ * while `VaultCore` binds three libraries). `.d.ts` files are excluded because they declare types
+ * rather than render anything — `lib/atlas-modules/` is entirely `.d.ts`, so it contributes nothing
+ * and needs no special case.
  */
 const vaultsUiModules = () => {
   const found = [];
-  for (const { dir, exts } of ROOTS) {
-    const abs = path.join(REPO, dir);
-    const entries = readdirSync(abs, { withFileTypes: true })
-      .filter((e) => e.isFile() && !e.name.endsWith('.d.ts') && exts.some((ext) => e.name.endsWith(ext)))
-      .map((e) => `${dir}/${e.name}`);
-    found.push(...entries);
-  }
+  const walk = (rel) => {
+    for (const e of readdirSync(path.join(REPO, rel), { withFileTypes: true })) {
+      const child = `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(child);
+      else if (e.isFile() && !e.name.endsWith('.d.ts') && (e.name.endsWith('.ts') || e.name.endsWith('.tsx'))) {
+        found.push(child);
+      }
+    }
+  };
+  walk(SRC);
   // Tripwire 1 — see header.
   assert.ok(
     found.length > 0,
-    `${ROOTS.map((r) => r.dir).join(' and ')} yielded zero .ts/.tsx modules. Either the member-facing ` +
-      "surface moved, or this guard's paths are wrong — either way this must FAIL rather than " +
-      'report a silent pass over zero coverage.',
+    `${SRC} yielded zero .ts/.tsx modules. Either the member-facing surface moved, or this guard's ` +
+      'path is wrong — either way this must FAIL rather than report a silent pass over zero coverage.',
   );
-  return found;
+  return found.sort();
 };
+
+/** Modules sitting directly at `src/` root — the four this guard used to miss entirely. */
+const rootModules = () => vaultsUiModules().filter((f) => f.slice(SRC.length + 1).indexOf('/') === -1);
 
 /**
  * Every module's file path alongside its extracted text, flattened into one haystack per file the
@@ -166,7 +195,7 @@ const modulesWithExtractedText = () =>
 
 const report = (hits) => hits.map((h) => `  ${h.file}: "${h.quote.trim()}"`).join('\n');
 
-test('apps/vaults-ui/src/{components,lib} has at least one .ts/.tsx module to guard', () => {
+test('apps/vaults-ui/src has at least one .ts/.tsx module to guard', () => {
   assert.ok(vaultsUiModules().length > 0);
 });
 
@@ -174,8 +203,34 @@ test('apps/vaults-ui/src/{components,lib} has at least one .ts/.tsx module to gu
  * Tripwires on the guard's own coverage — floors, not exact counts, for the staleness reason both
  * sibling claims guards give for their own MIN_* constants.
  */
-const MIN_MODULES = 8;
+const MIN_MODULES = 12;
 const MIN_WORDS = 500;
+/**
+ * Tripwire 4, and it is the one this guard was REJECTED for not having. A total-count floor notices
+ * the corpus shrinking but not the shape of the shrink: the original defect was a walk that covered
+ * the subdirectories and silently skipped `src/` root, which is where `App.tsx` lives and where the
+ * prose this guard polices actually is. A floor on ROOT-LEVEL modules specifically fails on that,
+ * where MIN_MODULES alone would have stayed comfortably green on the ten subdirectory files.
+ */
+const MIN_ROOT_MODULES = 3;
+
+test('coverage: the walk reaches src/ ROOT, not only its subdirectories', () => {
+  const roots = rootModules();
+  assert.ok(
+    roots.length >= MIN_ROOT_MODULES,
+    `only ${roots.length} module(s) found directly in ${SRC}, fewer than the ${MIN_ROOT_MODULES} ` +
+      'floor. This is the exact defect this guard was rejected for: App.tsx, Shell.tsx, main.tsx ' +
+      `and nav.ts sit there, and a walk that misses them polices shapes whose live instances it ` +
+      `never reads. Found: ${roots.join(', ') || '(none)'}`,
+  );
+  // And the file that carries the canonical instance of guard 6's own shape must be in the corpus
+  // by NAME — not because the count happens to clear a floor.
+  assert.ok(
+    vaultsUiModules().includes(`${SRC}/App.tsx`),
+    'App.tsx is not in the corpus. It is the one file in this app containing the enumerated ' +
+      'operator-authority sentence guard 6 checks; a corpus without it is the rejection this fix exists for.',
+  );
+});
 /** Tripwire 3 — see header: specifically guards against JSX-text extraction silently collapsing to
  * zero while string-literal extraction stays intact, which tripwire 2 alone cannot catch. */
 const MIN_JSX_TEXT_SEGMENTS = 40;
