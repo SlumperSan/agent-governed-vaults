@@ -279,8 +279,9 @@ export function ContractTab({ vault }: Props) {
             <p className="note" key={c.asset}>
               <strong>{symbolFor(c.asset)} we could not deliver.</strong> This is yours. The
               transfer did not go through, so the vault is holding it for you rather than sending
-              it. Claim it whenever you like — it does not expire, it pays out in full, and trying
-              again later costs you nothing.{' '}
+              it. Claim it whenever you like — it does not expire, it pays out in full, a failed
+              attempt loses nothing, and the only
+              cost of claiming is the gas fee for the transaction, and USDC is the gas token on Arc.{' '}
               <span className="mono dim">({c.amount.toString()})</span>
             </p>
           ))
@@ -322,8 +323,9 @@ export function ContractTab({ vault }: Props) {
       <p className="note">
         No contract has a pause function, and no address, ours included, can switch off deposits,
         exits or voting through this protocol&rsquo;s contracts. Two things can still stop them. The
-        contracts stop on their own when the price feed goes stale: deposits and exits revert until
-        it answers again. And the USDC issuer can blacklist the vault&rsquo;s address,
+        contracts stop on their own when the price feed fails its checks, that is when it is stale,
+        reverts, or reports a price outside the oracle&rsquo;s sane-price band: deposits and exits
+        revert until it passes again. And the USDC issuer can blacklist the vault&rsquo;s address,
         which stops deposits and the USDC part of an exit.
       </p>
 
@@ -345,8 +347,8 @@ export function ContractTab({ vault }: Props) {
         oracle.
       </p>
       <p className="note">
-        The vault&rsquo;s <strong>creator</strong> sets it up once, at creation: its oracle, basket,
-        allowed swap adapters, exit fee ceiling and decay, capacity cap and minimum deposit, and then
+        The vault&rsquo;s <strong>creator</strong> sets it up once, at creation: its settlement token,
+        oracle, basket, allowed swap adapters, exit fee ceiling and decay, capacity cap and minimum deposit, and then
         its governance config in a second transaction. The creator is also recorded as the
         vault&rsquo;s operator, the address that receives the 10% performance fee and collects it by
         calling <code>claimFees</code>. Operatorship confers no authority to vote, execute, pause,
@@ -374,7 +376,7 @@ export function ContractTab({ vault }: Props) {
           {leg.paused === 'paused' ? (
             <p className="note tag-warn" role="status">
               Read now: cirBTC is paused by its issuer. Exiting returns your share of what the vault
-              holds — cirBTC, not cash — whether or not anything is paused. A pause does not reduce
+              holds, in kind: its cirBTC as cirBTC, and its USDC as cash, whether or not anything is paused. A pause does not reduce
               what you get; it only means the cirBTC waits as a claim instead of arriving now.
             </p>
           ) : null}
