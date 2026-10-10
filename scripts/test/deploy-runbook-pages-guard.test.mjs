@@ -48,10 +48,11 @@
  *
  * So the "never deploy `.`" rule below is enumerated over every tracked Markdown file
  * (`git ls-files '*.md'`), not just the runbook — and, like `wranglerTomlPaths()`, throws if that
- * enumeration is empty rather than passing over it. It matches only inside fenced ``` code blocks:
- * DEPLOYMENTS.md and REVENUE.md both *quote* `wrangler pages deploy .` in inline backticks, in
- * prose, specifically to warn against it — a plain substring scan would redden the very files that
- * carry the warning (the shape CLAUDE.md's claims-guard rule 6 calls out by name).
+ * enumeration is empty rather than passing over it. It scans the raw text with no fence
+ * parsing, so no container or indent shape can hide a command. DEPLOYMENTS.md and REVENUE.md both
+ * *quote* `wrangler pages deploy .` in prose, specifically to warn against it (the shape CLAUDE.md's
+ * claims-guard rule 6 calls out by name); those two exact lines are enumerated in WARNING_LINES
+ * below and nothing else is exempt.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -223,155 +224,101 @@ const markdownPaths = () => {
   return paths;
 };
 
-// Every fence language this guard has actually seen in the repo (`sh`, `bash`, `shell`) plus the
-// documented superset it must also cover (`console`, `powershell`, `ps1`) or a bare fence with no
-// language tag at all. Security (PR #320) found the fence match scoped to ```bash``` and bare
-// fences only — the repo already carries 8 ```shell``` and 3 ```sh``` blocks, so a
-// `wrangler pages deploy .` planted inside any of those, or a ```console```/```powershell```/
-// ```ps1``` block, was invisible to this test regardless of the command inside it.
-// Fences are parsed by the CommonMark rules, line by line, not by one regex: an opening fence is 3+
-// backticks or tildes (after any indent or blockquote marker) followed by ANY info string, and it
-// closes only on a fence of the SAME character at least as long as the opener, with nothing else
-// on the line. Every fence is read, runnable or not, so pairing stays aligned: a json or solidity
-// fence that was skipped would make its CLOSING fence read as a bare opener and mis-pair every
-// later block, hiding a planted deploy command in a following sh block. The first attempt matched
-// the info string with a word-characters-only class, and so still failed to open ```ts title="x",
-// ```c++, ```sh {.copy}, a fence with a trailing space after the language, and ~~~ fences
-// (Security, PR #432 review). Runnable-ness is decided afterwards, on the first word of the info
-// string, case-insensitively, by `runnableBlocks`.
-const FENCE_OPEN_RE = /^[ \t>]*(`{3,}|~{3,})(.*)$/;
-const FENCE_CLOSE_RE = /^[ \t>]*(`{3,}|~{3,})[ \t]*$/;
-const RUNNABLE_LANGS = new Set(['', 'sh', 'bash', 'shell', 'console', 'powershell', 'ps1']);
-const parseFences = (text) => {
-  const fences = [];
-  let open = null;
-  for (const line of text.split(/\r?\n/)) {
-    if (open) {
-      const close = line.match(FENCE_CLOSE_RE);
-      if (close && close[1][0] === open.ch && close[1].length >= open.len) {
-        fences.push({ lang: open.lang, body: open.lines.join('\n') + '\n' });
-        open = null;
-      } else {
-        open.lines.push(line);
-      }
-      continue;
-    }
-    const m = line.match(FENCE_OPEN_RE);
-    // A backtick fence's info string may not itself contain a backtick (that is inline code).
-    if (!m || (m[1][0] === '`' && m[2].includes('`'))) continue;
-    const lang = m[2].trim().split(/[\s{,]/)[0].toLowerCase();
-    open = { ch: m[1][0], len: m[1].length, lang, lines: [] };
+// The deploy-dot scan does NOT parse Markdown. Three rounds of PR #432 review each found a
+// container or indent shape (list-item fence, blockquote fence, 4-space indented fence, unlisted
+// language, tilde fence, unclosed fence) that a hand-rolled fence parser mis-paired, and each
+// mis-pairing hid a planted command in the next block. No CommonMark parser is a dependency of
+// this repository, and adding one for a negative guard is not worth the supply-chain surface. So
+// the guard reads the raw text: a `wrangler pages deploy .` anywhere in a tracked Markdown file
+// is a hit, whatever fence, language, list, quote, indent or lack of fence surrounds it. There is
+// no structure for an author to desync, which is the point.
+//
+// The cost is that prose which QUOTES the command to warn against it is also a hit. Those lines
+// are enumerated in WARNING_LINES below by exact file and exact line text, so a new occurrence,
+// or a planted command appended to a warning line, is still red. If you reflow one of these two
+// sentences the guard throws on the stale entry; update the entry to the new line.
+const DEPLOY_DOT_RE = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(["']?)(\.\/?)\1(?=\s|$|[`"')])/g;
+const WARNING_LINES = [
+  {
+    file: 'DEPLOYMENTS.md',
+    line: 'owner to run `wrangler pages deploy . --project-name rwally` from `apps/site`, and a reviewer caught',
+  },
+  {
+    file: 'docs/REVENUE.md',
+    line: '**An earlier version of this runbook said to run `wrangler pages deploy .` from `apps/site`, and',
+  },
+];
+const deployDotHits = (text) => {
+  const lines = text.split(/\r?\n/);
+  const hits = [];
+  for (const m of text.matchAll(DEPLOY_DOT_RE)) {
+    const lineNo = text.slice(0, m.index).split(/\r?\n/).length;
+    hits.push({ arg: m[2], line: lines[lineNo - 1], lineNo });
   }
-  // An unclosed fence runs to the end of the document (CommonMark); still read it.
-  if (open) fences.push({ lang: open.lang, body: open.lines.join('\n') + '\n' });
-  return fences;
+  return hits;
 };
-const runnableBlocks = (text) =>
-  parseFences(text).filter((f) => RUNNABLE_LANGS.has(f.lang)).map((f) => f.body);
 
-test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) in a runnable code block', () => {
-  const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
+test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) anywhere', () => {
   const offenders = [];
+  const used = new Set();
 
   for (const mdPath of markdownPaths()) {
-    const text = read(mdPath);
-    for (const block of runnableBlocks(text)) {
-      for (const hit of block.matchAll(deployDotRe)) {
-        offenders.push({ file: mdPath, arg: hit[1], block });
+    for (const hit of deployDotHits(read(mdPath))) {
+      const idx = WARNING_LINES.findIndex((w) => w.file === mdPath && w.line === hit.line);
+      if (idx >= 0) {
+        used.add(idx);
+        continue;
       }
+      offenders.push({ file: mdPath, ...hit });
     }
   }
 
+  WARNING_LINES.forEach((w, i) =>
+    assert.ok(used.has(i), `WARNING_LINES entry for ${w.file} no longer matches any line; update or remove it: ${w.line}`),
+  );
   assert.deepEqual(
     offenders,
     [],
-    `Found ${offenders.length} fenced code block(s) instructing \`wrangler pages deploy .\`, which ` +
-      `publishes the SOURCE TREE instead of a project's built output — wrong in ANY directory, and ` +
-      `the exact command PR #267/issue #268 caught by hand before it published:\n\n` +
-      offenders.map((o) => `- ${o.file}: \`wrangler pages deploy ${o.arg}\`\n  Block:\n${o.block}`).join('\n'),
+    `Found ${offenders.length} occurrence(s) of \`wrangler pages deploy .\`, which publishes the ` +
+      `SOURCE TREE instead of a project's built output: wrong in ANY directory, and the exact ` +
+      `command PR #267/issue #268 caught by hand before it published. If a line only quotes it to ` +
+      `warn against it, add that exact line to WARNING_LINES.\n\n` +
+      offenders.map((o) => `- ${o.file}:${o.lineNo}: ${o.line}`).join('\n'),
   );
 });
 
-test('probe: the deploy-dot fence match reads every documented fence language, not only ```bash``` and bare', () => {
-  // Card 221 / Security's PR #320 gap, reproduced as a fixture rather than a live doc: the same
-  // banned command, planted once per fence language this guard is supposed to cover.
-  const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
-  for (const lang of ['', 'sh', 'bash', 'shell', 'console', 'powershell', 'ps1']) {
-    const doc =
-      `Some prose.\n\n` + '```' + lang + '\nwrangler pages deploy . --project-name rwally\n```\n';
-    const found = [];
-    for (const block of runnableBlocks(doc)) {
-      for (const hit of block.matchAll(deployDotRe)) found.push(hit[1]);
-    }
-    assert.deepEqual(
-      found,
-      ['.'],
-      `a \`wrangler pages deploy .\` inside a \`\`\`${lang || '(bare)'}\`\`\` fence must be caught`,
-    );
-  }
-});
-
-test('probe: an unlisted-language fence ahead of a runnable one does not misalign fence pairing', () => {
-  // Security review of PR #432: a json fence followed by an sh fence holding the banned command.
-  const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
-  const doc = '```json\n{"a":1}\n```\n\ntext\n\n```sh\nwrangler pages deploy . --project-name rwally\n```\n';
-  const found = [];
-  for (const block of runnableBlocks(doc)) for (const hit of block.matchAll(deployDotRe)) found.push(hit[1]);
-  assert.deepEqual(found, ['.'], 'a runnable fence after an unlisted-language fence must still be read');
-});
-
-test('probe: fence pairing survives info strings with spaces, symbols, case, and tilde fences', () => {
-  // Security review of PR #432, second round: each opener below used to fail to open under the
-  // word-characters-only info-string class, which mis-paired every later block and hid the planted
-  // command in the sh fence.
-  const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
-  const hits = (doc) => {
-    const found = [];
-    for (const block of runnableBlocks(doc)) for (const hit of block.matchAll(deployDotRe)) found.push(hit[1]);
-    return found;
-  };
-  const planted = '```sh\nwrangler pages deploy . --project-name rwally\n```\n';
-  const lead = [
-    '```ts title="x"\nconst a = 1;\n```\n',
-    '```c++\nint a;\n```\n',
-    '```sh {.copy}\necho hi\n```\n',
-    '```json \n{"a":1}\n```\n',
-    '~~~yaml\na: 1\n~~~\n',
-    '````md\n```sh\necho nested\n```\n````\n',
-  ];
-  for (const l of lead) {
-    assert.deepEqual(hits(`${l}\ntext\n\n${planted}`), ['.'], `a runnable fence after ${JSON.stringify(l)} must still be read`);
-  }
-  // The planted command inside each unusual-but-runnable opener.
+test('probe: the deploy-dot scan catches the command in every fence shape the reviews found, and in none at all', () => {
   const cmd = 'wrangler pages deploy . --project-name rwally';
-  for (const [open, close] of [
-    ['```Bash', '```'],
-    ['```sh ', '```'],
-    ['```sh {.copy}', '```'],
-    ['```SH title="x"', '```'],
-    ['~~~sh', '~~~'],
-    ['~~~~bash', '~~~~'],
-    ['```sh{.copy}', '```'],
-    ['```bash,title=x', '```'],
-  ]) {
-    assert.deepEqual(hits(`${open}\n${cmd}\n${close}\n`), ['.'], `a deploy-dot inside ${JSON.stringify(open)} must be caught`);
+  const fence = '```';
+  const shapes = {
+    'no fence at all': `${cmd}\n`,
+    'bare fence': `${fence}\n${cmd}\n${fence}\n`,
+    'indented code block': `para\n\n    ${cmd}\n`,
+    'every runnable language': ['sh', 'bash', 'shell', 'console', 'powershell', 'ps1', 'Bash', 'zsh', 'pwsh', 'text']
+      .map((l) => `${fence}${l}\n${cmd}\n${fence}\n`)
+      .join('\n'),
+    'tilde fence': `~~~sh\n${cmd}\n~~~\n`,
+    'ordered list item fence': `1. ${fence}bash\n   ${cmd}\n   ${fence}\n`,
+    'bullet list item fence': `- ${fence}sh\n  ${cmd}\n  ${fence}\n`,
+    'blockquote fence': `> ${fence}sh\n> ${cmd}\n> ${fence}\n`,
+    'list item in blockquote': `> 1. ${fence}sh\n>    ${cmd}\n>    ${fence}\n`,
+    'unclosed blockquote json fence, then top-level sh': `> ${fence}json\n> {"a":1}\n\n${fence}sh\n${cmd}\n${fence}\n`,
+    '4-space indented json fence after a paragraph, then sh': `para\n\n    ${fence}json\n    {}\n\n${fence}sh\n${cmd}\n${fence}\n`,
+    'unlisted language ahead': `${fence}ts title="x"\nconst a = 1;\n${fence}\n\n${fence}sh\n${cmd}\n${fence}\n`,
+    'tilde json ahead': `~~~yaml\na: 1\n~~~\n\n${fence}sh\n${cmd}\n${fence}\n`,
+    'four-backtick fence nesting a fence': `\`\`\`\`md\n${fence}sh\necho nested\n${fence}\n\`\`\`\`\n\n${fence}sh\n${cmd}\n${fence}\n`,
+    'unclosed fence at end of file': `${fence}sh\n${cmd}\n`,
+    'CRLF': `${fence}sh\r\n${cmd}\r\n${fence}\r\n`,
+    'trailing-slash argument': `${fence}sh\nwrangler pages deploy ./\n${fence}\n`,
+    'quoted argument': `${fence}sh\nwrangler pages deploy "." --project-name rwally\n${fence}\n`,
+    'pinned wrangler version': `${fence}sh\nnpx wrangler@3 pages deploy . --project-name rwally\n${fence}\n`,
+    'wrapped across a newline': `${fence}sh\nwrangler pages deploy\n.\n${fence}\n`,
+  };
+  for (const [name, doc] of Object.entries(shapes)) {
+    assert.ok(deployDotHits(doc).length >= 1, `a planted deploy-dot must be caught: ${name}`);
   }
-  // A closing fence may carry trailing spaces; if it did not close, the next block would mis-pair.
-  assert.deepEqual(
-    hits(`\`\`\`json\n{}\n\`\`\`  \n\ntext\n\n${planted}`),
-    ['.'],
-    'a closing fence with trailing spaces must close the block',
-  );
-  // Triple backticks with a backtick later on the line are inline code, not a fence opener.
-  assert.deepEqual(
-    hits(`Use \`\`\`x\`\`\` inline.\n\`\`\`x\`\`\` is inline code too.\n\n${planted}`),
-    ['.'],
-    'an inline-code line starting with triple backticks must not open a fence',
-  );
-  // A shorter or different-character fence line inside a block does not close it.
-  assert.deepEqual(
-    hits(`\`\`\`\`sh\n\`\`\`\n${cmd}\n~~~\n\`\`\`\`\n`),
-    ['.'],
-    'a shorter or different-char fence line must not close the block early',
-  );
+  // The correct command is not a hit, nor is a longer path that merely starts with a dot.
+  for (const ok of ['wrangler pages deploy dist', 'wrangler pages deploy ./dist', 'wrangler pages deploy .next', 'wrangler pages deploy ..']) {
+    assert.deepEqual(deployDotHits(`${fence}sh\n${ok} --project-name rwally\n${fence}\n`), [], `${ok} must not be a hit`);
+  }
 });
