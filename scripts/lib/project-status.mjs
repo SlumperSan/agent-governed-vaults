@@ -338,20 +338,6 @@ function frontmatter(text) {
 }
 
 /**
- * The task board, read from `Tasks/*.md` in the Obsidian vault.
- *
- * WHY THE VAULT AND NOT A DATABASE. Department sessions cannot see each other; the vault is the
- * only thing they all write to, and they already write files there reliably. A task is therefore a
- * file, and this function only READS. Nothing here writes back, which is what keeps the concurrent
- * -write problem — Windows file locking, atomic rename, filename collision — out of the design
- * entirely. Agents write; the board renders.
- *
- * A MISSING FOLDER IS REPORTED, NOT SWALLOWED. `departments()` above returns `[]` when its path is
- * wrong, and it did exactly that for the whole life of this file because the vault path was missing
- * a directory segment — a silent empty panel that looked like "no output yet". This returns a
- * `problem` string instead, and the page prints it.
- */
-/**
  * The content calendar, read from `GTM/Calendar/*.md` in the vault.
  *
  * One file per planned post. Marketing writes them; this only reads. Same design rule as the board:
@@ -421,6 +407,19 @@ export function readCalendar(vaultRoot) {
 }
 
 /**
+ * The task board, read from `Tasks/*.md` in the Obsidian vault.
+ *
+ * WHY THE VAULT AND NOT A DATABASE. Department sessions cannot see each other; the vault is the
+ * only thing they all write to, and they already write files there reliably. A task is therefore a
+ * file, and this function only READS. Nothing here writes back, which is what keeps the concurrent
+ * -write problem (Windows file locking, atomic rename, filename collision) out of the design
+ * entirely. Agents write; the board renders.
+ *
+ * A MISSING FOLDER IS REPORTED, NOT SWALLOWED. `departments()` above returns `[]` when its path is
+ * wrong, and it did exactly that for the whole life of this file because the vault path was missing
+ * a directory segment, so a silent empty panel that looked like "no output yet". This returns a
+ * `problem` string instead, and the page prints it.
+ *
  * EXPORTED so the dashboard can re-read the board WITHOUT re-running collect(). The board is pure
  * filesystem and costs milliseconds; collect() shells out to git and gh and takes seconds. A card
  * that was just answered or deleted must show its new state on the very next poll, not after the
