@@ -229,7 +229,14 @@ const markdownPaths = () => {
 // fences only — the repo already carries 8 ```shell``` and 3 ```sh``` blocks, so a
 // `wrangler pages deploy .` planted inside any of those, or a ```console```/```powershell```/
 // ```ps1``` block, was invisible to this test regardless of the command inside it.
-const DEPLOY_FENCE_RE = /```(?:sh|bash|shell|console|powershell|ps1)?\n([\s\S]*?)```/g;
+// The regex opens on ANY info string, not only the runnable ones, so fence pairing stays aligned: a
+// json or solidity fence that this regex skipped would make its CLOSING fence read as a bare opener
+// and mis-pair every later block, hiding a planted deploy command in a following sh block
+// (Security, PR #432 review). Runnable-ness is filtered afterwards by `runnableBlocks`.
+const DEPLOY_FENCE_RE = /```([\w-]*)\n([\s\S]*?)```/g;
+const RUNNABLE_LANGS = new Set(['', 'sh', 'bash', 'shell', 'console', 'powershell', 'ps1']);
+const runnableBlocks = (text) =>
+  [...text.matchAll(DEPLOY_FENCE_RE)].filter((m) => RUNNABLE_LANGS.has(m[1])).map((m) => m[2]);
 
 test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) in a runnable code block', () => {
   const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
@@ -237,8 +244,7 @@ test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) in 
 
   for (const mdPath of markdownPaths()) {
     const text = read(mdPath);
-    for (const fenceMatch of text.matchAll(DEPLOY_FENCE_RE)) {
-      const block = fenceMatch[1];
+    for (const block of runnableBlocks(text)) {
       for (const hit of block.matchAll(deployDotRe)) {
         offenders.push({ file: mdPath, arg: hit[1], block });
       }
@@ -263,8 +269,8 @@ test('probe: the deploy-dot fence match reads every documented fence language, n
     const doc =
       `Some prose.\n\n` + '```' + lang + '\nwrangler pages deploy . --project-name rwally\n```\n';
     const found = [];
-    for (const fenceMatch of doc.matchAll(DEPLOY_FENCE_RE)) {
-      for (const hit of fenceMatch[1].matchAll(deployDotRe)) found.push(hit[1]);
+    for (const block of runnableBlocks(doc)) {
+      for (const hit of block.matchAll(deployDotRe)) found.push(hit[1]);
     }
     assert.deepEqual(
       found,
@@ -272,4 +278,13 @@ test('probe: the deploy-dot fence match reads every documented fence language, n
       `a \`wrangler pages deploy .\` inside a \`\`\`${lang || '(bare)'}\`\`\` fence must be caught`,
     );
   }
+});
+
+test('probe: an unlisted-language fence ahead of a runnable one does not misalign fence pairing', () => {
+  // Security review of PR #432: a json fence followed by an sh fence holding the banned command.
+  const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
+  const doc = '```json\n{"a":1}\n```\n\ntext\n\n```sh\nwrangler pages deploy . --project-name rwally\n```\n';
+  const found = [];
+  for (const block of runnableBlocks(doc)) for (const hit of block.matchAll(deployDotRe)) found.push(hit[1]);
+  assert.deepEqual(found, ['.'], 'a runnable fence after an unlisted-language fence must still be read');
 });
