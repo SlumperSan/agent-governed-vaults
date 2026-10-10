@@ -17,7 +17,7 @@ It was **five distinct failure modes, and a defence against one is useless again
 | mode | what happened | the PRs | the rule that answers it |
 |---|---|---|---|
 | **A: policy** | merged over a REJECT already standing, in writing, on the PR | #107 by 8 min, #92 by 29 min | `no-standing-reject` |
-| **B: race** | the review lost a race it could not see it was in | #98's REJECT posted **25 s** after the merge; #109's 5.5 min after, so the PR merged before its verdict existed | `roster-declared` + `roster-resolved` |
+| **B: race** | the review lost a race it could not see it was in | #98's REJECT posted **25 s** after the merge; #109's 5.5 min after, so the PR merged before its verdict existed | `roster-resolved` (roster defaults when unposted, card 167) |
 | **C: orientation** | pushed to a branch whose PR had already merged | #107's fixer pass, rescued by hand as [#120] | `pr-open` |
 | **D: invisibility** | the reviewed content was replaced *after* a correct verdict | a keep-ours resolution on #117 would have re-introduced the list #121 exists to abolish | `verdict-covers-head` |
 | **E: staleness** | the *base* moved under a verdict whose head never did | #119's valid ACCEPT was falsified by #121 merging, with its own branch untouched | `base-current` |
@@ -164,6 +164,19 @@ observation, which is exactly how #109 merged 5.5 minutes before its review exis
 PRs on 2026-09-01 got one review, and a check demanding two would make most PRs unmergeable, which is
 how a check gets routed around. A weaker rule that is followed beats a stronger one that is not.
 
+**Card 167 — the roster now defaults instead of stalling.** Eight `REVIEW-ROSTER` tokens were posted
+by hand in one evening, every one mechanical — "whoever did not write it," and the author is always
+known — and four PRs sat blocked 14-17 days on nothing but that missing comment. What used to be two
+rules (`roster-declared`, blocking on an absent token; `roster-resolved`, blocking on an unresolved
+name) is now one — `roster-resolved` alone: when no token was ever posted, the roster defaults to
+`defaultRoster.reviewers` (`Security`), so review starts immediately instead of waiting on an
+orchestrator to type a comment. An explicit `REVIEW-ROSTER` token, posted at any time, still
+overrides the default — the roster's "latest token wins" rule is unchanged, and an explicit *empty*
+roster (withdrawing a dead seat, card #352) is still a distinct, real state that does **not** fall
+back to the default. `roster-resolved` still blocks in strict mode until the roster in force —
+default or explicit — is fully resolved, so an absent roster can no longer mean "nobody needs to
+review."
+
 ## The one decision that stops this being theatre
 
 A check satisfiable by writing the word ACCEPT is theatre. So:
@@ -196,7 +209,7 @@ node scripts/merge-preflight.mjs 119
 Exit 0 = clear, 1 = blocked, **2 = could not determine** (no `gh`, no auth, no such PR). Exit 2 is
 not a pass: a preflight that could not see is not a preflight that saw nothing wrong.
 
-`--advisory` drops the two roster rules, and so drops all of Mode B. It keeps everything else,
+`--advisory` drops `roster-resolved`, and so drops all of Mode B. It keeps everything else,
 including Mode D; that rule needs only a verdict token, which is a reviewer's own act rather than an
 orchestrator convention. It is what the rollout workflow
 runs while adoption is partial, and it is honestly weaker: `scripts/test/merge-preflight.test.mjs`
@@ -319,10 +332,15 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
 {
   "version": 1,
   "why": "Four PRs (#92 #98 #107 #109) merged on 2026-09-01 across review verdicts that were never addressed, and a fifth (#121/#117) showed that a conflict resolution can introduce a defect no review ever sees. This file is the single machine-readable source of truth for when a PR may merge. scripts/merge-preflight.mjs reads it; docs/reviews/MERGE-POLICY.md embeds it verbatim and a test asserts the two are byte-identical, so the prose humans read cannot drift from the rules the program enforces.",
+  "defaultRoster": {
+    "reviewers": ["Security"],
+    "appliesWhen": "no REVIEW-ROSTER token has ever been posted on the PR (parseRoster returns null, not an explicit empty roster)",
+    "why": "Card 167. Eight REVIEW-ROSTER tokens were posted by hand in one evening, every one mechanical -- 'whoever did not write it', and the author is always known -- and four PRs sat blocked 14-17 days on nothing but that missing comment. Rather than wait on the orchestrator to type a token, the roster defaults to this list so review starts immediately; an explicit token posted at any time still overrides it, per the roster's own 'latest token wins' rule. Mirrored in scripts/lib/verdicts.mjs's DEFAULT_ROSTER -- keep the two in sync. Does NOT weaken roster-resolved: the default still has to be resolved by an actual REVIEW-VERDICT token before a strict-mode PR clears."
+  },
   "tokens": {
     "roster": {
       "form": "<!-- REVIEW-ROSTER reviewers=Name1,Name2 -->",
-      "postedBy": "the orchestrator, when it spawns reviewers",
+      "postedBy": "the orchestrator, when it spawns reviewers, or -- since card 167 -- nobody at all, in which case defaultRoster applies",
       "purpose": "makes 'assigned but not yet posted' a computable state. The roster is the denominator; verdicts are the numerator."
     },
     "verdict": {
@@ -381,22 +399,13 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
       "why": "'gh pr checks' reports the runs attached to a PR without surfacing which SHA they belong to, and returned green for #107 from a run belonging to the previous head. Match headSha yourself: gh run list --branch <b> --json headSha,status,conclusion,workflowName. The gate's own runs are then excluded by workflowName, because merge-preflight.mjs lists runs by branch with no --workflow filter and a pull_request-triggered preflight run carries the PR head's SHA: it blocked on its own in_progress run, and -- the permissive half -- counted its own COMPLETED run as a green, because a run that succeeds at posting a red commit status still concludes 'success'. That one miscount defeated this rule's catch-all, so a head with NO CI would have passed the rule named for matching CI to the head. Latent while ci.yml had a bare pull_request: trigger and no paths: filter; armed by any routine 'skip CI for docs-only changes'. After the exclusion this rule no longer depends on ci.yml's trigger config at all."
     },
     {
-      "id": "roster-declared",
-      "modes": [
-        "strict"
-      ],
-      "title": "a review roster must have been declared",
-      "blocksWhen": "no REVIEW-ROSTER token appears on the PR",
-      "why": "Mode B, half one. Without a declared roster there is no denominator, so 'nobody has objected' and 'nobody has looked' are the same observation. #109 merged 5.5 minutes before its review existed."
-    },
-    {
       "id": "roster-resolved",
       "modes": [
         "strict"
       ],
-      "title": "every rostered reviewer must have posted a verdict",
-      "blocksWhen": "any name in the roster has no REVIEW-VERDICT token",
-      "why": "Mode B, half two. #98 merged at 22:30:54Z holding exactly one verdict -- an ACCEPT from reviewer 1 of 2 -- and its reviewer-2 REJECT posted 25 seconds later. A rule of 'at least one verdict and it is not REJECT' passes #98 and lands its finding. The property is not 'a review exists'; it is 'the declared complement has reported and every report is resolved'."
+      "title": "every reviewer on the roster IN FORCE must have posted a verdict",
+      "blocksWhen": "any name in the roster -- explicit, or defaultRoster when no REVIEW-ROSTER token was ever posted -- has no REVIEW-VERDICT token",
+      "why": "Mode B. Before card 167 this was two rules: roster-declared (blocked when no REVIEW-ROSTER token existed at all -- without a declared roster there is no denominator, so 'nobody objected' and 'nobody looked' were the same observation, and #109 merged 5.5 minutes before its review existed) and roster-resolved (blocked when a declared roster had an unresolved name -- #98 merged at 22:30:54Z holding exactly one verdict, an ACCEPT from reviewer 1 of 2, with its reviewer-2 REJECT posted 25 seconds later; 'at least one verdict and it is not REJECT' passes #98 and lands its finding). Card 167 folded them into this one rule: eight REVIEW-ROSTER tokens were posted by hand in one evening, all mechanical -- 'whoever did not write it', and the author is always known -- and four PRs sat blocked 14-17 days on nothing but that missing comment. The roster IN FORCE is now the orchestrator's explicit REVIEW-ROSTER token if one was ever posted, or defaultRoster (below) if not, so the denominator is never absent by omission; this rule is what still blocks until every name on whichever roster is in force has reported. The property is not 'a review exists'; it is 'the declared-or-defaulted complement has reported and every report is resolved'."
     },
     {
       "id": "base-current",

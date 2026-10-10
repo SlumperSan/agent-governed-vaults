@@ -80,6 +80,8 @@
  * @property {Blocker[]} blockers
  * @property {string[]} notes
  * @property {string[]|null} roster
+ * @property {boolean} rosterDefaulted  true when no REVIEW-ROSTER token was ever posted and
+ *   `roster` is `DEFAULT_ROSTER` rather than something the orchestrator declared (card 167)
  * @property {Record<string, {verdict: Verdict, at: string}>} latestVerdicts
  */
 
@@ -114,6 +116,26 @@ export const SELF_WORKFLOW_NAME = 'merge-preflight';
  * clear a standing REJECT.
  */
 const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]*)\s*-->/g;
+
+/**
+ * Card 167. Eight `REVIEW-ROSTER` tokens were posted by hand in one evening, every one mechanical
+ * -- "whoever did not write it", and the author is always known -- and four PRs sat blocked
+ * 14-17 days on nothing but that missing comment. `roster-declared` used to block a PR with no
+ * token at all; now the absence of a token is not an unresolved question, it is a default. When
+ * `parseRoster` finds no token, `evaluate` treats the roster as `DEFAULT_ROSTER` rather than
+ * `null`, so review starts immediately instead of stalling on an orchestrator posting a comment.
+ *
+ * This does not weaken Mode B. `roster-resolved` still blocks in strict mode until every name in
+ * the roster IN FORCE -- default or explicit -- has posted a verdict, so "no roster" can no
+ * longer mean "nobody needs to review"; it means "Security needs to review, same as if someone
+ * had typed the token". An explicit `REVIEW-ROSTER` token, posted at any time, still overrides the
+ * default -- `parseRoster`'s "latest token wins" is unchanged, including an explicit empty
+ * `reviewers=` to withdraw a dead seat (card #352), which stays a real, distinct state from "no
+ * token was ever posted" and does NOT fall back to the default.
+ *
+ * Mirrored in `merge-policy.json`'s top-level `defaultRoster` field; keep the two in sync.
+ */
+export const DEFAULT_ROSTER = Object.freeze(['Security']);
 
 /** A reviewer's machine-readable verdict. The only thing that may clear a blocker. */
 const VERDICT_RE = /<!--\s*REVIEW-VERDICT\s+reviewer=([A-Za-z0-9_.\-]+)\s+verdict=(ACCEPT|REJECT)\s*-->/g;
@@ -184,17 +206,18 @@ function firstHeadingLine(body) {
  * situation (Security/Product/Finance/Design all dark the same day) this fix exists for.
  *
  * `{ reviewers: [], at }` (an explicit empty roster) is a REAL, DISTINCT state from `null` (no
- * roster ever declared) — `roster-declared` blocks on `null`, not on an empty array, so a roster
- * withdrawn to nobody reads as "a roster was declared, and it currently requires no one," not as
- * "no review was ever assigned." `roster-resolved` trivially passes an empty roster (nothing to
- * be missing), which is the correct denominator when nobody is currently required.
+ * roster ever declared) — `evaluate` only substitutes `DEFAULT_ROSTER` for `null` (card 167), never
+ * for an explicit empty array, so a roster withdrawn to nobody reads as "a roster was declared, and
+ * it currently requires no one," not as "no review was ever assigned" (which would wrongly default
+ * it back to `DEFAULT_ROSTER`). `roster-resolved` trivially passes an empty roster (nothing to be
+ * missing), which is the correct denominator when nobody is currently required.
  *
  * THIS DOES NOT WEAKEN no-standing-reject. That rule (Mode A, in `evaluate` below) blocks on
  * `latestPerReviewer(verdicts)` — every REVIEW-VERDICT token ever posted, independent of who is
  * currently on the roster — so a reviewer's standing REJECT still blocks a merge after that
- * reviewer is dropped from the roster. Only the roster-declared/roster-resolved DENOMINATOR moves
- * with the latest roster; a verdict already cast keeps its force regardless of roster changes,
- * per merge-policy.json's own invariant and the #98/#109 incidents behind it.
+ * reviewer is dropped from the roster. Only `roster-resolved`'s DENOMINATOR moves with the latest
+ * roster (explicit, or defaulted); a verdict already cast keeps its force regardless of roster
+ * changes, per merge-policy.json's own invariant and the #98/#109 incidents behind it.
  *
  * @param {Comment[]} comments
  * @returns {{reviewers: string[], at: string}|null}
@@ -444,7 +467,11 @@ export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) 
   }
 
   // --- verdicts -------------------------------------------------------------------------------
-  const roster = parseRoster(comments);
+  // Card 167: an explicit token (including an explicit empty one, card #352) always wins; only a
+  // PR that has NEVER carried a REVIEW-ROSTER token falls back to DEFAULT_ROSTER.
+  const explicitRoster = parseRoster(comments);
+  const rosterDefaulted = explicitRoster === null;
+  const roster = explicitRoster ?? { reviewers: [...DEFAULT_ROSTER], at: null };
   const verdicts = parseVerdicts(comments);
   const latest = latestPerReviewer(verdicts);
   const legacy = parseLegacyRejects(comments);
@@ -563,37 +590,34 @@ export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) 
     });
   }
 
-  // --- roster rules (Mode B) — strict only ----------------------------------------------------
+  // --- roster rule (Mode B) — strict only --------------------------------------------------
+  // Card 167: a roster is always IN FORCE — the orchestrator's explicit token, or DEFAULT_ROSTER
+  // — so there is only one question left: whether it is RESOLVED. (Pre-card-167 this was a second
+  // rule, roster-declared, which blocked when no roster existed at all; folded into roster-resolved
+  // below since a roster now always exists.) See DEFAULT_ROSTER's comment for why this does not
+  // weaken Mode B.
   if (mode === 'strict') {
-    if (!roster) {
+    const missing = roster.reviewers.filter((r) => !latest[r]);
+    if (missing.length > 0) {
       blockers.push({
-        ruleId: 'roster-declared',
+        ruleId: 'roster-resolved',
         detail:
-          'no REVIEW-ROSTER token on this PR. Without a declared roster there is no denominator, ' +
-          'so "nobody objected" and "nobody looked" are the same observation — which is exactly how ' +
-          '#109 merged 5.5 minutes before its review existed.',
+          `rostered reviewer(s) with no verdict yet: ${missing.join(', ')}` +
+          (rosterDefaulted ? ` (roster defaulted to ${DEFAULT_ROSTER.join(', ')} — no REVIEW-ROSTER token was posted, card 167)` : '') +
+          '. Review in flight — this is not "nobody objected".',
       });
-    } else {
-      const missing = roster.reviewers.filter((r) => !latest[r]);
-      if (missing.length > 0) {
-        blockers.push({
-          ruleId: 'roster-resolved',
-          detail: `rostered reviewer(s) with no verdict yet: ${missing.join(', ')}. Review in flight — this is not "nobody objected".`,
-        });
-      }
     }
-  } else if (!roster) {
-    notes.push('advisory mode: no REVIEW-ROSTER token, so Mode B (a review still in flight) is NOT checked.');
+  } else if (rosterDefaulted) {
+    notes.push('advisory mode: no REVIEW-ROSTER token, so Mode B (a review still in flight) is NOT checked — the roster default (card 167) only matters in strict mode.');
   }
 
   // --- notes ----------------------------------------------------------------------------------
-  if (roster) {
-    const offRoster = Object.keys(latest).filter((r) => !roster.reviewers.includes(r));
-    if (offRoster.length > 0) {
-      notes.push(`verdict(s) from reviewer(s) not on the roster, counted anyway: ${offRoster.join(', ')}.`);
-    }
-  } else if (verdicts.length > 0) {
-    notes.push(`${verdicts.length} verdict token(s) present but no roster declared — the complement is unknown.`);
+  if (rosterDefaulted) {
+    notes.push(`roster defaulted to ${DEFAULT_ROSTER.join(', ')}: no REVIEW-ROSTER token was ever posted, so merge-policy.json's defaultRoster applies (card 167) — an unposted roster no longer means "nobody needs to review".`);
+  }
+  const offRoster = Object.keys(latest).filter((r) => !roster.reviewers.includes(r));
+  if (offRoster.length > 0) {
+    notes.push(`verdict(s) from reviewer(s) not on the roster, counted anyway: ${offRoster.join(', ')}.`);
   }
   if (legacy.length > 0 && verdicts.length === 0) {
     notes.push('this PR predates the REVIEW-VERDICT token; verdicts read by the block-only prose heuristic.');
@@ -620,7 +644,8 @@ export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) 
     clear: blockers.length === 0,
     blockers,
     notes,
-    roster: roster ? roster.reviewers : null,
+    roster: roster.reviewers,
+    rosterDefaulted,
     latestVerdicts: latest,
   };
 }
