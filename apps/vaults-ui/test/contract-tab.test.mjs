@@ -28,7 +28,7 @@ const STYLES = readFileSync(join(APP, 'src/styles.css'), 'utf8');
 test('Row 6b (claimable and unread) renders before the scope line', () => {
   const claimableIdx = SRC.indexOf('claimable.map((c)');
   const unreadIdx = SRC.indexOf('unread.map((u)');
-  const scopeIdx = SRC.indexOf('These are properties of the vault and governance contracts — not of the assets a vault');
+  const scopeIdx = SRC.indexOf('These are properties of the vault and governance contracts, not of the assets a vault');
   assert.ok(claimableIdx >= 0, 'no claimable.map(...) render block found');
   assert.ok(unreadIdx >= 0, 'no unread.map(...) render block found');
   assert.ok(scopeIdx >= 0, 'the scope line text was not found');
@@ -250,7 +250,7 @@ function rowCopy(n) {
 const PINNED_ROWS = {
   1: {
     heading: '1. No proxy',
-    paras: ['Every contract is deployed directly — no delegatecall, no implementation slot.'],
+    paras: ['Every contract is deployed directly: no delegatecall, no implementation slot.'],
   },
   2: {
     heading: '2. No upgrade path',
@@ -259,13 +259,13 @@ const PINNED_ROWS = {
   3: {
     heading: '3. No pause switch',
     paras: [
-      'No contract has a pause function, and no address, ours included, can switch off deposits, exits or voting through this protocol’s contracts. Two things can still stop them. The contracts stop on their own when the price feed fails its checks, that is when it is stale, reverts, or reports a price outside the oracle’s sane-price band: deposits and exits revert until it passes again. And the USDC issuer can blacklist the vault’s address, which stops deposits and the USDC part of an exit.',
+      'No contract has a pause function, and no address, ours included, can switch off deposits, exits or voting through this protocol’s contracts. Two things can still stop them. The contracts stop on their own when the price feed fails its checks, that is when it is stale, reverts, reports a price of zero or less, carries a missing or future timestamp, or reports a price outside the oracle’s sane-price band: deposits and exits revert until it passes again. And the USDC issuer can blacklist the vault’s address, which stops deposits and the USDC part of an exit.',
     ],
   },
   4: {
     heading: '4. Deploy-time wiring is locked once',
     paras: [
-      'OperatorRegistry.factory, OperatorRegistry.feeEngine, SubVaultRegistry.factory and Governance.subVaultRegistry are each written a single time, by the deployer, and permanently locked after — every later call reverts.',
+      'OperatorRegistry.factory, OperatorRegistry.feeEngine, SubVaultRegistry.factory and Governance.subVaultRegistry are each written a single time, by the deployer, and permanently locked after that: every later call reverts.',
     ],
   },
   5: {
@@ -278,7 +278,7 @@ const PINNED_ROWS = {
   6: {
     heading: '6. cirBTC is issued, not trustless',
     paras: [
-      'The vault’s BTC leg is a token whose own contract can be paused, upgraded, and can blacklist addresses. Those powers belong to its issuer — not to this protocol, not to the operator, and not to anyone who can be voted out here. Rows 1 to 3 above are true of our contracts and false of this one.',
+      'The vault’s BTC leg is a token whose own contract can be paused, upgraded, and can blacklist addresses. Those powers belong to its issuer, not to this protocol, not to the operator, and not to anyone who can be voted out here. Rows 1 to 3 above are true of our contracts and false of this one.',
     ],
   },
 };
@@ -293,7 +293,7 @@ for (const [n, want] of Object.entries(PINNED_ROWS)) {
 
 test('the scope line is pinned verbatim', () => {
   const flat = SRC.replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
-  assert.ok(flat.includes('These are properties of the vault and governance contracts — not of the assets a vault holds. Rows 1 to 3 are false of cirBTC. Row 6 is why.'));
+  assert.ok(flat.includes('These are properties of the vault and governance contracts, not of the assets a vault holds. Rows 1 to 3 are false of cirBTC. Row 6 is why.'));
 });
 
 test('Rows 3 and 5 never reintroduce the three sentences #434 found false', () => {
@@ -302,8 +302,8 @@ test('Rows 3 and 5 never reintroduce the three sentences #434 found false', () =
   assert.doesNotMatch(flat, /can halt deposits, exits or voting/, 'false: a USDC blacklist of the vault stops deposits and the USDC leg of exits');
   assert.doesNotMatch(flat, /Nothing in the protocol can halt/, 'false: navWad reverts on a stale feed and deposits/exits revert with it (#388)');
   assert.match(flat, /USDC issuer can blacklist the vault’s address, which stops deposits and the USDC part of an exit/);
-  // Row 3 enumerates every feed failure: stale, reverting, and outside the sane-price band (ChainlinkOracle.priceWad).
-  assert.match(flat, /when it is stale, reverts, or reports a price outside the oracle’s sane-price band: deposits and exits revert until it passes again/);
+  // Row 3 enumerates every feed failure ChainlinkOracle.priceWad reverts on: stale, reverting, non-positive answer, zero or future updatedAt, outside the sane-price band.
+  assert.match(flat, /when it is stale, reverts, reports a price of zero or less, carries a missing or future timestamp, or reports a price outside the oracle’s sane-price band: deposits and exits revert until it passes again/);
   assert.doesNotMatch(flat, /when the price feed goes stale/, 'incomplete: a reverting feed and an out-of-band price stop deposits and exits too');
   // Row 5: members vote and any address may call Governance.execute; the creator sets more than two things.
   assert.doesNotMatch(flat, /No address can vote/, 'false: members vote');
@@ -331,6 +331,17 @@ test('Row 6 paused line says exits pay cirBTC in kind and USDC as cash, never "n
 
 test('Row 6b says the only cost of claiming is gas, never "costs you nothing"', () => {
   const flat = SRC.replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/&rsquo;/g, '’').replace(/\s+/g, ' ');
-  assert.match(flat, /it does not expire, it pays out in full, a failed attempt loses nothing, and the only cost of claiming is the gas fee for the transaction, and USDC is the gas token on Arc./);
+  assert.match(flat, /it does not expire and it pays out in full\. This app checks a claim before you sign it, so a claim that would fail is not sent\. If a claim reverts on chain anyway, your balance stays escrowed but you still pay the gas fee for that transaction\. The only cost of claiming is the gas fee for the transaction, and USDC is the gas token on Arc\./);
+  assert.doesNotMatch(flat, /a failed attempt loses nothing/, 'false as a bare claim: it holds only because the app simulates before signing (sendClaimEscrowed uses simulateThenWrite), and a revert on chain still burns gas');
+  assert.doesNotMatch(flat, /\b(and|the|it|a) \1\b/i, 'doubled word in Row 3 or Row 6b copy');
   assert.doesNotMatch(flat, /costs you nothing/, 'false: a claim transaction costs gas');
+});
+
+test('rendered ContractTab copy contains no em dash or en dash (owner house style)', () => {
+  // Rendered = JSX text and string literals; `//` line comments, `/* */` blocks and `{/* */}` JSX
+  // comments are not shown to a member, so they are stripped first.
+  const rendered = SRC.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/([^:'"`])\/\/.*$/gm, '$1');
+  const hits = [...rendered.matchAll(/.*[–—].*/g)].map((m) => m[0].trim());
+  assert.deepEqual(hits, [], 'em or en dash in rendered ContractTab copy');
+  assert.doesNotMatch(rendered, /--/, 'double hyphen in rendered ContractTab copy');
 });

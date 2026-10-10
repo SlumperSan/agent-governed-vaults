@@ -279,9 +279,11 @@ export function ContractTab({ vault }: Props) {
             <p className="note" key={c.asset}>
               <strong>{symbolFor(c.asset)} we could not deliver.</strong> This is yours. The
               transfer did not go through, so the vault is holding it for you rather than sending
-              it. Claim it whenever you like — it does not expire, it pays out in full, a failed
-              attempt loses nothing, and the only
-              cost of claiming is the gas fee for the transaction, and USDC is the gas token on Arc.{' '}
+              it. Claim it whenever you like: it does not expire and it pays out in full. This app checks
+              a claim before you sign it, so a claim that would fail is not sent. If a claim
+              reverts on chain anyway, your balance stays escrowed but you still pay the gas fee
+              for that transaction. The only cost of claiming is the gas fee for the transaction,
+              and USDC is the gas token on Arc.{' '}
               <span className="mono dim">({c.amount.toString()})</span>
             </p>
           ))
@@ -296,14 +298,14 @@ export function ContractTab({ vault }: Props) {
         : null}
       {connected && row6bError ? (
         <p className="note tag-warn" role="status">
-          Could not check escrowed claims — status unknown ({row6bError})
+          Could not check escrowed claims: status unknown ({row6bError})
         </p>
       ) : null}
 
       {/* The scope line — above rows 1-6, not a footnote (contract-tab-requirements-2026-09-19.md). */}
       <p className="note">
         <strong>
-          These are properties of the vault and governance contracts — not of the assets a vault
+          These are properties of the vault and governance contracts, not of the assets a vault
           holds.
         </strong>{' '}
         Rows 1 to 3 are false of cirBTC. Row 6 is why.
@@ -311,7 +313,7 @@ export function ContractTab({ vault }: Props) {
 
       <h3>1. No proxy</h3>
       <p className="note">
-        Every contract is deployed directly — no <code>delegatecall</code>, no implementation slot.
+        Every contract is deployed directly: no <code>delegatecall</code>, no implementation slot.
       </p>
 
       <h3>2. No upgrade path</h3>
@@ -324,8 +326,9 @@ export function ContractTab({ vault }: Props) {
         No contract has a pause function, and no address, ours included, can switch off deposits,
         exits or voting through this protocol&rsquo;s contracts. Two things can still stop them. The
         contracts stop on their own when the price feed fails its checks, that is when it is stale,
-        reverts, or reports a price outside the oracle&rsquo;s sane-price band: deposits and exits
-        revert until it passes again. And the USDC issuer can blacklist the vault&rsquo;s address,
+        reverts, reports a price of zero or less, carries a missing or future timestamp, or reports
+        a price outside the oracle&rsquo;s sane-price band: deposits and exits revert until it
+        passes again. And the USDC issuer can blacklist the vault&rsquo;s address,
         which stops deposits and the USDC part of an exit.
       </p>
 
@@ -333,7 +336,7 @@ export function ContractTab({ vault }: Props) {
       <p className="note">
         <code>OperatorRegistry.factory</code>, <code>OperatorRegistry.feeEngine</code>,{' '}
         <code>SubVaultRegistry.factory</code> and <code>Governance.subVaultRegistry</code> are each
-        written a single time, by the deployer, and permanently locked after — every later call
+        written a single time, by the deployer, and permanently locked after that: every later call
         reverts.
       </p>
       {wiringLock ? <p className="note dim">Read now: all four are set.</p> : null}
@@ -364,7 +367,7 @@ export function ContractTab({ vault }: Props) {
       <h3>6. cirBTC is issued, not trustless</h3>
       <p className="note">
         The vault&rsquo;s BTC leg is a token whose own contract can be paused, upgraded, and can
-        blacklist addresses. Those powers belong to its issuer — not to this protocol, not to the
+        blacklist addresses. Those powers belong to its issuer, not to this protocol, not to the
         operator, and not to anyone who can be voted out here. Rows 1 to 3 above are true of our
         contracts and false of this one.
       </p>
