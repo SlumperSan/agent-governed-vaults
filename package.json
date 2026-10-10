@@ -26,6 +26,7 @@
     "viem": "^2.21.0"
   },
   "devDependencies": {
-    "@babel/parser": "^7.29.9"
+    "@babel/parser": "^7.29.9",
+    "typescript": "~5.9.0"
   }
 }
