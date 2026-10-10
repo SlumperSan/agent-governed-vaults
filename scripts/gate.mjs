@@ -97,10 +97,10 @@ const SHELL_ENTRYPOINTS = ['scripts/verify-x402-run.sh'];
  * @property {string} [why]         printed by --list
  */
 
-/** @type {Step[]} */
 // Outside the repo (a report in the tree is read as prose by the claims guards) and per-process.
 const SLITHER_REPORT = path.join(os.tmpdir(), `gate-slither-report-${process.pid}.json`);
 
+/** @type {Step[]} */
 const STEPS = [
   {
     id: 'fmt',

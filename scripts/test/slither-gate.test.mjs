@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -110,6 +110,79 @@ test('gate.mjs mirrors the slither job in ci.yml and is not advisory', () => {
   const fn = gate.slice(gate.indexOf('async function runSlitherStep'), gate.indexOf('async function runSyntaxStep'));
   assert.ok(fn.includes("'scripts/slither_baseline_check.py'"), 'runSlitherStep must run the baseline check');
   assert.doesNotMatch(gate, /Advisory in CI too|advisory in CI too/, 'stale advisory text in gate.mjs');
+});
+
+// ---- behavioural: the gate itself, with a fake slither first on PATH ------------------------------
+// The text assertions above cannot see whether gate.mjs CALLS runSlitherStep: deleting the dispatch
+// branch left them green while the step exited 0 on any tree. This runs the real gate end to end.
+// The fake is node itself (a shell script on POSIX; a copy of node.exe named slither.exe plus a
+// preload on Windows, because a .cmd wrapper cannot take the filter regex's "|" through cmd.exe).
+const FAKE = path.join(dir, 'fake-slither.cjs');
+writeFileSync(
+  FAKE,
+  `const fs = require('node:fs'), path = require('node:path');
+const shim = /^slither([.]exe)?$/i.test(path.basename(process.argv0));
+if (shim || require.main === module) {
+  const i = process.argv.indexOf('--json');
+  if (i < 0) { console.error('fake slither: no --json argument'); process.exit(3); }
+  fs.copyFileSync(process.env.FAKE_SLITHER_REPORT, process.argv[i + 1]);
+  process.exit(0);
+}
+`,
+);
+const binDir = path.join(dir, 'bin');
+mkdirSync(binDir);
+const fakeEnv = { NODE_OPTIONS: '' };
+if (process.platform === 'win32') {
+  copyFileSync(process.execPath, path.join(binDir, 'slither.exe'));
+  fakeEnv.NODE_OPTIONS = `--require "${FAKE.split(path.sep).join('/')}"`;
+} else {
+  const sh = path.join(binDir, 'slither');
+  writeFileSync(sh, `#!/bin/sh
+exec "${process.execPath}" "${FAKE}" "$@"
+`);
+  chmodSync(sh, 0o755);
+}
+const gateWith = (reportFile) =>
+  spawnSync(process.execPath, [path.join(REPO, 'scripts', 'gate.mjs'), '--only', 'slither'], {
+    encoding: 'utf8',
+    cwd: REPO,
+    env: {
+      ...process.env,
+      ...fakeEnv,
+      PATH: binDir + path.delimiter + process.env.PATH,
+      FAKE_SLITHER_REPORT: reportFile,
+      GATE_STATE_PATH: path.join(dir, 'gate-state.json'),
+    },
+  });
+// A report with exactly the committed baseline's findings, rebuilt from contracts/slither-baseline.json.
+const baselineReport = () => {
+  const entries = JSON.parse(read('contracts/slither-baseline.json')).entries;
+  const detectors = [];
+  for (const [key, { count }] of Object.entries(entries)) {
+    const [chk, rest] = key.split('::');
+    const dot = rest.indexOf('.');
+    for (let n = 0; n < count; n++) {
+      detectors.push(
+        dot < 0
+          ? { check: chk, elements: [{ type: 'contract', name: rest, type_specific_fields: {} }] }
+          : finding(chk, rest.slice(0, dot), rest.slice(dot + 1)),
+      );
+    }
+  }
+  return { success: true, results: { detectors } };
+};
+
+test('gate --only slither: a successful report with zero findings FAILS the gate (dispatch + baseline + floor, end to end)', () => {
+  const r = gateWith(writeJson('gate-empty.json', { success: true, results: { detectors: [] } }));
+  assert.equal(r.status, 1, 'an empty slither report must fail the gate: ' + r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /ZERO findings/);
+});
+
+test('gate --only slither: a report matching the committed baseline exactly PASSES the gate (control)', () => {
+  const r = gateWith(writeJson('gate-baseline.json', baselineReport()));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /GATE PASSED/);
 });
 
 test('DEFAULT_ROSTER in verdicts.mjs equals defaultRoster.reviewers in merge-policy.json', () => {
