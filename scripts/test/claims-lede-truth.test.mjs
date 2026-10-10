@@ -166,6 +166,8 @@ import {
   FEE_BYPASSES_OPERATOR,
   RWLY_ATTRIBUTION,
   RWLY_BACKED_BY_VAULT,
+  swapSitesOf,
+  ungatedSwapSites,
 } from '../lib/claims-shapes.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -690,23 +692,16 @@ test('a surface may say trades need a vote only while the contract still makes t
   // THE TRUTH CONDITION, RE-DERIVED FROM THE CONTRACT ON EVERY RUN rather than pinned as a verdict.
   const vault = readFileSync(path.join(REPO, 'contracts/src/VaultCore.sol'), 'utf8');
 
-  // Split into function bodies by brace depth, so "is this call inside a gated function" is a
-  // structural question rather than a proximity guess. A regex over N lines of context would
-  // answer differently the moment someone reorders the file.
-  const fns = [];
-  const sigRe = /function\s+(\w+)\s*\([^)]*\)[^{;]*\{/g;
-  for (const m of vault.matchAll(sigRe)) {
-    let depth = 0;
-    let i = m.index + m[0].length - 1;
-    const start = i;
-    for (; i < vault.length; i++) {
-      if (vault[i] === '{') depth++;
-      else if (vault[i] === '}') { depth--; if (depth === 0) break; }
-    }
-    fns.push({ name: m[1], body: vault.slice(start, i + 1), at: vault.slice(0, m.index).split('\n').length });
-  }
-
-  const swapSites = fns.filter((f) => /IExecutionAdapter\([^)]*\)\.executeSwap\s*\(/.test(f.body));
+  // Function enumeration, swap-site shape and gate regex live in `../lib/claims-shapes.mjs`, shared
+  // with the probe below so the probe cannot drift from what this guard runs.
+  // Matched by SHAPE — the identifier, not the interface-cast text — because a low-level
+  // `adapter.call(abi.encodeCall(IExecutionAdapter.executeSwap, (o)))` reaches the exact same
+  // selector as `IExecutionAdapter(adapter).executeSwap(o)` and is a live evasion of a guard
+  // anchored to the cast form: a function calling `executeSwap` only through `.call(...)` was
+  // never even added to `swapSites`, so it was never checked for a governance gate at all
+  // (Security, PR #428). `abi.encodeWithSelector(IExecutionAdapter.executeSwap.selector, ...)`
+  // reaches it the same way and matches for the same reason.
+  const swapSites = swapSitesOf(vault);
 
   // FLOOR. If the call moves or is renamed, this check would otherwise pass over ZERO sites and
   // report a green — the self-disarming shape four guards in this repo had on 2026-09-18.
@@ -717,9 +712,7 @@ test('a surface may say trades need a vote only while the contract still makes t
       'do not delete it. A pass over zero call sites is indistinguishable from a pass over all of them.',
   );
 
-  const ungated = swapSites.filter(
-    (f) => !/require\(\s*msg\.sender\s*==\s*address\(governance\)\s*,\s*OnlyGovernance\(\)\s*\)/.test(f.body),
-  );
+  const ungated = ungatedSwapSites(swapSites);
 
   assert.deepEqual(
     ungated.map((f) => `${f.name}() at VaultCore.sol:${f.at}`),
@@ -732,6 +725,36 @@ test('a surface may say trades need a vote only while the contract still makes t
       'the copy and the code disagreeing, which is what this file exists to catch. Fix the COPY in\n' +
       'the same commit as the contract change — do not relax this guard to make it pass.\n' +
       `Surfaces currently making the claim:\n${claiming.length ? report(claiming) : '  (none — but the claim is now false if one is added)'}`,
+  );
+});
+
+test('probe: the swap-site guard catches a low-level .call() reaching executeSwap, not only the interface-cast shape', () => {
+  // Card 221 / Security's PR #428 gap, reproduced as a fixture rather than a real contract change:
+  // an ungated function that never writes `IExecutionAdapter(x).executeSwap(` survived the old
+  // regex outright — it was never even enumerated into swapSites, so `ungated` never saw it.
+  const fixture = `
+contract Fixture {
+    function gated() external {
+        require(msg.sender == address(governance), OnlyGovernance());
+        IExecutionAdapter(adapter).executeSwap(o);
+    }
+    function evadesInterfaceCastShape() external {
+        // No governance require, and no interface-cast call text either (a comment must not carry it,
+        // or a cast-form regex would match the comment): the exact evasion Security found in PR #428.
+        adapter.call(abi.encodeCall(IExecutionAdapter.executeSwap, (o)));
+    }
+}
+`;
+  const swapSites = swapSitesOf(fixture);
+  assert.deepEqual(
+    swapSites.map((f) => f.name).sort(),
+    ['evadesInterfaceCastShape', 'gated'],
+    'the shape match must enumerate a low-level .call() reaching executeSwap, not only the cast form',
+  );
+  assert.deepEqual(
+    ungatedSwapSites(swapSites).map((f) => f.name),
+    ['evadesInterfaceCastShape'],
+    'an ungated executeSwap reached through a low-level .call() must be caught',
   );
 });
 

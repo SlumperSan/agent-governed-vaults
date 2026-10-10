@@ -185,7 +185,13 @@ function classify(ast, call, ancestors) {
   const callEnd = call.end;
 
   // Every `await <varName>.assertBoundToDeclaredChain(...)` in the SAME function body (or at module
-  // top level), after the call.
+  // top level), after the call. AWAITED, specifically: `assertBoundToDeclaredChain` rejects on a
+  // mismatch, and a call whose promise nobody awaits proves nothing before the caller moves on —
+  // `const bound = r.assertBoundToDeclaredChain();` fires the check but does not block on it, so
+  // reads can run first and the rejection surfaces only as an unhandled rejection afterward
+  // (Security, PR #321). The FIRST hit-collecting walk below required only that the call MATCH; it
+  // did not require the call's own parent to be an AwaitExpression, so this unawaited shape read as
+  // fully bound. The `anywhere` fallback just below had the same gap for the same reason.
   const hits = [];
   walkAst(ast.program, (n, anc) => {
     if (n.type !== 'CallExpression') return;
@@ -195,17 +201,19 @@ function classify(ast, call, ancestors) {
     if (c.object?.type !== 'Identifier' || c.object.name !== varName) return;
     if (n.start < callEnd) return;
     if (enclosingFunction(anc) !== fn) return; // a nested arrow or helper is a different function
+    if (anc[anc.length - 1]?.type !== 'AwaitExpression') return; // un-awaited proves nothing
     hits.push({ node: n, ancestors: anc });
   });
 
   if (hits.length === 0) {
     // Is it bound ANYWHERE, just not reachably? That distinction is what the operator needs.
     let anywhere = false;
-    walkAst(ast.program, (n) => {
+    walkAst(ast.program, (n, anc) => {
       if (n.type !== 'CallExpression') return;
       const c = n.callee;
       if (c?.type === 'MemberExpression' && !c.computed && c.property?.name === 'assertBoundToDeclaredChain'
-        && c.object?.type === 'Identifier' && c.object.name === varName) anywhere = true;
+        && c.object?.type === 'Identifier' && c.object.name === varName
+        && anc[anc.length - 1]?.type === 'AwaitExpression') anywhere = true;
     });
     return anywhere
       ? { state: 'unverifiable', why: `"${varName}" is bound only OUTSIDE the function containing the call, so whether that path ever runs is beyond this check` }
@@ -376,6 +384,12 @@ test('#293: the classifier refuses every shape that leaves a reader unbound', ()
     'ALIASED import, unbound': `import { createChainReader as mk } from './x.mjs';\nasync function f() {\n  const r = mk({});\n  use(r);\n}\n`,
     'NAMESPACED call, unbound': `import * as chain from './x.mjs';\nasync function f() {\n  const r = chain.createChainReader({});\n  use(r);\n}\n`,
     'untraceable target': `${IMPORT}async function f() {\n  createChainReader({}).use();\n}\n`,
+    // Card 221 / Security's PR #321 gap: `assertBoundToDeclaredChain()` rejects on a mismatch, but
+    // nothing without `await` blocks on that rejection -- the check fires and the caller moves on
+    // before it can answer, so reads may already run by the time (or instead of) the promise
+    // settling. The old classifier matched the call by shape alone and never asked whether its
+    // result was awaited.
+    'UN-AWAITED assertion, unbound': `${IMPORT}async function f() {\n  const r = createChainReader({});\n  r.assertBoundToDeclaredChain();\n}\n`,
   };
   for (const [name, src] of Object.entries(REFUSED)) {
     const got = classifySource(src);
@@ -393,6 +407,9 @@ test('#293: the classifier refuses every shape that leaves a reader unbound', ()
   // Enumeration is complete even where reachability is not decidable: these were INVISIBLE before.
   assert.equal(classifySource(REFUSED['ALIASED import, unbound']).state, 'unbound');
   assert.equal(classifySource(REFUSED['NAMESPACED call, unbound']).state, 'unbound');
+  // The un-awaited binding must read as UNBOUND specifically, not merely "not bound": nothing
+  // blocks on the assertion, so reads can run before or instead of it ever settling.
+  assert.equal(classifySource(REFUSED['UN-AWAITED assertion, unbound']).state, 'unbound');
 });
 
 test('#293: the WALK and the FLOOR cannot be narrowed to nothing', () => {
