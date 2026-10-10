@@ -6,11 +6,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, unlinkSync, rmSync, existsSync, utimesSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, hostname } from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS } from '../lib/task-numbers.mjs';
+import { ANSWER_CUSTOM_KEY, assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS, withDirLock } from '../lib/task-numbers.mjs';
 
 const MODULE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'task-numbers.mjs');
 
@@ -170,5 +170,126 @@ test('reconcile moves a button answer but leaves a free-text answer where it is'
     assert.deepEqual(r.moved, ['btn.md -> backlog']);
     assert.match(readFileSync(path.join(dir, 'free.md'), 'utf8'), /^status: suggestion$/m);
     assert.match(readFileSync(path.join(dir, 'free2.md'), 'utf8'), /^status: suggestion$/m);
+  } finally { done(); }
+});
+
+// ── Typed answers ────────────────────────────────────────────────────────────────────────────────
+
+test('reconcile leaves a TYPED answer that spells a button exactly; the same text without the mark moves', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    const write = (name, extra) => writeFileSync(path.join(dir, name), `---\ntitle: ${name}\nstatus: suggestion\nanswer: Decline\n${extra}---\n`);
+    write('typed.md', `${ANSWER_CUSTOM_KEY}: true\n`);
+    write('clicked.md', '');
+    const r = reconcileAnsweredSuggestions(dir);
+    assert.deepEqual(r.moved, ['clicked.md -> done']);
+    assert.match(readFileSync(path.join(dir, 'typed.md'), 'utf8'), /^status: suggestion$/m);
+    // idempotent: a second pass moves nothing
+    assert.deepEqual(reconcileAnsweredSuggestions(dir).moved, []);
+  } finally { done(); }
+});
+
+test('the custom mark in a BODY line does not shield a button answer', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    writeFileSync(path.join(dir, 'b.md'), `---\ntitle: b\nstatus: suggestion\nanswer: Decline\n---\n${ANSWER_CUSTOM_KEY}: true\n`);
+    assert.deepEqual(reconcileAnsweredSuggestions(dir).moved, ['b.md -> done']);
+  } finally { done(); }
+});
+
+// ── Lock ownership ───────────────────────────────────────────────────────────────────────────────
+
+const LOCK = '_task-numbers.lock';
+const age = (file, ms) => { const t = new Date(Date.now() - ms); utimesSync(file, t, t); };
+const lockText = (pid, token = 'other-owner-token', host = hostname()) => JSON.stringify({ pid, host, token });
+/** A pid that belonged to a process that has exited. */
+function deadPid() {
+  const r = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))']);
+  return Number(r.stdout.toString());
+}
+
+test('a lock whose owner is ALIVE is not stolen at 31 s, however old by the old 30 s rule', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, lockText(process.pid));
+    age(lock, 31_000);
+    assert.throws(() => assignNumbers(dir, { lockTimeoutMs: 300 }), /could not take/);
+    assert.equal(numOf(dir, 'a.md'), 0, 'the section must not have run');
+    assert.equal(JSON.parse(readFileSync(lock, 'utf8')).token, 'other-owner-token', 'the owner\'s lock is untouched');
+  } finally { done(); }
+});
+
+test('a lock whose owner process is GONE is taken at once, though it is seconds old', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    writeFileSync(path.join(dir, LOCK), lockText(deadPid()));
+    const t0 = Date.now();
+    assignNumbers(dir, { lockTimeoutMs: 5_000 });
+    assert.ok(Date.now() - t0 < 2_000, 'a dead owner is not waited out');
+    assert.equal(numOf(dir, 'a.md'), 1);
+    assert.ok(!existsSync(path.join(dir, LOCK)), 'released afterwards');
+  } finally { done(); }
+});
+
+test('a lock whose owner is alive IS broken once it is far older than any real section (recycled pid)', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, lockText(process.pid));
+    age(lock, 11 * 60_000);
+    assignNumbers(dir, { lockTimeoutMs: 300 });
+    assert.equal(numOf(dir, 'a.md'), 1);
+  } finally { done(); }
+});
+
+test('a lock written on another host is not probed by pid: only the long margin breaks it', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, lockText(deadPid(), 'tok', 'some-other-machine'));
+    age(lock, 60_000);
+    assert.throws(() => assignNumbers(dir, { lockTimeoutMs: 300 }), /could not take/);
+    age(lock, 11 * 60_000);
+    assignNumbers(dir, { lockTimeoutMs: 300 });
+    assert.equal(numOf(dir, 'a.md'), 1);
+  } finally { done(); }
+});
+
+test('an ownerless (empty) lock is waited out when fresh and broken after 30 s', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    const lock = path.join(dir, LOCK);
+    writeFileSync(lock, '');
+    assert.throws(() => assignNumbers(dir, { lockTimeoutMs: 300 }), /could not take/);
+    age(lock, 31_000);
+    assignNumbers(dir, { lockTimeoutMs: 300 });
+    assert.equal(numOf(dir, 'a.md'), 1);
+  } finally { done(); }
+});
+
+test('the holder never removes a lock that another process now holds', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    const lock = path.join(dir, LOCK);
+    withDirLock(dir, () => {
+      // Simulate: our lock was judged dead and replaced by someone else's while we were still inside.
+      writeFileSync(lock, lockText(process.pid, 'someone-elses-token'));
+    });
+    assert.ok(existsSync(lock), 'the other owner\'s lock must survive our exit');
+    assert.equal(JSON.parse(readFileSync(lock, 'utf8')).token, 'someone-elses-token');
+  } finally { done(); }
+});
+
+test('the holder removes its own lock, including when the section throws', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    assert.throws(() => withDirLock(dir, () => { throw new Error('boom'); }), /boom/);
+    assert.ok(!existsSync(path.join(dir, LOCK)));
   } finally { done(); }
 });

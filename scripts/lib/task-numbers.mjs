@@ -17,8 +17,13 @@
  *
  * ALLOCATION IS SAFE ACROSS PROCESSES. Two dashboards (a worktree copy, a second port) can point at
  * the same vault, so the whole read-allocate-write section runs under an exclusive lock file
- * (`Tasks/_task-numbers.lock`, created with the `wx` flag, which is atomic). A lock older than
- * STALE_LOCK_MS belongs to a crashed process and is broken. Unnumbered files are re-read inside the
+ * (`Tasks/_task-numbers.lock`, created with the `wx` flag, which is atomic). The lock file records
+ * its owner (pid, host, a random token). A lock is broken only when its owner process is gone, or
+ * when it is older than LIVE_OWNER_STALE_MS (ten minutes, for a recycled pid or an owner on another
+ * machine); a lock with no readable owner (a crash between create and write) is broken after
+ * STALE_LOCK_MS. A mere 30 s mtime is not enough on its own: it let a second process into the
+ * section while the first still held it. The holder removes the lock on exit only if the file still
+ * carries ITS token, so it can never delete a lock someone else now holds. Unnumbered files are re-read inside the
  * lock, immediately before each write, so a number is never given to a file another process has
  * already numbered.
  *
@@ -33,14 +38,25 @@
  */
 
 import {
-  readdirSync, readFileSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, statSync,
+  readdirSync, readFileSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, statSync, writeSync,
 } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { hostname } from 'node:os';
 import path from 'node:path';
 
 const COUNTER_FILE = '_task-counter.json';
 const LOCK_FILE = '_task-numbers.lock';
+/** A lock whose owner cannot be read (empty file, older format) is broken after this long. */
 const STALE_LOCK_MS = 30_000;
+/** A lock whose owner is alive, or on another host, is broken only after this long. */
+const LIVE_OWNER_STALE_MS = 600_000;
 const LOCK_TIMEOUT_MS = 10_000;
+
+/**
+ * The frontmatter key the answer endpoint writes when the answer was TYPED rather than clicked.
+ * Lives here because the reconcile must honour it: it sees only the file.
+ */
+export const ANSWER_CUSTOM_KEY = 'answer_custom';
 
 /** Read the `num:` already in a frontmatter block, or 0 when there is none. Quoted values count. */
 function existingNum(raw) {
@@ -54,33 +70,86 @@ function sleepMs(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-/** Run `fn` holding the exclusive lock for `dir`. Throws if the lock cannot be taken in time. */
-function withDirLock(dir, fn) {
+/** True when a process with this pid exists. EPERM means it exists but is not ours. */
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+/** The owner recorded in a lock file's text, or null when it is empty or not ours. */
+function parseOwner(raw) {
+  try {
+    const o = JSON.parse(raw);
+    if (Number.isInteger(o.pid) && o.pid > 0 && typeof o.token === 'string' && typeof o.host === 'string') return o;
+  } catch {
+    /* empty or half-written */
+  }
+  return null;
+}
+
+/** Whether a lock with this owner and age may be broken. See the header for the three cases. */
+function lockBreakable(owner, ageMs) {
+  if (!owner) return ageMs > STALE_LOCK_MS;
+  if (owner.host !== hostname()) return ageMs > LIVE_OWNER_STALE_MS; // cannot probe another machine's pid
+  if (!pidAlive(owner.pid)) return true;
+  return ageMs > LIVE_OWNER_STALE_MS; // alive: a recycled pid is the only way it is stale
+}
+
+/** Remove the lock only if it still holds `raw`, the text we judged. A lock that changed hands stays. */
+function breakLock(lock, raw) {
+  try {
+    if (readFileSync(lock, 'utf8') === raw) unlinkSync(lock);
+  } catch {
+    /* gone already */
+  }
+}
+
+/**
+ * Run `fn` holding the exclusive lock for `dir`. Throws if the lock cannot be taken in time.
+ * `lockTimeoutMs` exists for the tests, which must not wait ten seconds to prove a refusal.
+ */
+export function withDirLock(dir, fn, lockTimeoutMs = LOCK_TIMEOUT_MS) {
   const lock = path.join(dir, LOCK_FILE);
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  const token = randomBytes(8).toString('hex');
+  const deadline = Date.now() + lockTimeoutMs;
   for (;;) {
     try {
-      closeSync(openSync(lock, 'wx'));
+      const fd = openSync(lock, 'wx');
+      try {
+        writeSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), token }));
+      } catch (e) {
+        closeSync(fd);
+        unlinkSync(lock);
+        throw e;
+      }
+      closeSync(fd);
       break;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
       try {
-        if (Date.now() - statSync(lock).mtimeMs > STALE_LOCK_MS) {
-          unlinkSync(lock);
+        const raw = readFileSync(lock, 'utf8');
+        const ageMs = Date.now() - statSync(lock).mtimeMs;
+        if (lockBreakable(parseOwner(raw), ageMs)) {
+          breakLock(lock, raw);
           continue;
         }
       } catch {
-        continue; // released between our open and our stat: just try again
+        continue; // released between our open and our read: just try again
       }
-      if (Date.now() > deadline) throw new Error(`could not take ${lock} within ${LOCK_TIMEOUT_MS}ms`);
+      if (Date.now() > deadline) throw new Error(`could not take ${lock} within ${lockTimeoutMs}ms`);
       sleepMs(25);
     }
   }
   try {
     return fn();
   } finally {
+    // Only our own lock. If it was broken and re-taken while we ran, that lock is not ours to remove.
     try {
-      unlinkSync(lock);
+      if (parseOwner(readFileSync(lock, 'utf8'))?.token === token) unlinkSync(lock);
     } catch {
       /* already gone */
     }
@@ -131,7 +200,7 @@ function writeHighWater(dir, n) {
  * Returns { assigned, max, skipped } — `skipped` names files with no frontmatter block, which are
  * reported rather than silently passed over, the same way the collector reports them.
  */
-export function assignNumbers(dir) {
+export function assignNumbers(dir, { lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
   try {
     listMd(dir);
   } catch {
@@ -140,7 +209,7 @@ export function assignNumbers(dir) {
     // in 5a392a4d was written for.
     return { assigned: 0, max: 0, skipped: [], problem: `no Tasks folder at ${dir}` };
   }
-  return withDirLock(dir, () => allocate(dir));
+  return withDirLock(dir, () => allocate(dir), lockTimeoutMs);
 }
 
 function allocate(dir) {
@@ -277,6 +346,10 @@ export function reconcileAnsweredSuggestions(dir) {
     if (!/^status:[ \t]*suggestion[ \t]*$/im.test(head)) continue;
     const ans = /^answer:[ \t]*(.+?)[ \t]*$/im.exec(head);
     if (!ans) continue;
+    // A TYPED answer never moves a card, even one that spells a button label exactly. The answer
+    // endpoint leaves such a card in place and marks it; honour the mark, or the next refresh moves
+    // the card the endpoint just refused to move.
+    if (new RegExp(`^${ANSWER_CUSTOM_KEY}:[ \\t]*true[ \\t]*$`, 'im').test(head)) continue;
     const opts = /^options:[ \t]*(.*)$/im.exec(head);
     const declared = opts ? parseList(opts[1]) : [];
     const to = movedStatusFor(ans[1], declared.length ? declared : SUGGESTION_OPTIONS);
