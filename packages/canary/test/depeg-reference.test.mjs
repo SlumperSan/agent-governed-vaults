@@ -185,7 +185,7 @@ test('an unreadable feed damps: one blind sweep is RPC noise, three consecutive 
 });
 
 test('the default bound clears the Arc USDC/USD feed measured heartbeat gaps [86,400, 86,467]s', async () => {
-  // contracts/config/arc-mainnet.json chainlinkOracle.assets[0].roundCadence: 56 gaps over 1,344 h,
+  // contracts/config/arc-mainnet.json verifiedOnChain.observed.roundCadence: 56 gaps over 1,344 h,
   // every one in [86,400, 86,467]. A healthy feed at the worst measured gap must NOT read stale.
   assert.equal(DEFAULT_MAX_AGE_SEC, 90_000);
   for (const ageSec of [86_399, 86_400, 86_430, 86_467]) {

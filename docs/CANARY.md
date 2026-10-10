@@ -691,10 +691,11 @@ BROKEN rather than ALERT: a fault in the monitor's own input must never be emitt
 evidence. `detail.ageSec` carries the observed age on every reading, in band or not, so the bound can
 be calibrated from data. The default is 90,000s, the same ceiling as `ChainlinkOracle.MAX_HEARTBEAT`.
 It is derived from the Arc USDC/USD feed's measured heartbeat, not guessed: 56 gaps over 1,344 h, every
-one in [86,400, 86,467]s (`contracts/config/arc-mainnet.json`, `roundCadence` and
-`feedFamilyHeartbeatNote`), so a healthy feed is routinely 86,400 to 86,467s old and 90,000s clears the
-worst measured gap by 3,533s. An earlier 86,400s default sat below that gap and reported a healthy Arc
-feed stale on most days. Residual: the jitter tail beyond +67s is unmeasured, and the Base feed has no
+one in [86,400, 86,467]s (`contracts/config/arc-mainnet.json`, `verifiedOnChain.observed.roundCadence`; its
+`chainlinkOracle.feedFamilyHeartbeatNote` calls these a pure heartbeat but counts only 24 of them), so a healthy feed is routinely 86,400 to 86,467s old and 90,000s clears the
+worst measured gap by 3,533s. A default of 86,400s sits below that gap and would have read the feed stale
+whenever a sweep (30s apart by default) landed in a gap's excess over 86,400s, a counterfactual, since this
+signal has never run with that default. Residual: the jitter tail beyond +67s is unmeasured, and the Base feed has no
 measurement at all, so a feed publishing more slowly than 90,000s would read stale; set
 `USDC_USD_FEED_MAX_AGE_SEC` once a cadence is measured.
 
