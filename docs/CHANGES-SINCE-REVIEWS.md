@@ -65,8 +65,8 @@ it went too.) `VaultFactory` measured 27,241 B and was undeployable on any chain
   life of the project until this freeze. The filter is now anchored and the resulting findings
   are triaged in [SLITHER-TRIAGE.md](reviews/SLITHER-TRIAGE.md). Treat any prior statement that
   reads as a Slither disposition for those files with that history in mind.
-- **Slither is advisory in CI** (`continue-on-error: true`), so a new high-severity static finding
-  does not turn CI red. It never has been blocking.
+- **Slither is blocking in CI.** The job grades its report against `contracts/slither-baseline.json`,
+  so a new static finding the baseline does not cover turns CI red.
 - **Accepted residual carried into the freeze:** `VaultFactory`'s constructor zero-checks none of
   its five immutables (review F-1, threat-model **PX-4**). Accepted rather than fixed; the
   reasoning, *including a toolchain constraint that made a contract fix impossible in that
