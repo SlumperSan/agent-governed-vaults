@@ -4,11 +4,11 @@
  * Business/Operations/Monitoring Gap Analysis.md §2 — see §3 item 6 for the spec this file
  * implements, in its "cheapest possible form".
  *
- * IT CLOSES G4 ONLY WHERE A FEED ADDRESS IS CONFIGURED. There is no default unless CHAIN_ID is
- * explicitly 8453, so on every other chain, including Arc mainnet 5042 where the protocol is
- * deployed, this returns `skipped` and the gap stays open until USDC_USD_FEED_ADDRESS is set. A
- * Chainlink USDC/USD feed exists on Arc at 0x84EA90AC252Dc437031461836DB5164219147905
- * (`contracts/config/arc-mainnet.json` chainlinkOracle.usdcPinNote); it is not defaulted here.
+ * IT CLOSES G4 ONLY WHERE A FEED ADDRESS IS CONFIGURED OR DEFAULTED. canary-runner.mjs defaults the
+ * address on exactly two chains when CHAIN_ID was set on purpose: Base mainnet 8453 and Arc mainnet
+ * 5042 (the chain the protocol is deployed on; the Arc feed is `contracts/config/arc-mainnet.json`
+ * chainlinkOracle.usdcPinNote, pinned to this repo by a test). On any other chain this returns
+ * `skipped` and the gap stays open until USDC_USD_FEED_ADDRESS is set.
  *
  * WHAT THIS EXISTS FOR. `ChainlinkOracle` and `OracleAggregator` both PIN USDC at $1.00 rather than
  * measuring it — deposits and exits price USDC at par through the whole vault, unconditionally, by
@@ -19,7 +19,7 @@
  * but nothing OF OURS measures it or triggers the de-list decision this protocol depends on a human
  * making.
  *
- * PURELY INFORMATIONAL, ON PURPOSE. This signal reads a Chainlink USDC/USD Data Feed on Base — a
+ * PURELY INFORMATIONAL, ON PURPOSE. This signal reads a Chainlink USDC/USD Data Feed (Base or Arc) — a
  * reference the vault's own oracle never consults — and ALERTs when it strays outside 0.995..1.005.
  * There is no on-chain remedy: the contract will keep pricing USDC at exactly $1.00 regardless of
  * what this signal reports, by design, and every message below says so explicitly so a reader never
@@ -35,9 +35,9 @@
  * (`0x7e860098F58bBFC8648a4311b374B1D669a2bc6B`) is VERIFIED ON-CHAIN — it is
  * `base-mainnet.json`'s `usdcReferenceFeeds.chainlinkUsdcUsd`, read on 2026-08-24. No equivalent is
  * documented in `contracts/config/deployments/base-sepolia.json` or `base-sepolia.json`, and this
- * file does not invent one — canary-runner.mjs defaults `USDC_USD_FEED_ADDRESS` to the mainnet
- * address ONLY when `CHAIN_ID` is 8453; every other chain id needs the address set explicitly. Left
- * unset on a non-mainnet chain, this signal reports `skipped` (a real configuration fact, not a
+ * file does not invent one — canary-runner.mjs defaults `USDC_USD_FEED_ADDRESS` to the Base mainnet
+ * address ONLY when `CHAIN_ID` is explicitly 8453, and to the Arc address ONLY when it is explicitly
+ * 5042; every other chain id needs the address set explicitly. Left unset on any other chain, this signal reports `skipped` (a real configuration fact, not a
  * blind detector) rather than probing a mainnet-only contract address that has no code elsewhere and
  * would otherwise read as a permanent DETECTOR BROKEN.
  */
@@ -69,16 +69,23 @@ export const UNREADABLE_SWEEPS = 3;
  * forever otherwise — and a depeg is precisely when a feed is most likely to be disrupted, so the
  * silently-dead case is the one G4 cannot afford (Review115 F6).
  *
- * This is a bound WE choose, not a property of the feed: `contracts/config/base-mainnet.json`'s
- * `usdcReferenceFeeds` block documents no heartbeat for `chainlinkUsdcUsd` (unlike the asset feeds,
- * which carry `heartbeatSeconds`/`feedCadenceSeconds`), and nothing in this repo has verified one.
- * So the default is deliberately generous — a full day, well past any plausible stablecoin-feed
- * heartbeat — to make a false BLIND essentially impossible while still catching a feed that has
- * genuinely stopped. Override with `USDC_USD_FEED_MAX_AGE_SEC` once a real cadence is measured;
- * `detail.ageSec` is reported on every reading, in band or not, so it can be calibrated from data
- * rather than guessed at again.
+ * The default is 90,000s, the same ceiling the repo already uses for this feed family:
+ * `ChainlinkOracle.MAX_HEARTBEAT` (90,000s), which `contracts/config/arc-mainnet.json` raised from
+ * 86,400s on 2026-09-18 precisely because 86,400s sat BELOW the measured heartbeat gaps. The Arc
+ * USDC/USD feed (the one this signal defaults to on 5042) was measured at 56 gaps over 1,344 h, every
+ * one in [86,400, 86,467]s (`chainlinkOracle.assets[0].roundCadence`; `feedFamilyHeartbeatNote`
+ * calls it a pure heartbeat, since a stablecoin at 1.0000 never trips a deviation publish). So a
+ * healthy feed is routinely 86,400..86,467s old; 90,000s clears that worst gap by 3,533s, while a
+ * feed that has genuinely stopped still reads stale within about an hour of its next missed publish.
+ * An earlier default of 86,400s reported a healthy Arc feed STALE on most days.
+ *
+ * The residual, stated: the jitter tail beyond +67s is unmeasured rather than known absent
+ * (`heartbeatResidualNote`), the Base feed has no measurement at all, and a feed that publishes
+ * MORE slowly than 90,000s would read stale. Override with `USDC_USD_FEED_MAX_AGE_SEC` once a real
+ * cadence is measured; `detail.ageSec` is reported on every reading, in band or not, so it can be
+ * calibrated from data.
  */
-export const DEFAULT_MAX_AGE_SEC = 86_400;
+export const DEFAULT_MAX_AGE_SEC = 90_000;
 
 /**
  * @param {Object} ctx
@@ -96,7 +103,7 @@ export async function checkDepegReference({ reader, vault, feed, chainId, nowSec
   if (!feed) {
     return [skipped({
       ...base,
-      message: `USDC depeg reference not configured for vault ${shortAddr(vault)} on chain ${chainId ?? 'unknown'}: no known Chainlink USDC/USD feed is documented for this chain. Set USDC_USD_FEED_ADDRESS to enable — the vault's OWN pricing is unaffected either way, since the oracle pins USDC at $1.00 regardless (G4)`,
+      message: `USDC depeg reference not configured for vault ${shortAddr(vault)} on chain ${chainId ?? 'unknown'}: this canary defaults a feed only for Base mainnet (8453) and Arc mainnet (5042), and CHAIN_ID was not set to one of them on purpose. Set CHAIN_ID or USDC_USD_FEED_ADDRESS to enable — the vault's OWN pricing is unaffected either way, since the oracle pins USDC at $1.00 regardless (G4)`,
       detail: { vault, chainId: chainId ?? null, configured: false },
     })];
   }

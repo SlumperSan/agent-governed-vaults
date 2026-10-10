@@ -45,8 +45,8 @@ RPC_URL=… OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json n
 | `MAX_LOG_SPAN_BLOCKS` | | `2000` | cap on one sweep's `getLogs` range |
 | `LOG_LOOKBACK_BLOCKS` | | `0` | cold-start event lookback for `module-events`/`fee-routing`. Set it to cover any expected restart gap; the default scans only one block, so events between shutdown and restart are otherwise never seen (see §4) |
 | `HEARTBEAT_MS` | | `3600000` (one hour) | periodic "still watching" line, so silence is provably alive. Non-negotiable per security-ops.md §5.2; set `0` to explicitly opt out |
-| `USDC_USD_FEED_ADDRESS` | | Base mainnet feed when `CHAIN_ID` is explicitly `8453`, else unset | Chainlink USDC/USD reference feed for the `depeg-reference` signal (G4); see §3(j) |
-| `USDC_USD_FEED_MAX_AGE_SEC` | | `86400` | how old that feed's reading may be before `depeg-reference` calls itself BLIND instead of reporting a frozen $1.0000 as in-band; see §3(j) |
+| `USDC_USD_FEED_ADDRESS` | | Base mainnet feed when `CHAIN_ID` is explicitly `8453`, the Arc mainnet feed when it is explicitly `5042`, else unset | Chainlink USDC/USD reference feed for the `depeg-reference` signal (G4); see §3(j) |
+| `USDC_USD_FEED_MAX_AGE_SEC` | | `90000` | how old that feed's reading may be before `depeg-reference` calls itself BLIND instead of reporting a frozen $1.0000 as in-band; see §3(j) |
 
 **Signals (c) and (d) need the indexer projection.** With `VAULTS` alone and no snapshot they report
 DEGRADED, not OK; see §4.
@@ -667,10 +667,10 @@ operating normally for everyone else.
 
 ### (j) `depeg-reference`: a USDC/USD reference read, purely informational
 
-**What it measures.** A Chainlink USDC/USD Data Feed on Base, read every sweep, independent of any
+**What it measures.** A Chainlink USDC/USD Data Feed (Base or Arc), read every sweep, independent of any
 vault's own oracle. ALERTs outside **0.995 .. 1.005** (inclusive at both bounds).
 
-**The gap it closes (G4), on the chains where it can run.** On any chain whose `CHAIN_ID` is not explicitly `8453` there is no default feed address, so this signal reports `skipped` and G4 stays OPEN there until `USDC_USD_FEED_ADDRESS` is set. That includes Arc mainnet (chain 5042), where the protocol is deployed: a Chainlink USDC/USD feed exists there at `0x84EA90AC252Dc437031461836DB5164219147905` (named in `contracts/config/arc-mainnet.json`'s `chainlinkOracle.usdcPinNote`, deliberately not consumed on-chain), but this signal does not default to it, so G4 is open on Arc until that address is set. `skipped` is an honest configuration fact, not a closure. Both oracle flavors **pin** USDC at $1.00 rather than measuring it
+**The gap it closes (G4), on the chains where it can run.** The feed address is defaulted on two chains, and only when `CHAIN_ID` was set on purpose: Base mainnet (`8453`) and Arc mainnet (`5042`, where the protocol is deployed). The Arc feed is `0x84EA90AC252Dc437031461836DB5164219147905`, named in `contracts/config/arc-mainnet.json`'s `chainlinkOracle.usdcPinNote` (deliberately not consumed on-chain, which is why the canary watches it); a test extracts it from that note and fails if the canary's default drifts. On any other chain this signal reports `skipped` and G4 stays OPEN there until `USDC_USD_FEED_ADDRESS` is set. `skipped` is an honest configuration fact, not a closure. Both oracle flavors **pin** USDC at $1.00 rather than measuring it
 deposits, exits and NAV all price USDC at par unconditionally. A sustained depeg produces no freeze
 and no staleness anywhere else in this package: `nav-backing` recomputes NAV through the same pin, so
 a depeg cancels on both sides of that comparison exactly the way a mis-scaled feed does in signal (g).
@@ -684,25 +684,30 @@ on-chain consequence tied to this signal at all; it exists solely to feed the hu
 "Informational" describes the *contract's* response, not the responder's: the ALERT **pages** (§5.3).
 
 **Two things it will not report as a depeg.** A **non-positive answer** is a broken aggregator, not a
-$0.00 USDC, and a reading **older than `USDC_USD_FEED_MAX_AGE_SEC`** (default 86,400s) is not current
+$0.00 USDC, and a reading **older than `USDC_USD_FEED_MAX_AGE_SEC`** (default 90,000s) is not current
 evidence either way, a feed frozen at $1.0000 reads in-band indefinitely, which is exactly how this
 detector would go silently dead during the market disruption a depeg causes. Both report DETECTOR
 BROKEN rather than ALERT: a fault in the monitor's own input must never be emitted as de-list
 evidence. `detail.ageSec` carries the observed age on every reading, in band or not, so the bound can
-be calibrated from data, the max-age is a bound **we** choose, since no heartbeat is documented for
-this feed in `contracts/config/base-mainnet.json` (unlike the asset feeds, which carry
-`heartbeatSeconds`).
+be calibrated from data. The default is 90,000s, the same ceiling as `ChainlinkOracle.MAX_HEARTBEAT`.
+It is derived from the Arc USDC/USD feed's measured heartbeat, not guessed: 56 gaps over 1,344 h, every
+one in [86,400, 86,467]s (`contracts/config/arc-mainnet.json`, `roundCadence` and
+`feedFamilyHeartbeatNote`), so a healthy feed is routinely 86,400 to 86,467s old and 90,000s clears the
+worst measured gap by 3,533s. An earlier 86,400s default sat below that gap and reported a healthy Arc
+feed stale on most days. Residual: the jitter tail beyond +67s is unmeasured, and the Base feed has no
+measurement at all, so a feed publishing more slowly than 90,000s would read stale; set
+`USDC_USD_FEED_MAX_AGE_SEC` once a cadence is measured.
 
 **The feed address, and why there is no guessed testnet default.** The mainnet feed
 (`0x7e860098F58bBFC8648a4311b374B1D669a2bc6B`) is `contracts/config/base-mainnet.json`'s
 `usdcReferenceFeeds.chainlinkUsdcUsd`, verified on-chain 2026-08-24, the same file calls it "the
 off-chain monitoring inputs for that residual (a canary signal, not an on-chain input)", which is
 what this file is. `USDC_USD_FEED_ADDRESS` defaults to that address **only** when `CHAIN_ID` was
-**explicitly set** to 8453, `CHAIN_ID`'s own default is 8453, so an unset one must not be read as
+**explicitly set** to 8453 (and to the Arc feed above only when it was explicitly set to 5042), `CHAIN_ID`'s own default is 8453, so an unset one must not be read as
 "this is mainnet", or a Sepolia deployment that never set it would be handed a mainnet address with
 no code behind it and report a permanent DETECTOR BROKEN. No equivalent is documented anywhere for
 Base Sepolia, so none is invented, the signal reports `skipped` (a configuration fact, not a blind
-detector) on any other chain, and when `CHAIN_ID` is unset, until one is supplied.
+detector) on any chain other than 8453 and 5042, and when `CHAIN_ID` is unset, until one is supplied.
 
 **When it fires.** Nothing on-chain needs fixing, the contract will not react. Treat it as the
 trigger to start the human de-list/unwind decision this protocol's design depends on: verify the
@@ -724,7 +729,7 @@ vault. The cases:
 | `feed identity cannot be checked … feedOf() lists no feed for it` | the asset is unlisted, or it is the oracle's pinned USDC leg | if unlisted, signal (a) is already paging (`priceWad` reverts permanently); if it is the pin, there is no aggregator behind it and nothing to drift |
 | `operator power measured but no binding threshold is active` | the vault is unregistered with Governance (or `proposalThresholdBps` is 0) **and** no non-creator member has joined yet | not a fault, neither gate can bind yet; coverage begins the moment either condition changes |
 | `operator power cannot be measured … totalShares is 0` | no deposit has activated yet | wait for the first deposit |
-| `USDC depeg reference not configured for vault … no known Chainlink USDC/USD feed is documented for this chain` | `USDC_USD_FEED_ADDRESS` is unset and `CHAIN_ID` is not 8453 | set `USDC_USD_FEED_ADDRESS` if this chain has a real USDC/USD feed; the vault's own pricing is unaffected either way |
+| `USDC depeg reference not configured for vault … this canary defaults a feed only for Base mainnet (8453) and Arc mainnet (5042), and CHAIN_ID was not set to one of them on purpose` | `USDC_USD_FEED_ADDRESS` is unset and `CHAIN_ID` is not explicitly 8453 or 5042 | set `USDC_USD_FEED_ADDRESS` if this chain has a real USDC/USD feed; the vault's own pricing is unaffected either way |
 
 An empty watch set is reported loudly rather than read as a clean bill of health.
 
@@ -965,7 +970,7 @@ named `tier` must not be able to demote its own page.
 
 ## 6. Tests
 
-`npm run test:backend` includes `packages/canary/test/*.test.mjs`, 385 tests, every one with a
+`npm run test:backend` includes `packages/canary/test/*.test.mjs`, 388 tests, every one with a
 mocked client. **No live RPC in CI.** Both a healthy and an alerting fixture exist for every signal,
 and for both oracle flavors.
 

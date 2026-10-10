@@ -388,13 +388,14 @@ Watch continuously; page on any breach. Every row below is implemented in `packa
 as a service — see **[CANARY.md](CANARY.md)** for thresholds, tuning, and the response to each:
 
 ```bash
-RPC_URL=… CHAIN_ID=8453 OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json   PAGE_WEBHOOK_URL=… LOG_WEBHOOK_URL=… DEADMAN_PING_URL=… npm run start:canary
+RPC_URL=… CHAIN_ID=5042 OPERATOR_REGISTRY_ADDRESS=… STATE_PATH=./data/indexer-state.json   PAGE_WEBHOOK_URL=… LOG_WEBHOOK_URL=… DEADMAN_PING_URL=… npm run start:canary
 ```
 
-**`CHAIN_ID` is not optional in practice.** It defaults to 8453, but the `depeg-reference` signal
-only takes the verified Base mainnet USDC/USD feed as its default when `CHAIN_ID` was set on purpose,
-an unset one is never read as "this is mainnet", because that would hand a Sepolia deployment a
-mainnet address with no code behind it. Left unset, that signal reports `skipped` with the reason.
+**`CHAIN_ID` is not optional in practice.** It defaults to 8453, and the canary refuses to start when
+`CHAIN_ID` disagrees with the RPC's chain, so on Arc it must be 5042. The `depeg-reference` signal
+defaults its USDC/USD feed (Arc's for 5042, Base mainnet's for 8453) only when `CHAIN_ID` was set on
+purpose; an unset one is never read as "this is mainnet", because that would hand a Sepolia deployment
+a mainnet address with no code behind it. Left unset, that signal reports `skipped` with the reason.
 
 It is silent while healthy, emits one line per signal transition, and is read-only against the chain
 (no key, never sends). `docker compose up` starts it alongside the indexer and API. Alerts are

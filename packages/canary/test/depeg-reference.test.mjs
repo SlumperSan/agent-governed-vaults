@@ -184,6 +184,25 @@ test('an unreadable feed damps: one blind sweep is RPC noise, three consecutive 
   assert.match(third[0].line, /DETECTOR BROKEN/);
 });
 
+test('the default bound clears the Arc USDC/USD feed measured heartbeat gaps [86,400, 86,467]s', async () => {
+  // contracts/config/arc-mainnet.json chainlinkOracle.assets[0].roundCadence: 56 gaps over 1,344 h,
+  // every one in [86,400, 86,467]. A healthy feed at the worst measured gap must NOT read stale.
+  assert.equal(DEFAULT_MAX_AGE_SEC, 90_000);
+  for (const ageSec of [86_399, 86_400, 86_430, 86_467]) {
+    const r = await run({ ageSec });
+    assert.equal(r.status, 'ok', `age ${ageSec}s is a healthy heartbeat gap, not a stale feed`);
+    assert.equal(r.detail.ageSec, ageSec);
+  }
+});
+
+test('a reading clearly past the heartbeat margin (90,001s) is STALE, not in-band', async () => {
+  const r = await run({ ageSec: 90_001 });
+  assert.equal(r.status, 'skipped');
+  assert.equal(r.detail.detectorBroken, true);
+  assert.match(r.message, /STALE/);
+  assert.equal((await run({ ageSec: 90_000 })).status, 'ok', 'the bound itself is inclusive');
+});
+
 test('a stale-but-answering feed is NOT damped — it is a definite observation, not transport noise', async () => {
   const tracker = createTransitionTracker();
   const ts = tracker.observe(await checkDepegReference({
@@ -245,6 +264,7 @@ test('no feed configured reports skipped, not detectorBroken — this is a docum
   assert.equal(r.detail.detectorBroken, undefined);
   assert.match(r.message, /not configured/);
   assert.match(r.message, /USDC_USD_FEED_ADDRESS/);
+  assert.match(r.message, /only for Base mainnet \(8453\) and Arc mainnet \(5042\)/, 'literally true: those are the two chains defaulted');
   assert.match(r.message, /84532/);
   assert.match(r.message, /pins USDC at \$1\.00 regardless/);
 });

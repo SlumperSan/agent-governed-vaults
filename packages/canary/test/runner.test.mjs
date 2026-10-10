@@ -9,10 +9,11 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { resolveCanaryConfig, collectSignals, buildCanary, BASE_MAINNET_USDC_USD_FEED, EMITTABLE_SIGNALS } from '../src/canary-runner.mjs';
+import { resolveCanaryConfig, collectSignals, buildCanary, BASE_MAINNET_USDC_USD_FEED, ARC_MAINNET_USDC_USD_FEED, EMITTABLE_SIGNALS } from '../src/canary-runner.mjs';
 import { saveSnapshot } from '../../indexer/src/store.mjs';
 import { emptyState } from '../../indexer/src/projections.mjs';
 import {
@@ -76,6 +77,8 @@ test('config: the mainnet USDC/USD feed default needs CHAIN_ID to be SET, not me
     'CHAIN_ID unset: no feed is guessed, and the signal reports `skipped` with a reason');
   assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', CHAIN_ID: '8453' }).usdcUsdFeed,
     BASE_MAINNET_USDC_USD_FEED, 'stated as mainnet: the verified feed');
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', CHAIN_ID: '5042' }).usdcUsdFeed,
+    ARC_MAINNET_USDC_USD_FEED, 'Arc mainnet: the documented Arc feed, so G4 closes on the chain the protocol runs on');
   assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', CHAIN_ID: '84532' }).usdcUsdFeed, null,
     'Base Sepolia: no documented feed exists, so none is invented');
   assert.equal(
@@ -83,8 +86,16 @@ test('config: the mainnet USDC/USD feed default needs CHAIN_ID to be SET, not me
     `0x${'ab'.repeat(20)}`, 'an explicit address always wins, on any chain');
 });
 
-test('config: the depeg feed staleness bound is configurable and defaults to a day', () => {
-  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x' }).usdcUsdFeedMaxAgeSec, 86_400);
+test('config: the Arc USDC/USD default is read from contracts/config/arc-mainnet.json, not hand-typed', () => {
+  const cfgJson = JSON.parse(readFileSync(new URL('../../../contracts/config/arc-mainnet.json', import.meta.url), 'utf8'));
+  const found = cfgJson.chainlinkOracle.usdcPinNote.match(/USDC\/USD feed DOES exist on Arc at (0x[0-9a-fA-F]{40})/);
+  assert.ok(found, 'usdcPinNote must still name the Arc USDC/USD feed');
+  assert.equal(ARC_MAINNET_USDC_USD_FEED, found[1].toLowerCase());
+  assert.equal(cfgJson.chainId, 5042);
+});
+
+test('config: the depeg feed staleness bound is configurable and defaults to the 90,000s feed-family ceiling', () => {
+  assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x' }).usdcUsdFeedMaxAgeSec, 90_000);
   assert.equal(resolveCanaryConfig({ RPC_URL: 'http://x', USDC_USD_FEED_MAX_AGE_SEC: '900' }).usdcUsdFeedMaxAgeSec, 900);
 });
 

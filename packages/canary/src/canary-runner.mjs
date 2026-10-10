@@ -26,16 +26,19 @@
  *   USDC_USD_FEED_ADDRESS      Chainlink USDC/USD reference feed for the depeg-reference signal
  *                              (G4). Defaults to the verified Base mainnet feed
  *                              (contracts/config/base-mainnet.json usdcReferenceFeeds.chainlinkUsdcUsd)
- *                              ONLY when CHAIN_ID is 8453 — no Base Sepolia address is documented
- *                              anywhere in this repo, so none is guessed; on any other chain id the
- *                              signal reports `skipped` (a configuration fact) until this is set.
- *                              The mainnet default applies only when CHAIN_ID was EXPLICITLY set —
+ *                              when CHAIN_ID is 8453, and to the Arc mainnet feed
+ *                              (contracts/config/arc-mainnet.json chainlinkOracle.usdcPinNote) when
+ *                              CHAIN_ID is 5042 — no Base Sepolia address is documented anywhere in
+ *                              this repo, so none is guessed; on any other chain id the signal
+ *                              reports `skipped` (a configuration fact) until this is set.
+ *                              A chain default applies only when CHAIN_ID was EXPLICITLY set —
  *                              CHAIN_ID's own default is 8453, so an unset CHAIN_ID must not be
  *                              read as "this is mainnet".
- *   USDC_USD_FEED_MAX_AGE_SEC  (86400) how old that feed's reading may be before depeg-reference
+ *   USDC_USD_FEED_MAX_AGE_SEC  (90000) how old that feed's reading may be before depeg-reference
  *                              calls itself BLIND rather than reporting a frozen $1.0000 as
- *                              in-band. A bound we choose; no heartbeat is documented for this
- *                              feed. `detail.ageSec` reports the observed age every sweep.
+ *                              in-band. 90,000 is ChainlinkOracle.MAX_HEARTBEAT, which clears the
+ *                              Arc USDC/USD feed's measured heartbeat gaps of 86,400..86,467s.
+ *                              `detail.ageSec` reports the observed age every sweep.
  *   PAGE_WEBHOOK_URL           POST one JSON body per PAGE-tier transition (Monitoring Gap
  *                              Analysis §2 G6 / §3 item 4): nav-backing, share-conservation,
  *                              fee-routing, exit-liveness ALERT, oracle-freshness ALERT, and
@@ -148,6 +151,14 @@ const list = (s) => String(s ?? '').split(',').map((x) => x.trim()).filter(Boole
 export const BASE_MAINNET_USDC_USD_FEED = '0x7e860098f58bbfc8648a4311b374b1d669a2bc6b';
 
 /**
+ * Chainlink USDC/USD Data Feed, Arc MAINNET (5042) — named in `contracts/config/arc-mainnet.json`
+ * `chainlinkOracle.usdcPinNote`. It is deliberately not consumed on-chain (the oracle pins USDC at
+ * par), which is exactly why the canary watches it. Defaulted ONLY when `CHAIN_ID` was explicitly
+ * 5042. `runner.test.mjs` extracts the address from that config note and fails if this drifts.
+ */
+export const ARC_MAINNET_USDC_USD_FEED = '0x84ea90ac252dc437031461836db5164219147905';
+
+/**
  * Parse + validate the canary config from a raw env object. Pure and testable (no I/O).
  * @param {Record<string,string|undefined>} env
  */
@@ -176,8 +187,9 @@ export function resolveCanaryConfig(env) {
   // that simply never set CHAIN_ID: the guard would then rest on the variable being SET rather than
   // on it being right, and hand the depeg signal a mainnet address with no code behind it — a
   // permanent DETECTOR BROKEN, re-asserted on the backoff forever, which is the muting failure this
-  // package has already been bitten by twice (Review115 F13). Nothing cross-checks CHAIN_ID against
-  // the RPC's own eth_chainId, so require it to have been stated on purpose. The documented paths
+  // package has already been bitten by twice (Review115 F13). `assertBoundToDeclaredChain()` (#284)
+  // now refuses to start when CHAIN_ID disagrees with the RPC's eth_chainId, but an UNSET CHAIN_ID
+  // is still just the default 8453, so require it to have been stated on purpose. The documented paths
   // all set it (.env.example, docker-compose's env_file, docs/RUNTIME.md, docs/RESTORE-DRILL.md);
   // an undocumented one now gets `skipped` with a reason instead of a wrong address.
   let usdcUsdFeed = null;
@@ -186,8 +198,9 @@ export function resolveCanaryConfig(env) {
     if (!ADDRESS_RE.test(usdcUsdFeed)) {
       throw new Error(`canary: USDC_USD_FEED_ADDRESS is not a 20-byte address: ${usdcUsdFeed}`);
     }
-  } else if (env.CHAIN_ID != null && env.CHAIN_ID !== '' && chainId === 8453) {
-    usdcUsdFeed = BASE_MAINNET_USDC_USD_FEED;
+  } else if (env.CHAIN_ID != null && env.CHAIN_ID !== '') {
+    if (chainId === 8453) usdcUsdFeed = BASE_MAINNET_USDC_USD_FEED;
+    else if (chainId === 5042) usdcUsdFeed = ARC_MAINNET_USDC_USD_FEED;
   }
   const usdcUsdFeedMaxAgeSec = num('USDC_USD_FEED_MAX_AGE_SEC', DEPEG_DEFAULT_MAX_AGE_SEC);
 
