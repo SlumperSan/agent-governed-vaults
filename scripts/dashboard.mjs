@@ -22,7 +22,7 @@ import path from 'node:path';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
 import { buildSignQueueResponse, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
 import { readBoard, readCalendar } from './lib/project-status.mjs';
-import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions } from './lib/task-numbers.mjs';
+import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS } from './lib/task-numbers.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -34,11 +34,6 @@ const PORT = Number(flag('port', 4270));
 const NO_GH = argv.includes('--no-gh');
 const HOST = '127.0.0.1';
 
-/** Answers waiting to be relayed to the department that asked. One JSON object per line. */
-const OUTBOX = path.join(
-  'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults/Tasks',
-  '_outbox.jsonl',
-);
 
 // Collecting shells out to git and gh, so a page that gathered on every request would hammer both
 // and make a refresh feel slow. Cache briefly and let the client poll freely.
@@ -48,9 +43,15 @@ let cache = { at: 0, data: null };
 // 9s of lag on a board he watches while departments work.
 const TTL_MS = 800;
 
-/** The vault folder the board reads, and the one task numbers are written back into. */
-const VAULT_ROOT = 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+/**
+ * The vault folder the board reads, and the one task numbers are written back into.
+ * AGV_DASHBOARD_VAULT_ROOT exists for the tests only: they run this server against a temp folder so
+ * no test can ever write to the real vault.
+ */
+const VAULT_ROOT = process.env.AGV_DASHBOARD_VAULT_ROOT || 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
 const TASKS_DIR = path.join(VAULT_ROOT, 'Tasks');
+/** Answers waiting to be relayed to the department that asked. One JSON object per line. */
+const OUTBOX = path.join(TASKS_DIR, '_outbox.jsonl');
 
 /**
  * The board and the content calendar are pure filesystem and cost milliseconds, so they are read on
@@ -1669,22 +1670,6 @@ document.getElementById('sq-items').addEventListener('click', async (e) => {
 </body></html>`;
 
 /**
- * The ONE write this server performs, and the reasons it is narrow.
- *
- * It records the owner's answer against a task file: `answer:` and `answered:` in the frontmatter,
- * nothing else touched. It is the only endpoint that is not a read, and it exists because the
- * alternative — him typing a decision into a chat and an agent transcribing it into the vault — is
- * the step where decisions get lost or reworded.
- *
- * WHAT IT WILL NOT DO. It will not create a file, will not write a task that does not exist, will
- * not accept an answer that is not one of the options the task itself declares, and will not
- * overwrite an answer already recorded. A board that can write arbitrary text into the vault is a
- * board that can put words in his mouth.
- *
- * Still bound to 127.0.0.1 with no auth, which is only acceptable because there is no remote
- * listener. Do not widen the bind address to "make it reachable from my phone".
- */
-/**
  * Resolve ONE task from disk, without collecting a snapshot.
  *
  * recordAnswer and deleteTask used to start from a forced snapshot, which waits for a full
@@ -1809,9 +1794,24 @@ function deleteTask(id) {
  *
  * Declared options still win, so a suggestion that genuinely needs three answers can say so.
  */
-const SUGGESTION_OPTIONS = Object.freeze(['Approve - move to To do', 'Decline']);
 const optionsFor = (t) => (t.options.length ? t.options : t.status === 'suggestion' ? [...SUGGESTION_OPTIONS] : []);
 
+/**
+ * Record the owner's answer against a task file (POST /api/answer): `answer:` and `answered:` in
+ * the frontmatter, plus a move out of Suggestions when an explicit Approve or Decline button was
+ * pressed. Everything else in the file is untouched.
+ *
+ * This server writes in three places only: this answer, deleteTask (a move into Tasks/_deleted/,
+ * never an unlink), and the `num:` line the task-number pass inserts. Each state-changing endpoint
+ * is behind the origin gate (refusedByOriginGate).
+ *
+ * WHAT IT WILL NOT DO. It will not create a file, will not write a task that does not exist, will
+ * not accept a non-custom answer that is not one of the options the task itself declares, and will
+ * not overwrite an answer already recorded.
+ *
+ * Still bound to 127.0.0.1 with no auth, which is only acceptable because there is no remote
+ * listener. Do not widen the bind address to "make it reachable from my phone".
+ */
 function recordAnswer(id, answer, custom) {
   const t = taskFromDisk(id);
   if (!t) return { code: 404, msg: `no task ${id}` };
@@ -1849,7 +1849,10 @@ function recordAnswer(id, answer, custom) {
   // would either bury an idea he liked or queue one he did not. The answer is on the card for the
   // department to act on.
   if (t.status === 'suggestion') {
-    const moved = movedStatusFor(answer);
+    // Only an explicit button moves the card: a free-text answer never does, even one that begins
+    // with "Decline" or "Approve", and movedStatusFor also refuses anything that is not an exact
+    // option label.
+    const moved = custom ? '' : movedStatusFor(answer, optionsFor(t));
     if (moved) head = head.replace(/^status:[ \t]*suggestion[ \t]*$/mi, `status: ${moved}`);
   }
   const patched = head + `\nanswer: ${answer}\nanswered: ${stamp}` + raw.slice(end);
@@ -1891,10 +1894,30 @@ function recordAnswer(id, answer, custom) {
 /** @type {Promise<any>|null} */
 let signQueueInflight = null;
 
+/**
+ * EVERY ENDPOINT THAT CHANGES STATE GOES THROUGH THIS, BEFORE THE BODY IS READ. A page on any other
+ * origin can POST to 127.0.0.1 from the owner's own browser with a CORS "simple" content type and
+ * no preflight, so a bind to localhost is not a defence by itself (V-381). Returns true when the
+ * request was refused and the response is already sent.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
+function refusedByOriginGate(req, res) {
+  const gateRefusal = originGateRefusal(
+    { host: req.headers.host, origin: req.headers.origin, 'content-type': req.headers['content-type'] },
+    PORT,
+  );
+  if (!gateRefusal) return false;
+  res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end(`refused: ${gateRefusal}`);
+  return true;
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
 
   if (url.pathname === '/api/answer' && req.method === 'POST') {
+    if (refusedByOriginGate(req, res)) return;
     let body = '';
     req.on('data', (c) => {
       body += c;
@@ -1957,15 +1980,7 @@ const server = createServer((req, res) => {
     // V-381-r1-8083f497 (Security): refuse anything that did not come from this dashboard's own
     // page — Host/Origin/Content-Type, checked BEFORE the body is even read. See
     // originGateRefusal's own header for exactly what each check stops.
-    const gateRefusal = originGateRefusal(
-      { host: req.headers.host, origin: req.headers.origin, 'content-type': req.headers['content-type'] },
-      PORT,
-    );
-    if (gateRefusal) {
-      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end(`refused: ${gateRefusal}`);
-      return;
-    }
+    if (refusedByOriginGate(req, res)) return;
     let body = '';
     req.on('data', (c) => {
       body += c;
@@ -1991,6 +2006,7 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/api/delete' && req.method === 'POST') {
+    if (refusedByOriginGate(req, res)) return;
     let body = '';
     req.on('data', (c) => {
       body += c;
