@@ -90,7 +90,7 @@ every transition, same channel, no severity. Full env reference is in
   silently wrong, not frozen) and PAGE; its aggregator-swap ALERT self-clears next sweep and LOGs.
   `sinks.mjs`'s `CONDITIONAL_PAGE` is a **default, not an enumeration**: it LOGs only when
   `detail.harm` is explicitly `null`, which the aggregator-swap leg sets literally, and PAGEs
-  otherwise — covering `'decimals'`, `'denomination'` and equally any harm value that is absent or
+  otherwise, covering `'decimals'`, `'denomination'` and equally any harm value that is absent or
   unrecognised, so a future leg that forgets the field pages rather than logs. Until 2026-09-13 this
   line read "pages on harm only" and spelled the predicate with a loose `!=`; the operator is `!==`,
   and the loose form is exactly the mutation that drops `sinks.test.mjs` from 28 to 26. It was the
