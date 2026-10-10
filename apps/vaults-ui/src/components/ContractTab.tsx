@@ -320,9 +320,11 @@ export function ContractTab({ vault }: Props) {
 
       <h3>3. No pause switch</h3>
       <p className="note">
-        No contract has a pause function, and no address — ours included — can halt deposits, exits
-        or voting. The contracts do stop on their own when the price feed goes stale: deposits and
-        exits revert until it answers again.
+        No contract has a pause function, and no address, ours included, can switch off deposits,
+        exits or voting through this protocol&rsquo;s contracts. Two things can still stop them. The
+        contracts stop on their own when the price feed goes stale: deposits and exits revert until
+        it answers again. And the USDC issuer can blacklist the vault&rsquo;s address,
+        which stops deposits and the USDC part of an exit.
       </p>
 
       <h3>4. Deploy-time wiring is locked once</h3>
@@ -334,14 +336,22 @@ export function ContractTab({ vault }: Props) {
       </p>
       {wiringLock ? <p className="note dim">Read now: all four are set.</p> : null}
 
-      <h3>5. No address holds outsized authority</h3>
+      <h3>5. Authority is narrow and named</h3>
       <p className="note">
-        No address can vote, execute a trade, pause the vault, reprice an asset, change a fee,
-        replace the oracle, or move a member&rsquo;s funds. Two roles are privileged and both are
-        narrow: the vault&rsquo;s own <strong>governance</strong> module, which acts only on a
-        proposal members have passed, and the vault&rsquo;s <strong>creator</strong>, whose entire
-        authority is two acts — registering the governance config once at creation, and creating
-        child vaults.
+        Members pool and vote. A rebalance, a rule change or a child allocation happens only after
+        members have voted it through and its timelock has run; then any address may call{' '}
+        <code>Governance.execute</code> to carry out exactly what passed. The contracts have no
+        function to pause the vault, reprice an asset, change a fee after creation, or replace the
+        oracle.
+      </p>
+      <p className="note">
+        The vault&rsquo;s <strong>creator</strong> sets it up once, at creation: its oracle, basket,
+        allowed swap adapters, exit fee ceiling and decay, capacity cap and minimum deposit, and then
+        its governance config in a second transaction. The creator is also recorded as the
+        vault&rsquo;s operator, the address that receives the 10% performance fee and collects it by
+        calling <code>claimFees</code>. Operatorship confers no authority to vote, execute, pause,
+        reprice, or move member funds. The creator can create child vaults only on a factory that
+        has them enabled.
       </p>
       {allowSubVaults !== undefined ? (
         <p className="note dim">

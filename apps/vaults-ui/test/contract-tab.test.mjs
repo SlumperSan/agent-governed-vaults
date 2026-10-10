@@ -222,11 +222,94 @@ test('ContractTab is mounted OUTSIDE the manifestVerified write gate — reading
 
 // ─────── Product's corrected copy (#434 review, 2026-09-24) ───────
 
-test('Row 3 never claims nothing can halt deposits or exits; it names the stale-feed stop', () => {
-  const flat = SRC.replace(/\s+/g, ' ');
+// ───────── every row's static copy is pinned verbatim ─────────
+// #434 shipped three false sentences (Row 3 "no address ... can halt", Row 5 "entire authority is two
+// acts" and "No address can vote, execute a trade") through two Product rounds because no test read the
+// copy and `claims-lede-truth` walks only .md/.html/.txt/.json. Each expected string below was checked
+// against contracts/src; rewording a row turns this red so the reword is re-verified, not slipped in.
+
+/** The static `<p className="note">` paragraphs under `<h3>N.`, tags stripped, entities decoded. */
+function rowCopy(n) {
+  const start = SRC.indexOf(`<h3>${n}.`);
+  assert.ok(start >= 0, `no <h3>${n}. heading in ContractTab.tsx`);
+  const next = SRC.indexOf('<h3>', start + 4);
+  const end = next >= 0 ? next : SRC.indexOf('</section>', start);
+  const block = SRC.slice(start, end);
+  const heading = /<h3>(.*?)<\/h3>/s.exec(block)[1];
+  const paras = [...block.matchAll(/<p className="note">([\s\S]*?)<\/p>/g)].map((m) =>
+    m[1]
+      .replace(/\{' '\}/g, ' ')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&rsquo;/g, '’')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
+  return { heading, paras };
+}
+
+const PINNED_ROWS = {
+  1: {
+    heading: '1. No proxy',
+    paras: ['Every contract is deployed directly — no delegatecall, no implementation slot.'],
+  },
+  2: {
+    heading: '2. No upgrade path',
+    paras: ['No contract can be replaced, and no contract’s code can change after deployment.'],
+  },
+  3: {
+    heading: '3. No pause switch',
+    paras: [
+      'No contract has a pause function, and no address, ours included, can switch off deposits, exits or voting through this protocol’s contracts. Two things can still stop them. The contracts stop on their own when the price feed goes stale: deposits and exits revert until it answers again. And the USDC issuer can blacklist the vault’s address, which stops deposits and the USDC part of an exit.',
+    ],
+  },
+  4: {
+    heading: '4. Deploy-time wiring is locked once',
+    paras: [
+      'OperatorRegistry.factory, OperatorRegistry.feeEngine, SubVaultRegistry.factory and Governance.subVaultRegistry are each written a single time, by the deployer, and permanently locked after — every later call reverts.',
+    ],
+  },
+  5: {
+    heading: '5. Authority is narrow and named',
+    paras: [
+      'Members pool and vote. A rebalance, a rule change or a child allocation happens only after members have voted it through and its timelock has run; then any address may call Governance.execute to carry out exactly what passed. The contracts have no function to pause the vault, reprice an asset, change a fee after creation, or replace the oracle.',
+      'The vault’s creator sets it up once, at creation: its oracle, basket, allowed swap adapters, exit fee ceiling and decay, capacity cap and minimum deposit, and then its governance config in a second transaction. The creator is also recorded as the vault’s operator, the address that receives the 10% performance fee and collects it by calling claimFees. Operatorship confers no authority to vote, execute, pause, reprice, or move member funds. The creator can create child vaults only on a factory that has them enabled.',
+    ],
+  },
+  6: {
+    heading: '6. cirBTC is issued, not trustless',
+    paras: [
+      'The vault’s BTC leg is a token whose own contract can be paused, upgraded, and can blacklist addresses. Those powers belong to its issuer — not to this protocol, not to the operator, and not to anyone who can be voted out here. Rows 1 to 3 above are true of our contracts and false of this one.',
+    ],
+  },
+};
+
+for (const [n, want] of Object.entries(PINNED_ROWS)) {
+  test(`Row ${n}'s heading and static copy are pinned verbatim`, () => {
+    const got = rowCopy(n);
+    assert.equal(got.heading, want.heading);
+    assert.deepEqual(got.paras, want.paras);
+  });
+}
+
+test('the scope line is pinned verbatim', () => {
+  const flat = SRC.replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  assert.ok(flat.includes('These are properties of the vault and governance contracts — not of the assets a vault holds. Rows 1 to 3 are false of cirBTC. Row 6 is why.'));
+});
+
+test('Rows 3 and 5 never reintroduce the three sentences #434 found false', () => {
+  const flat = SRC.replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/&rsquo;/g, '’').replace(/\s+/g, ' ');
+  // Row 3: the USDC issuer can blacklist the vault (THREAT-MODEL PX-1; VaultCore.deposit uses safeTransferFrom).
+  assert.doesNotMatch(flat, /can halt deposits, exits or voting/, 'false: a USDC blacklist of the vault stops deposits and the USDC leg of exits');
   assert.doesNotMatch(flat, /Nothing in the protocol can halt/, 'false: navWad reverts on a stale feed and deposits/exits revert with it (#388)');
-  assert.match(flat, /No contract has a pause function, and no address — ours included — can halt deposits, exits or voting\./);
-  assert.match(flat, /The contracts do stop on their own when the price feed goes stale: deposits and exits revert until it answers again\./);
+  assert.match(flat, /USDC issuer can blacklist the vault’s address, which stops deposits and the USDC part of an exit/);
+  assert.match(flat, /deposits and exits revert until it answers again/);
+  // Row 5: members vote and any address may call Governance.execute; the creator sets more than two things.
+  assert.doesNotMatch(flat, /No address can vote/, 'false: members vote');
+  assert.doesNotMatch(flat, /entire authority is two acts/, 'false: the creator chooses oracle, basket, adapters, fees, cap and minimum deposit, and is the fee recipient');
+  assert.match(flat, /any address may call Governance\.execute/);
+  assert.match(flat, /10% performance fee and collects it by calling/);
+  // The operator's lack of power is enumerated, never a universal (claims-lede-truth guard 6).
+  assert.match(flat, /Operatorship confers no authority to vote, execute, pause, reprice, or move member funds/);
 });
 
 test('Row 6 confirmed states and Row 6b unread use the copy-doc lines, and never name the issuer', () => {
