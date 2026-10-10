@@ -3,6 +3,7 @@ import type { Address } from 'viem';
 import { VAULT_VIEWS } from '@chain/abis';
 import { assembleClaimableEscrow, planClaimableEscrow, shortAddress, type Vault } from '../lib/atlas';
 import { readVaultAddresses, sendClaimEscrowed } from '../lib/chain-actions';
+import { confirmTx, replacedLine, submittedLine, unconfirmedLine } from '../lib/tx-status';
 import { useWallet } from '../lib/wallet';
 
 interface Props {
@@ -111,11 +112,33 @@ export function EscrowClaims({ vault }: Props) {
     setClaim((s) => ({ ...s, [asset]: { busy: true, message: null, error: null } }));
     try {
       const r = await sendClaimEscrowed(publicClient, walletClient, address as Address, vaultAddr, asset as Address);
-      setClaim((s) => ({ ...s, [asset]: { busy: false, message: `Claimed. ${r.claimHash}`, error: null } }));
-      // A successful claim zeroes `claimable[member][asset]` on chain; drop it from the local list
-      // rather than waiting for a remount, so the button does not stay offered for a balance that
-      // is already gone.
-      setClaimable((prev) => (prev ? prev.filter((c) => c.asset.toLowerCase() !== asset.toLowerCase()) : prev));
+      // `r.claimHash` only proves the wallet broadcast the transaction. the success line waits for the
+      // receipt and its status; until then the member sees a pending line, and the button stays
+      // disabled so a second claim cannot be signed on top of one still in flight.
+      setClaim((s) => ({ ...s, [asset]: { busy: true, message: submittedLine('claimEscrowed', r.claimHash), error: null } }));
+      const outcome = await confirmTx(publicClient, r.claimHash);
+      if (outcome.state === 'confirmed') {
+        setClaim((s) => ({ ...s, [asset]: { busy: false, message: `Claimed. ${outcome.hash}`, error: null } }));
+        // A confirmed claim zeroes `claimable[member][asset]` on chain; drop it from the local list
+        // rather than waiting for a remount, so the button does not stay offered for a balance that
+        // is already gone. A reverted or unconfirmed claim leaves the row and its button in place.
+        setClaimable((prev) => (prev ? prev.filter((c) => c.asset.toLowerCase() !== asset.toLowerCase()) : prev));
+      } else if (outcome.state === 'reverted') {
+        // VaultCore.claimEscrowed zeroes the balance and then transfers; a revert rolls the zeroing
+        // back, so the escrowed balance is unchanged. A mined revert still pays the network fee.
+        setClaim((s) => ({
+          ...s,
+          [asset]: {
+            busy: false,
+            message: null,
+            error: `The claim reverted on chain (${outcome.hash}). Your escrowed balance was not changed, and the network fee was still charged.`,
+          },
+        }));
+      } else if (outcome.state === 'replaced') {
+        setClaim((s) => ({ ...s, [asset]: { busy: false, message: replacedLine('claimEscrowed', r.claimHash), error: null } }));
+      } else {
+        setClaim((s) => ({ ...s, [asset]: { busy: false, message: unconfirmedLine('claimEscrowed', r.claimHash, outcome.detail), error: null } }));
+      }
     } catch (e) {
       setClaim((s) => ({ ...s, [asset]: { busy: false, message: null, error: e instanceof Error ? e.message : String(e) } }));
     }
