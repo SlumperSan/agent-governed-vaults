@@ -17,10 +17,12 @@
  */
 import { createServer } from 'node:http';
 import { Worker } from 'node:worker_threads';
-import { readFileSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, appendFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
 import { buildSignQueueResponse, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
+import { readBoard, readCalendar } from './lib/project-status.mjs';
+import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS } from './lib/task-numbers.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -32,11 +34,6 @@ const PORT = Number(flag('port', 4270));
 const NO_GH = argv.includes('--no-gh');
 const HOST = '127.0.0.1';
 
-/** Answers waiting to be relayed to the department that asked. One JSON object per line. */
-const OUTBOX = path.join(
-  'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults/Tasks',
-  '_outbox.jsonl',
-);
 
 // Collecting shells out to git and gh, so a page that gathered on every request would hammer both
 // and make a refresh feel slow. Cache briefly and let the client poll freely.
@@ -46,12 +43,61 @@ let cache = { at: 0, data: null };
 // 9s of lag on a board he watches while departments work.
 const TTL_MS = 800;
 
+/**
+ * The vault folder the board reads, and the one task numbers are written back into.
+ * AGV_DASHBOARD_VAULT_ROOT exists for the tests only: they run this server against a temp folder so
+ * no test can ever write to the real vault.
+ */
+const VAULT_ROOT = process.env.AGV_DASHBOARD_VAULT_ROOT || 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const TASKS_DIR = path.join(VAULT_ROOT, 'Tasks');
+/** Answers waiting to be relayed to the department that asked. One JSON object per line. */
+const OUTBOX = path.join(TASKS_DIR, '_outbox.jsonl');
+
+/**
+ * The board and the content calendar are pure filesystem and cost milliseconds, so they are read on
+ * every status request and laid over the snapshot the worker collected (git, CI, launch gates: the
+ * slow half). A card he just answered or deleted therefore shows its new state on the next poll
+ * instead of waiting for the next collection, and a file edited in Obsidian appears within a poll.
+ * If the fast read fails the worker's own board is served: stale, not wrong.
+ */
+function withLiveVault(snap) {
+  try {
+    return { ...snap, board: readBoard(VAULT_ROOT), calendar: readCalendar(VAULT_ROOT) };
+  } catch {
+    return snap;
+  }
+}
+
+/**
+ * Number any new task BEFORE the board is read, so a card he can see is a card he can name. This is
+ * the only place numbering happens; it inserts `num:` into files that have none and touches nothing
+ * else. It is pure filesystem and takes milliseconds, so it runs on this thread just before each
+ * refresh is handed to the worker. A file added in Obsidian is numbered on the next poll rather than
+ * staying unnameable.
+ */
+function numberTasks() {
+  try {
+    assignNumbers(TASKS_DIR);
+    // Also move any suggestion answered BEFORE the answer endpoint learned to move it.
+    // Without this the fix is only prospective and an already-approved card stays sitting in
+    // Suggestions, which reads as the approval not having worked -- which is how it was
+    // reported: "task #42 still hasn't moved to todo".
+    const rec = reconcileAnsweredSuggestions(TASKS_DIR);
+    if (rec.moved.length) console.log('[suggestions] moved:', rec.moved.join(', '));
+  } catch (e) {
+    // Numbering is a convenience; the board is the point. Never let it take the board down --
+    // but say so, because a silently unnumbered board looks like the feature was never built.
+    console.error('[task-numbers] not assigned:', e.message);
+  }
+}
+
 // collect() runs in a worker (scripts/lib/project-status-worker.mjs has the measured reason): on
 // this thread its synchronous git/gh calls froze every other request, the Sign queue's chain reads
 // included. One collection at a time; a request never waits on one when a snapshot exists.
 let refreshing = null;
 function refreshSnapshot() {
   if (refreshing) return refreshing;
+  numberTasks();
   refreshing = new Promise((resolve, reject) => {
     const w = new Worker(new URL('./lib/project-status-worker.mjs', import.meta.url), { workerData: { gh: !NO_GH } });
     w.once('message', (data) => { cache = { at: Date.now(), data }; resolve(data); });
@@ -347,6 +393,105 @@ const PAGE = `<!doctype html>
        color:var(--t-dim);display:flex;justify-content:space-between;gap:6px;align-items:flex-start}
   .clh .n{font-weight:400}
   .cardlist{padding:4px}
+  /* --- content calendar. A day is a heading with its posts under it, because the question is
+     "what goes out and when", and a grid of empty cells answers it worse than a list of the days
+     that actually have something in them. */
+  .cday{margin:14px 0 0}
+  .cdayh{font-size:13px;color:var(--t-dim);padding:0 0 5px;border-bottom:1px solid var(--t-line,#2a2f3a)}
+  .crel{font-family:var(--mono);font-size:10.5px;opacity:.7;margin-left:7px}
+  .crel.past{color:var(--nogo);opacity:.9}
+  .cpost{background:var(--t-card,#1d2230);border-radius:10px;padding:10px 12px;margin:8px 0;
+      display:grid;grid-template-columns:1fr 168px;gap:4px 14px}
+  .cmeta{grid-column:1;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .cchan{font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:#7e9ce0}
+  .ctime{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+  .cstat{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:6px;
+      background:rgba(255,255,255,.08);color:var(--t-dim)}
+  .cstat.cs-approved{background:#2c5e3a;color:#c8f0d4}
+  .cstat.cs-posted{background:#2a3a5e;color:#cfe0ff}
+  .cstat.cs-draft{background:#5e4a2a;color:#f3e2c4}
+  .ctitle{grid-column:1;font-size:14px;margin-top:2px}
+  /* The copy is shown IN FULL and pre-wrapped. A calendar that truncates the post is a calendar you
+     cannot approve from, which is the only reason to look at one. */
+  .ccopy{grid-column:1;white-space:pre-wrap;font-size:12.5px;line-height:1.5;color:var(--t-dim);
+      margin-top:4px}
+  .ccopy.none{opacity:.55;font-style:italic}
+  .casset{grid-column:2;grid-row:1 / span 3;display:flex;align-items:flex-start;justify-content:flex-end}
+  .cthumb{max-width:168px;max-height:112px;border-radius:8px;display:block}
+  .cpath,.cnoasset{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-align:right;
+      word-break:break-all}
+  .cnoasset{color:var(--nogo);opacity:.75}
+  .cfile{grid-column:1 / -1;font-family:var(--mono);font-size:10px;color:var(--dim);opacity:.6;
+      margin-top:6px}
+  /* The grip is the only affordance: a header that looks draggable and is not, or is and does not
+     look it, are both worse than a two-character handle that says so. */
+  .clh[draggable=true]{cursor:grab}
+  .clh[draggable=true]:active{cursor:grabbing}
+  .cgrip{opacity:.35;margin-right:5px;letter-spacing:-2px;font-size:11px}
+  .col.dragging{opacity:.45}
+  .col.dropbefore{box-shadow:inset 3px 0 0 #5b7fd4}
+  /* Delete is quiet until it is armed. A destructive control that looks destructive from the
+     start gets misread as the primary action of the panel it sits in. */
+  .ddel{margin-top:14px;padding-top:10px;border-top:1px solid var(--t-line,#2a2f3a)}
+  .delbtn{background:none;border:1px solid var(--t-line,#2a2f3a);color:var(--t-dim);
+      font:inherit;font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer}
+  .delbtn:hover{border-color:var(--nogo);color:var(--nogo)}
+  .delbtn.armed{background:var(--nogo);border-color:var(--nogo);color:#fff;font-weight:500}
+  .delnote{display:block;margin-top:5px}
+  /* THE NUMBER IS THE CARD'S SPOKEN NAME, so it is legible but never the loudest thing on the
+     card -- mono, dim, and ahead of the title so it reads as an identifier rather than as part
+     of the sentence. */
+  .tnum{font-family:var(--mono);font-size:10.5px;color:var(--dim);opacity:.85;margin-right:5px}
+  .card .tnum{display:inline-block;margin-bottom:2px}
+  /* SUGGESTIONS AND GOALS READ AS UPSTREAM, not as two more pipeline states. A left rule and a
+     tinted header is the whole treatment -- anything louder and the eye starts at the ideas
+     column instead of at what is in progress, which inverts what this board is for. */
+  .col.c-suggestion,.col.c-goal{position:relative}
+  .col.c-suggestion::before,.col.c-goal::before{content:'';position:absolute;left:0;top:8px;
+       bottom:8px;width:3px;border-radius:3px}
+  .col.c-suggestion::before{background:#b07d2b}
+  .col.c-goal::before{background:#5b7fd4}
+  .col.c-suggestion .clh{color:#c9922f}
+  .col.c-goal .clh{color:#7e9ce0}
+
+  /* --- timeline. Bars are drawn from the due dates the departments set; nothing is estimated
+     here, so an undated goal gets a hatched track and the words "no date set" rather than a
+     plausible-looking bar. A guessed date on this page would be read as a measured one. */
+  .tl{margin:0 0 12px;border:1px solid var(--t-line,#2a2f3a);border-radius:10px;
+      background:var(--t-col);padding:6px 10px 10px}
+  .tlh{cursor:pointer;font-size:13px;color:var(--t-dim);padding:4px 0;list-style:none}
+  .tlh::-webkit-details-marker{display:none}
+  .tlh::before{content:'▾ '}
+  .tl:not([open]) .tlh::before{content:'▸ '}
+  .tlgrp{margin-top:8px}
+  .tldept{display:flex;align-items:baseline;gap:8px;font-size:12px;color:var(--t-dim);
+      margin:0 0 4px;padding-bottom:3px;border-bottom:1px solid var(--t-line,#2a2f3a)}
+  .tleta{font-family:var(--mono);font-size:10.5px;color:#7e9ce0}
+  .tleta.late{color:var(--nogo)}
+  .tleta.none{color:var(--dim);opacity:.75}
+    /* THE TIME COMES FIRST. The question this row answers is "how long", so the answer leads and
+     the title qualifies it -- reading title-then-bar-then-number puts the answer last on every
+     row and makes the column impossible to scan. */
+  .tlrow{display:grid;grid-template-columns:104px minmax(120px,1fr) 128px;
+      gap:10px;align-items:center;padding:3px 2px;border-radius:6px;cursor:pointer}
+  .tlrow:hover{background:rgba(255,255,255,.04)}
+  .tlname{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    /* The progress cell is the bar AND the number in one control: the bar is the glance, the
+     percentage is the answer, and the count behind it is what makes the percentage checkable. */
+  .tlpct{position:relative;display:flex;align-items:center;gap:7px;height:16px;padding:0 8px;
+      border-radius:8px;background:rgba(255,255,255,.07);overflow:hidden}
+  .tlpct i{position:absolute;inset:0 auto 0 0;background:#5b7fd4;opacity:.42}
+  .tlpct b{position:relative;font-family:var(--mono);font-size:11px;font-weight:600;
+      font-variant-numeric:tabular-nums;color:var(--t-fg,#e8ecf3)}
+  .tlpct em{position:relative;font-style:normal;font-family:var(--mono);font-size:10px;
+      color:var(--t-dim);opacity:.85}
+  .tlpct.none{justify-content:center;font-family:var(--mono);font-size:10.5px;color:var(--dim);
+      opacity:.7;background:repeating-linear-gradient(45deg,
+      rgba(255,255,255,.07) 0 4px,transparent 4px 8px)}
+  .tlwhen{font-family:var(--mono);font-size:11.5px;color:var(--t-dim);text-align:left;
+      white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tlwhen.late{color:var(--nogo)}
+  .tlwhen.none{opacity:.7}
   /* A CARD IS NOT DRAGGABLE AND MUST NOT PRETEND TO BE. Trello's hover lightens the card and its
      cursor is grab; a grab cursor on a read-only board is a promise. Hover is copied, the
      cursor is pointer, and the drag shadow and tilt are gone entirely. */
@@ -595,15 +740,69 @@ function render(d){
     // Left to right in the order work moves. DONE IS NOT A COLUMN: finished work is the majority
     // of any healthy board and it crowded out the four columns that still need a decision. The
     // count stays in every header — "4 of 11" — so progress is still visible without a parking lot.
-    const COLS=[['backlog','To do'],['doing','In progress'],['review','In review'],['blocked','Needs you']];
+    // Suggestions and Goals lead, because both are UPSTREAM of the work rather than states of it.
+    // Suggestions: a department's idea, awaiting approve/decline. Approved ones are moved to To do
+    // by editing the file, same as every other card here. Goals: the outcome a department is
+    // working toward; a goal does not travel the pipeline, it stays until it is met.
+    // DERIVED FROM THE COLLECTOR, NOT COPIED FROM IT. d.board.columns IS BOARD_COLUMNS, sent with
+    // every payload, so a status added there appears here with no second edit.
+    //
+    // This replaces three hardcoded lists that had to be changed together. A comment saying "change
+    // all three together" is not a mechanism, and the cost of it drifting was measured rather than
+    // guessed: with a status present in the collector and absent here, 2 tasks in, 1 placed into a
+    // column, 1 DROPPED, and nothing thrown. Rendering collects the tasks matching each column key,
+    // so a status with no column shows NOWHERE. On a board whose whole purpose is showing what is
+    // in flight, a silently absent card is the worst available failure.
+    //
+    // META IS PRESENTATION ONLY -- a label, a mark, and a place in the reading order. A STATUS WITH
+    // NO ENTRY STILL RENDERS, under its own raw name, at the end. That is the property that
+    // matters: an unlabelled column is a cosmetic problem a human fixes in a minute, and a
+    // disappeared task is a defect nobody sees.
+    const META={
+      suggestion:{label:'Suggestions', mark:'\u{1F4A1}', rank:4},
+      goal:      {label:'Goals',       mark:'\u25CE',    rank:5},
+      backlog:   {label:'To do',       mark:'\u25CB',    rank:3},
+      doing:     {label:'In progress', mark:'\u25D0',    rank:0},
+      review:    {label:'In review',   mark:'\u25D0',    rank:1},
+      blocked:   {label:'Needs you',   mark:'\u2715',    rank:2},
+      done:      {label:'Done',        mark:'\u2713',    rank:9},
+    };
+    const metaOf = k => META[k] || {label:k, mark:'\u25A1', rank:8};
+    // DONE IS NOT A COLUMN: finished work is the majority of any healthy board and it crowded out
+    // the columns that still need a decision. The count stays in every header -- "4 of 11" -- so
+    // progress is visible without a parking lot.
+    // COLUMN ORDER IS HIS, AND IT PERSISTS. Dragging a column header rewrites the order and it is
+    // remembered in localStorage -- a board whose columns jump back on every poll is worse than one
+    // that cannot be reordered at all.
+    //
+    // The stored order is a FILTER OVER the derived list, never a replacement for it: any column it
+    // does not mention is appended rather than dropped, and any name it mentions that no longer
+    // exists is ignored. So a stale preference cannot hide a column, which is the same property the
+    // derivation itself was built for.
+    const stored = (()=>{ try{ return JSON.parse(localStorage.getItem('colOrder')||'[]'); }catch{ return []; } })();
+    const derived=(d.board.columns||[]).filter(k=>k!=='done');
+    const ordered=[...stored.filter(k=>derived.includes(k)), ...derived.filter(k=>!stored.includes(k))];
+    const COLS=ordered.map(k=>[k, metaOf(k).label]);
+    // WHAT COUNTS AS WORK. Progress bars and tile counts are about deliverables, so neither a
+    // suggestion nor a goal belongs in the denominator: a goal has no terminal state and would
+    // sit in "0 of N" forever, making every department read as less finished than it is.
+    const isWork = t => t.status!=='suggestion' && t.status!=='goal';
 
     // BLOCKED MEANS ONE THING: waiting on an answer from him. Nothing else belongs there.
     //
     // A task marked blocked because it is CONTINGENT on another task's answer is not blocked on
     // him - he cannot do anything about it until the upstream answer lands, and putting it in
     // front of him makes the column a list of things he cannot action. Those render as To do.
-    const needsOwner = t => t.options.length > 0 && !t.answer;
-    const eff = t => (t.status === 'blocked' && !needsOwner(t)) ? 'backlog' : t.status;
+    // Mirrors optionsFor() on the server. A suggestion always has the approve/decline pair even
+    // when its file declares none, so a suggestion with no options field is still answerable.
+    const optsOf = t => t.options.length ? t.options : (t.status==='suggestion' ? ['Approve - move to To do','Decline'] : []);
+    const needsOwner = t => optsOf(t).length > 0 && !t.answer;
+    // A SUGGESTION STAYS IN SUGGESTIONS even though it carries options and therefore needs him.
+    // Without this it would render under "Needs you" and the Suggestions column would always read
+    // zero -- the column exists precisely to keep unapproved ideas out of the decision queue, so
+    // routing them there by their options field would defeat it.
+    const eff = t => (t.status === 'suggestion' || t.status === 'goal') ? t.status
+                   : (t.status === 'blocked' && !needsOwner(t)) ? 'backlog' : t.status;
     // Column label per task id, for the modal breadcrumb. Built from the same COLS and eff() the
     // columns themselves use, so the two can never disagree. Done has no column, so it falls back
     // to its state name rather than to an empty crumb.
@@ -628,6 +827,7 @@ function render(d){
       +(t.options.length && !t.answer ? ' needsme':'')+'" data-id="'+esc(t.id)+'" role="button" tabindex="0">'
       + (withDept?'<div class="cdept">'+esc(t.department)+'</div>':'')
       + chips(t)
+      + (t.num?'<span class="tnum">#'+t.num+'</span>':'')
       + '<div class="ct">'+esc(t.title)+'</div>'
       + '<div class="cm">'
         + (t.priority && t.priority!=='none' ? '<span class="prio">'+esc(t.priority)+'</span>' : '')
@@ -644,12 +844,15 @@ function render(d){
 
     // Checklist ordering: what is moving, then what is stuck, then what is queued, then what is
     // finished. Done sinks because a tracker is for the work that is left.
-    const ORDER={doing:0,review:1,blocked:2,backlog:3,done:4};
+    // Same source, same fallback. An unknown status sorts at 8 rather than undefined -- which made
+    // the comparator return NaN and handed Array.sort an inconsistent ordering, silently and
+    // implementation-defined.
+    const ORDER=Object.fromEntries((d.board.columns||[]).map(k=>[k, metaOf(k).rank]));
     // Critical, high, medium, low, then unset. Applied WITHIN a column, so the top card in any
     // column is the most urgent thing in that state rather than the most recently saved file.
     const PRIO={critical:0,crit:0,high:1,med:2,medium:2,low:3};
     const byPrio=(a,b)=>((PRIO[a.priority]??9)-(PRIO[b.priority]??9))||(b.mtime-a.mtime);
-    const MARK={done:'✓',doing:'◐',review:'◐',blocked:'✕',backlog:'○'};
+    const MARK=Object.fromEntries((d.board.columns||[]).map(k=>[k, metaOf(k).mark]));
     const chip = t => { const d=t.checklist.filter(c=>c.done).length;
       return t.checklist.length? '<span class="ck">☑ '+d+'/'+t.checklist.length+'</span>' : ''; };
     const dueChip = t => { if(!t.due) return '';
@@ -659,6 +862,7 @@ function render(d){
 
     const line = t => '<div class="li s-'+esc(eff(t))+'" data-id="'+esc(t.id)+'" role="button" tabindex="0">'
       + '<span class="mk">'+MARK[eff(t)]+'</span>'
+      + (t.num?'<span class="tnum">#'+t.num+'</span>':'')
       + '<span class="lt">'+esc(t.title)+'</span>'
       + labels(t) + chip(t) + dueChip(t)
       + (unblocks[t.id] ? '<span class="unb">releases '+unblocks[t.id].length+'</span>' : '')
@@ -674,7 +878,8 @@ function render(d){
         // An empty column is its header over bare column background -- no placeholder, no dashed
         // drop zone. A drop zone would be wrong twice: it is not Trello's empty state, and it
         // advertises a drop target this read-only board does not have.
-        h+='<div class="col c-'+key+'"><div class="clh">'+label+' <span class="n">'+inCol.length+'</span></div>'
+        h+='<div class="col c-'+key+'" data-col="'+esc(key)+'"><div class="clh" draggable="true" title="Drag to reorder">'
+          + '<span class="cgrip">⋮⋮</span>'+label+' <span class="n">'+inCol.length+'</span></div>'
           + '<div class="cardlist">'+inCol.map(t=>card(t,withDept)).join('')+'</div>'
           +'</div>';
       }
@@ -686,10 +891,11 @@ function render(d){
              .map(line).join('')
       +'</div></details>';
     const header = (name, tasks, open) => {
-      const done=tasks.filter(t=>t.status==='done').length;
-      const pct=tasks.length? Math.round(done/tasks.length*100):0;
+      const work=tasks.filter(isWork);
+      const done=work.filter(t=>t.status==='done').length;
+      const pct=work.length? Math.round(done/work.length*100):0;
       return '<summary class="dh"><span class="caret">'+(open?'▾':'▸')+'</span>'+esc(name)
-        +' <span class="cnt">'+done+' of '+tasks.length+'</span>'
+        +' <span class="cnt">'+done+' of '+work.length+'</span>'
         +'<span class="bar"><i style="width:'+pct+'%"></i></span></summary>';
     };
 
@@ -707,10 +913,85 @@ function render(d){
       body+='<button class="catchup" data-catchup="1">Get up to speed'
         +'<span class="n">'+queue.length+'</span></button>';
     }
+    // --- TIMELINE. How long the goals take, drawn from the due: date each department set on its own
+    // goal file. NOTHING HERE IS ESTIMATED. A goal with no date renders as "no date set" and is
+    // excluded from the scale rather than given a guess -- a fabricated ETA on this page is the
+    // same defect class as a derived number presented as a measurement, and it would be believed.
+    // A MET GOAL LEAVES THE TIMELINE. The timeline answers "how long until the things we are
+    // committed to are done", so a finished goal on it is noise that makes every remaining bar
+    // look less urgent than it is. Two ways a goal finishes: its status moves off goal, or its
+    // checklist is fully ticked -- departments do the second and forget the first, and a goal
+    // sitting at 8/8 with a bar still running reads as the board being wrong.
+    const goalDone = t => t.checklist.length>0 && t.checklist.every(c=>c.done);
+    const goals=d.board.tasks.filter(t=>t.status==='goal' && !goalDone(t));
+    if(goals.length){
+      const DAY=86400000, now=Date.now();
+      const dated=goals.filter(g=>g.due && !Number.isNaN(Date.parse(g.due)));
+      // The scale runs from today to the furthest dated goal. An overdue goal would otherwise
+      // draw a negative-width bar, so the floor is today and lateness is said in words instead.
+      const horizon=dated.length? Math.max(...dated.map(g=>Date.parse(g.due)), now+DAY) : now+DAY;
+      const span=Math.max(horizon-now, DAY);
+      const days=ms=>Math.round(ms/DAY);
+      // THE BAR SHOWS PROGRESS, NOT TIME. A bar scaled to the days remaining says the same thing
+      // the date beside it already says, and says it worse -- the goal furthest away drew the
+      // longest bar, which reads as "most done" at a glance and is the exact opposite of true.
+      // Progress is the checklist: done items over total, which is the only completion figure a
+      // goal actually carries.
+      //
+      // A goal with NO checklist has no measurable progress and says so rather than drawing an
+      // empty bar. An empty bar and 0% are the same picture and mean different things -- one is
+      // "not started", the other is "nothing here to measure".
+      const pctCell=g=>{
+        const n=g.checklist.length;
+        if(!n) return '<span class="tlpct none">no items</span>';
+        const done=g.checklist.filter(c=>c.done).length;
+        const pct=Math.round(done/n*100);
+        return '<span class="tlpct"><i style="width:'+pct+'%"></i>'
+          +'<b>'+pct+'%</b><em>'+done+'/'+n+'</em></span>';
+      };
+      const row=g=>{
+        if(!g.due||Number.isNaN(Date.parse(g.due)))
+          return '<div class="tlrow" data-id="'+esc(g.id)+'" role="button" tabindex="0">'
+            +'<span class="tlwhen none">no date set</span>'
+            +'<span class="tlname">'+(g.num?'#'+g.num+' ':'')+esc(g.title)+'</span>'
+            +pctCell(g)+'</div>';
+        const end=Date.parse(g.due), left=days(end-now), late=end<now;
+        const w=Math.max(2, Math.round(Math.min(end-now, span)/span*100));
+        return '<div class="tlrow" data-id="'+esc(g.id)+'" role="button" tabindex="0">'
+          +'<span class="tlwhen'+(late?' late':'')+'">'
+          +(late? Math.abs(left)+'d overdue' : left+'d · '+esc(g.due))+'</span>'
+          +'<span class="tlname">'+(g.num?'#'+g.num+' ':'')+esc(g.title)+'</span>'
+          +pctCell(g)+'</div>';
+      };
+      const byDept={};
+      for(const g of goals) (byDept[g.department]||=[]).push(g);
+      const shown=VIEW==='All'? Object.keys(byDept).sort() : Object.keys(byDept).filter(k=>k===VIEW);
+      // The department ETA is the LATEST due among its goals -- when everything it is committed to
+      // is meant to be done, not the next milestone. Undated goals make it unknown and say so.
+      const eta=list=>{
+        const ds=list.filter(g=>g.due && !Number.isNaN(Date.parse(g.due))).map(g=>Date.parse(g.due));
+        if(!ds.length) return '<span class="tleta none">no dates set</span>';
+        const last=Math.max(...ds), l=days(last-now);
+        const undated=list.length-ds.length;
+        return '<span class="tleta'+(last<now?' late':'')+'">all done in '+(last<now?'—':l+'d')
+          +'</span>'+(undated?'<span class="tleta none">'+undated+' undated</span>':'');
+      };
+      if(shown.length) body+='<details class="tl" open><summary class="tlh">Timeline — '
+        +goals.length+' goal'+(goals.length===1?'':'s')+'</summary>'
+        + shown.map(k=>'<div class="tlgrp"><div class="tldept">'+esc(k)+eta(byDept[k])+'</div>'
+            + byDept[k].slice().sort((a,b)=>(Date.parse(a.due)||Infinity)-(Date.parse(b.due)||Infinity))
+                       .map(row).join('')
+          +'</div>').join('')
+        +'</details>';
+    }
+
     body+='<div class="tiles">'
-      + ['All',...DEPTS].map(t=>{
-          const open=t==='All'? d.board.tasks.filter(x=>x.status!=='done').length
-                              : d.board.tasks.filter(x=>x.department===t&&x.status!=='done').length;
+      + ['All','Calendar',...DEPTS].map(t=>{
+          // Calendar's badge is planned posts, not open tasks -- a tile counts what its view
+          // shows, or the number means nothing.
+          if(t==='Calendar') return '<button class="tile'+(VIEW===t?' on':'')+'" data-view="Calendar">Calendar <span class="n">'+((d.calendar&&d.calendar.items.length)||0)+'</span></button>';
+          const open=t==='All'? d.board.tasks.filter(x=>isWork(x)&&x.status!=='done').length
+                              : d.board.tasks.filter(x=>x.department===t&&isWork(x)&&x.status!=='done').length;
           // Card #42: this department's "In progress" column is empty -- it is waiting on an
           // assignment, and nothing else on the board says so until it messages. 'All' is not a
           // department and is never flagged. Uses the board's own in-progress bucket, eff(x)==='doing'
@@ -728,6 +1009,62 @@ function render(d){
       +'<div class="note" style="margin:-6px 0 10px">Read-only apart from the answer buttons. '
       +'To move a card, edit its task file — the board follows within 5s.</div>';
 
+    // --- content calendar. Read-only, like the board: Marketing writes GTM/Calendar/*.md in the
+    // vault and this renders it.
+    const cal = d.calendar || {items:[], problem:''};
+    const DAYNAME = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dayLabel = iso => {
+      const dt = new Date(iso + 'T12:00:00');
+      if (Number.isNaN(dt.getTime())) return esc(iso);
+      const today = new Date(); today.setHours(12,0,0,0);
+      const days = Math.round((dt - today) / 86400000);
+      const rel = days === 0 ? 'today' : days === 1 ? 'tomorrow'
+                : days < 0 ? Math.abs(days)+'d ago' : 'in '+days+'d';
+      return DAYNAME[dt.getDay()]+' '+esc(iso)+' <span class="crel'+(days<0?' past':'')+'">'+rel+'</span>';
+    };
+    // An asset shows as a thumbnail only when it is an image we can actually load, and as its
+    // path otherwise. NEVER as a broken image: a missing graphic has to look missing, because
+    // approving a post whose asset does not exist is the mistake this view exists to prevent.
+    const assetCell = it => {
+      if (!it.asset) return '<span class="cnoasset">no graphic</span>';
+      const kind = (it.assetKind||'').toLowerCase();
+      const isImg = kind === 'image' || /[.](png|jpe?g|gif|webp|svg)$/i.test(it.asset);
+      const isVid = kind === 'video' || /[.](mp4|mov|webm)$/i.test(it.asset);
+      const url = /^https?:/i.test(it.asset) ? it.asset : '';
+      if (isImg && url) return '<img class="cthumb" src="'+esc(url)+'" alt="" loading="lazy">';
+      return '<span class="cpath">'+(isVid?'\u25B6 ':'\u25A3 ')+esc(it.asset)+'</span>';
+    };
+    const byDay = {};
+    for (const it of cal.items) (byDay[it.date] ||= []).push(it);
+    let cbody = '';
+    if (cal.problem) cbody += '<div class="caveat">'+esc(cal.problem)+'</div>';
+    if (!cal.items.length) cbody += '<div class="note">Nothing planned yet. Marketing adds one file per post to <code>GTM/Calendar/</code> in the vault: frontmatter <code>date</code>, <code>time</code>, <code>channel</code>, <code>status</code>, <code>asset</code>, and the copy in the body.</div>';
+    for (const day of Object.keys(byDay).sort()) {
+      cbody += '<div class="cday"><div class="cdayh">'+dayLabel(day)+'</div>';
+      for (const it of byDay[day]) {
+        cbody += '<div class="cpost">'
+          + '<div class="cmeta"><span class="cchan">'+esc(it.channel)+'</span>'
+          + (it.time ? '<span class="ctime">'+esc(it.time)+'</span>' : '')
+          + '<span class="cstat cs-'+esc(it.status)+'">'+esc(it.status)+'</span></div>'
+          + '<div class="ctitle">'+esc(it.title)+'</div>'
+          + (it.copy ? '<div class="ccopy">'+esc(it.copy)+'</div>' : '<div class="ccopy none">no copy written</div>')
+          + '<div class="casset">'+assetCell(it)+'</div>'
+          + '<div class="cfile">'+esc(it.file)+'</div>'
+          + '</div>';
+      }
+      cbody += '</div>';
+    }
+    if(VIEW==='Calendar'){
+      // The variable body already carries the view switcher, so the tiles stay reachable from here and he
+      // can get back to the board without the browser's back button.
+      S.unshift(sec('Content calendar \u00b7 '+cal.items.length+' planned', body + cbody, 'wide'));
+      const boardSec = S[0] ?? '';
+      const restSec = S.slice(1).join('');
+      document.getElementById('main').innerHTML = boardSec
+        + (restSec ? '<details class="rest"><summary>repo status</summary><div class="restgrid">'+restSec+'</div></details>' : '');
+      return;
+    }
+
     if(VIEW==='All'){
       // Merged: five columns, every department's cards together, each tagged with its department.
       body+='<div class="dept">'+columnsFor(d.board.tasks, true)+checklistFor(d.board.tasks)+'</div>';
@@ -737,11 +1074,12 @@ function render(d){
         +columnsFor(mine,false)+checklistFor(mine)+'</details>';
     }
 
-    const allDone=d.board.tasks.filter(t=>t.status==='done').length;
-    const allPct=d.board.tasks.length? Math.round(allDone/d.board.tasks.length*100):0;
+    const allWork=d.board.tasks.filter(isWork);
+    const allDone=allWork.filter(t=>t.status==='done').length;
+    const allPct=allWork.length? Math.round(allDone/allWork.length*100):0;
     // FIRST on the page, not buried under the repo panels. It is the thing he opens this for; the
     // tree, gate and launch tables are reference and belong below it.
-    S.unshift(sec('Board · '+allDone+' of '+d.board.tasks.length
+    S.unshift(sec('Board · '+allDone+' of '+allWork.length
       +' <span class="bar hd"><i style="width:'+allPct+'%"></i></span>', body, 'wide'));
   }
 
@@ -834,7 +1172,12 @@ let openId = null;
 // answer recorded elsewhere drops out of the queue rather than being offered twice.
 let QUEUE = [];
 let inQueue = false;
-const STATE_LABEL = {doing:'In progress',review:'In review',blocked:'Blocked',backlog:'Backlog',done:'Done'};
+const STATE_LABEL = {doing:'In progress',review:'In review',blocked:'Blocked',backlog:'Backlog',done:'Done',
+  suggestion:'Suggestion',goal:'Goal'};
+// A card in the Suggestions column is by definition an approve-or-decline, so the board supplies
+// that pair when the file declares no options. Mirrors optionsFor() on the server; the two must
+// agree or a button renders that the write endpoint then refuses. Declared options still win.
+const OPTS = t => t.options.length ? t.options : (t.status==='suggestion' ? ['Approve - move to To do','Decline'] : []);
 /** Column label per task id, filled by render(). See the comment where TASKS is built. */
 const COL_LABEL = {};
 
@@ -864,7 +1207,7 @@ function drawTask(id){
   document.getElementById('dbody').innerHTML =
     // Trello's breadcrumb names the list a card is in. A card here belongs to two axes, and the
     // department is the one Trello has no equivalent for, so both are shown.
-    '<div class="dcrumb">'+esc(t.department)+' → '+esc(t.col||STATE_LABEL[t.status]||t.status)+'</div>'
+    '<div class="dcrumb">'+(t.num?'<span class="tnum">#'+t.num+'</span> ':'')+esc(t.department)+' → '+esc(t.col||STATE_LABEL[t.status]||t.status)+'</div>'
     + '<h3 class="dtitle">'+esc(t.title)+'</h3>'
     // Section order, per the spec: Labels, Description, Checklist, Meta.
     + (t.labels.length ? dsec('▤','Labels','<div class="dchips">'+labels(t)+'</div>','',true) : '')
@@ -892,9 +1235,9 @@ function drawTask(id){
     // The one place this board writes. A task that names options and is waiting on him gets
     // real buttons; clicking one records the answer against the task file so the next session
     // reads a decision instead of asking again.
-    + (t.options.length && !t.answer
+    + (OPTS(t).length && !t.answer
         ? dsec('✎','Your answer',
-            t.options.map((o,i)=>'<button class="opt'+(o===t.recommended?' rec':'')
+            OPTS(t).map((o,i)=>'<button class="opt'+(o===t.recommended?' rec':'')
               +'" data-answer="'+esc(t.id)+'" data-opt="'+i+'">'+esc(o)
               +(o===t.recommended?'<span class="recbadge">recommended</span>':'')
               +'</button>').join('')
@@ -919,8 +1262,14 @@ function drawTask(id){
         + meta('Updated', esc(t.updated))
         + meta('Blocked by', t.blockedBy.length ? t.blockedBy.map(b=>'<span class="blk">'+esc(b)+'</span>').join(' ') : '')
         + meta('Source', '<span class="dfile">'+esc(t.file)+'</span>')
-        + '<div class="note">This board is read-only apart from the answer buttons. To move a '
-        + 'card, edit its file — in Obsidian or by an agent — and the change appears within 5s.</div>');
+        + '<div class="note">To move a card, edit its file — in Obsidian or by an agent — and the '
+        + 'change appears within 5s.</div>'
+        // DELETE LIVES HERE, at the bottom of the last section, behind a second click. It is off
+        // the card front deliberately: a card is clicked to read it, and a delete control on the
+        // front is a mis-click away from removing the thing you meant to open.
+        + '<div class="ddel"><button class="delbtn" data-del="'+esc(t.id)+'">Delete this task</button>'
+        + '<span class="note delnote">The file moves to <code>Tasks/_deleted/</code> — it leaves '
+        + 'the board but stays recoverable.</span></div>');
 
   // Restore the in-progress answer, and the caret with it. Restoring the text but not the
   // selection would still move his cursor to the end of the box every five seconds.
@@ -967,13 +1316,36 @@ document.addEventListener('click', async e => {
   }
   if(e.target.closest('[data-skip]')){ advanceQueue(openId); return; }
   if(e.target.closest('[data-endq]')){ inQueue = false; closeDrawer(); return; }
+  // DELETE TAKES TWO CLICKS, and the second one is on a button that has changed what it says.
+  // A native confirm() would be dismissed by reflex; a button that reads "Really delete?" has to
+  // be read before it can be pressed again. Any other click disarms it, so an armed button left
+  // on screen cannot be triggered by the next thing he does.
+  const del = e.target.closest('[data-del]');
+  if(del){
+    if(del.classList.contains('armed')){
+      const id = del.dataset.del;
+      del.disabled = true; del.textContent = 'Deleting…';
+      const r = await fetch('/api/delete', {method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({id})});
+      const msg = await r.text();
+      if(!r.ok){ del.disabled = false; del.textContent = 'Delete failed — ' + msg; del.classList.remove('armed'); return; }
+      closeDrawer(); tick(); return;
+    }
+    del.classList.add('armed');
+    del.textContent = 'Really delete? Click again';
+    return;
+  }
+  // Disarm on any other click, including elsewhere in the same panel.
+  document.querySelectorAll('.delbtn.armed').forEach(b=>{
+    b.classList.remove('armed'); b.textContent = 'Delete this task';
+  });
   const opt = e.target.closest('[data-answer]');
   if(opt){
     const t = TASKS[opt.dataset.answer];
     const custom = opt.dataset.opt === 'custom';
     const choice = custom
       ? (document.getElementById('othertext')?.value || '').trim()
-      : t?.options[Number(opt.dataset.opt)];
+      : (t ? OPTS(t)[Number(opt.dataset.opt)] : undefined);
     if(!choice) return;
     opt.disabled = true; opt.textContent = 'saving…';
     try{
@@ -1008,6 +1380,44 @@ document.addEventListener('keydown', e => {
 
 function sec(title, body, klass){ return '<section class="'+(klass||'')+'"><h2>'+title+'</h2>'+body+'</section>'; }
 function row(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
+
+// --- column drag. Reorder is a view preference: it never touches a task file and never reaches
+// the server, so a mis-drag costs a drag back and nothing else.
+let dragKey = null;
+document.addEventListener('dragstart', e => {
+  const h = e.target.closest('.clh[draggable=true]'); if(!h) return;
+  dragKey = h.closest('.col')?.dataset.col || null;
+  h.closest('.col')?.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  // Firefox refuses to start a drag without payload, even when nothing reads it.
+  try{ e.dataTransfer.setData('text/plain', dragKey || ''); }catch{}
+});
+document.addEventListener('dragover', e => {
+  if(!dragKey) return;
+  const col = e.target.closest('.col'); if(!col) return;
+  e.preventDefault();
+  document.querySelectorAll('.col.dropbefore').forEach(c=>c.classList.remove('dropbefore'));
+  col.classList.add('dropbefore');
+});
+document.addEventListener('drop', e => {
+  if(!dragKey) return;
+  const col = e.target.closest('.col'); if(!col) return;
+  e.preventDefault();
+  const target = col.dataset.col;
+  const keys = [...document.querySelectorAll('.cols .col')].map(c=>c.dataset.col).filter(Boolean);
+  if(target && target !== dragKey){
+    const next = keys.filter(k=>k!==dragKey);
+    next.splice(next.indexOf(target), 0, dragKey);
+    try{ localStorage.setItem('colOrder', JSON.stringify(next)); }catch{}
+  }
+  dragKey = null;
+  document.querySelectorAll('.dragging,.dropbefore').forEach(c=>c.classList.remove('dragging','dropbefore'));
+  if(LAST) render(LAST);
+});
+document.addEventListener('dragend', () => {
+  dragKey = null;
+  document.querySelectorAll('.dragging,.dropbefore').forEach(c=>c.classList.remove('dragging','dropbefore'));
+});
 
 let LAST = null;
 async function tick(){
@@ -1260,27 +1670,154 @@ document.getElementById('sq-items').addEventListener('click', async (e) => {
 </body></html>`;
 
 /**
- * The ONE write this server performs, and the reasons it is narrow.
+ * Resolve ONE task from disk, without collecting a snapshot.
  *
- * It records the owner's answer against a task file: `answer:` and `answered:` in the frontmatter,
- * nothing else touched. It is the only endpoint that is not a read, and it exists because the
- * alternative — him typing a decision into a chat and an agent transcribing it into the vault — is
- * the step where decisions get lost or reworded.
+ * recordAnswer and deleteTask used to start from a forced snapshot, which waits for a full
+ * collect(): git, GitHub CI, the launch gates and the deployment address book, seconds on a good day.
+ * The page showed that as a button stuck on "saving..." and, when the poll next rendered, a card that
+ * had moved on its own. A write needs ONE task file, so this reads that file and parses only the
+ * fields a write decision turns on.
+ *
+ * It refuses a traversal outright rather than normalising it: ids come from the page, and the page
+ * is not a trust boundary this server should be relying on.
+ */
+function taskFromDisk(id) {
+  if (!id || /[\\/]|\.\./.test(id)) return null;
+  const file = path.join(TASKS_DIR, `${id}.md`);
+  let raw;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  const end = raw.indexOf('\n---', 3);
+  if (!raw.startsWith('---') || end === -1) return null;
+  const head = raw.slice(0, end);
+  const field = (k) => {
+    const m = new RegExp(`^${k}:[ \\t]*(.*)$`, 'mi').exec(head);
+    return m ? m[1].trim() : '';
+  };
+  const list = (v) => {
+    const s = v.trim();
+    if (!s) return [];
+    // Frontmatter lists arrive as ["a", "b"] or as a bare comma-separated line.
+    const inner = s.startsWith('[') && s.endsWith(']') ? s.slice(1, -1) : s;
+    return inner
+      .split(',')
+      .map((x) => x.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+  };
+  return {
+    id,
+    file,
+    num: Number(field('num')) || 0,
+    title: field('title').replace(/^["']|["']$/g, ''),
+    status: field('status').toLowerCase() || 'backlog',
+    options: list(field('options')),
+    answer: field('answer'),
+    notify: list(field('notify')),
+  };
+}
+
+/**
+ * Remove a task from the board. THE FILE IS MOVED, NEVER UNLINKED.
+ *
+ * It goes to `Tasks/_deleted/` with a `deleted:` stamp in its frontmatter. The board reads
+ * `Tasks/*.md` and skips anything that is not a `.md` file at that level, so a subdirectory
+ * disappears from every column immediately — which is the behaviour asked for — while the content
+ * survives.
+ *
+ * WHY NOT A REAL DELETE. This vault is written by six agent sessions that cannot see each other,
+ * and a task file is often the only record that a piece of work was ever scoped: its checklist, the
+ * reason it was raised, the department that owns it. An unlink is unrecoverable and indistinguishable
+ * from a file that was never written, so a card deleted by mistake would not merely be gone, it
+ * would be gone without evidence that anything had been there. Moving costs nothing and the
+ * board looks identical.
+ *
+ * A name collision in `_deleted/` is suffixed rather than overwritten, for the same reason: deleting
+ * a second task that happens to share a filename must not destroy the first.
+ */
+function deleteTask(id) {
+  const t = taskFromDisk(id);
+  if (!t) return { code: 404, msg: `no task ${id}` };
+
+  const dir = path.dirname(t.file);
+  const bin = path.join(dir, '_deleted');
+  try {
+    mkdirSync(bin, { recursive: true });
+  } catch (e) {
+    return { code: 500, msg: `cannot create ${bin}: ${/** @type {Error} */ (e).message}` };
+  }
+
+  let dest = path.join(bin, path.basename(t.file));
+  for (let n = 2; existsSync(dest); n += 1) {
+    dest = path.join(bin, path.basename(t.file).replace(/\.md$/, `-${n}.md`));
+  }
+
+  const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  try {
+    const raw = readFileSync(t.file, 'utf8');
+    const end = raw.indexOf('\n---', 3);
+    // Stamp it only when there is a frontmatter block to stamp. A file without one still moves --
+    // refusing to delete a malformed card would leave it permanently on the board.
+    const patched =
+      raw.startsWith('---') && end !== -1 ? raw.slice(0, end) + `\ndeleted: ${stamp}` + raw.slice(end) : raw;
+    writeFileSync(dest, patched, 'utf8');
+    unlinkSync(t.file);
+  } catch (e) {
+    return { code: 500, msg: `could not move the task file: ${/** @type {Error} */ (e).message}` };
+  }
+
+  // The outbox is the durable record of everything this board changes, so a deletion is logged
+  // beside the answers. Failing to log must never make the deletion look like it failed.
+  try {
+    appendFileSync(
+      OUTBOX,
+      JSON.stringify({ at: new Date().toISOString(), id: t.id, num: t.num, title: t.title, deleted: true, movedTo: dest }) + '\n',
+      'utf8',
+    );
+  } catch {
+    /* logged where it can be read; the move already happened */
+  }
+
+  return { code: 200, msg: `deleted — recoverable at ${dest}` };
+}
+
+/**
+ * A CARD IN THE SUGGESTIONS COLUMN IS BY DEFINITION AN APPROVE-OR-DECLINE, so the board supplies
+ * that pair when the file declares no options of its own.
+ *
+ * Without this a department can file a suggestion that renders with no buttons -- which happened,
+ * and reads as the board being broken rather than as the author having forgotten a field. Making
+ * the board supply them means no department can file an unanswerable suggestion, and it keeps the
+ * column's promise: everything in it can be decided from here.
+ *
+ * Declared options still win, so a suggestion that genuinely needs three answers can say so.
+ */
+const optionsFor = (t) => (t.options.length ? t.options : t.status === 'suggestion' ? [...SUGGESTION_OPTIONS] : []);
+
+/**
+ * Record the owner's answer against a task file (POST /api/answer): `answer:` and `answered:` in
+ * the frontmatter, plus a move out of Suggestions when an explicit Approve or Decline button was
+ * pressed. Everything else in the file is untouched.
+ *
+ * This server writes in three places only: this answer, deleteTask (a move into Tasks/_deleted/,
+ * never an unlink), and the `num:` line the task-number pass inserts. Each state-changing endpoint
+ * is behind the origin gate (refusedByOriginGate).
  *
  * WHAT IT WILL NOT DO. It will not create a file, will not write a task that does not exist, will
- * not accept an answer that is not one of the options the task itself declares, and will not
- * overwrite an answer already recorded. A board that can write arbitrary text into the vault is a
- * board that can put words in his mouth.
+ * not accept a non-custom answer that is not one of the options the task itself declares, and will
+ * not overwrite an answer already recorded.
  *
  * Still bound to 127.0.0.1 with no auth, which is only acceptable because there is no remote
  * listener. Do not widen the bind address to "make it reachable from my phone".
  */
-function recordAnswer(id, answer, custom, tasks) {
-  const t = tasks.find((x) => x.id === id);
+function recordAnswer(id, answer, custom) {
+  const t = taskFromDisk(id);
   if (!t) return { code: 404, msg: `no task ${id}` };
   // A listed option must match exactly; a free-text answer is accepted as written. The option list
   // is a shortcut for the common cases, never a menu he has to squeeze a real decision into.
-  if (!custom && !t.options.includes(answer)) {
+  if (!custom && !optionsFor(t).includes(answer)) {
     return { code: 400, msg: 'answer is not one of this task’s options' };
   }
   if (custom && !answer.trim()) return { code: 400, msg: 'empty answer' };
@@ -1297,8 +1834,28 @@ function recordAnswer(id, answer, custom, tasks) {
   if (!raw.startsWith('---') || end === -1) return { code: 422, msg: 'task file has no frontmatter block' };
 
   const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-  const patched =
-    raw.slice(0, end) + `\nanswer: ${answer}\nanswered: ${stamp}` + raw.slice(end);
+  let head = raw.slice(0, end);
+
+  // APPROVING A SUGGESTION MOVES IT. Recording the answer and leaving `status: suggestion` in place
+  // left the card sitting in the Suggestions column after it had been approved, which reads as the
+  // click not having worked -- and the whole point of the column is that approved ideas leave it.
+  //
+  // The rewrite is confined to the frontmatter block (`head` ends at the closing `---`) and to a
+  // status line that currently reads `suggestion`, so it cannot touch a body line that happens to
+  // start with "status:" and cannot move a card that is not a suggestion.
+  //
+  // A free-text answer is NEITHER an approval nor a decline and deliberately leaves the card where
+  // it is: he has said something the two buttons could not say, and guessing which way it fell
+  // would either bury an idea he liked or queue one he did not. The answer is on the card for the
+  // department to act on.
+  if (t.status === 'suggestion') {
+    // Only an explicit button moves the card: a free-text answer never does, even one that begins
+    // with "Decline" or "Approve", and movedStatusFor also refuses anything that is not an exact
+    // option label.
+    const moved = custom ? '' : movedStatusFor(answer, optionsFor(t));
+    if (moved) head = head.replace(/^status:[ \t]*suggestion[ \t]*$/mi, `status: ${moved}`);
+  }
+  const patched = head + `\nanswer: ${answer}\nanswered: ${stamp}` + raw.slice(end);
   // Write via a temp file in the same directory, then rename. A half-written task file would be
   // parsed by the next poll 5s later and render as a task with no title.
   const tmp = `${t.file}.tmp-${process.pid}`;
@@ -1337,22 +1894,41 @@ function recordAnswer(id, answer, custom, tasks) {
 /** @type {Promise<any>|null} */
 let signQueueInflight = null;
 
+/**
+ * EVERY ENDPOINT THAT CHANGES STATE GOES THROUGH THIS, BEFORE THE BODY IS READ. A page on any other
+ * origin can POST to 127.0.0.1 from the owner's own browser with a CORS "simple" content type and
+ * no preflight, so a bind to localhost is not a defence by itself (V-381). Returns true when the
+ * request was refused and the response is already sent.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
+function refusedByOriginGate(req, res) {
+  const gateRefusal = originGateRefusal(
+    { host: req.headers.host, origin: req.headers.origin, 'content-type': req.headers['content-type'] },
+    PORT,
+  );
+  if (!gateRefusal) return false;
+  res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end(`refused: ${gateRefusal}`);
+  return true;
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
 
   if (url.pathname === '/api/answer' && req.method === 'POST') {
+    if (refusedByOriginGate(req, res)) return;
     let body = '';
     req.on('data', (c) => {
       body += c;
       if (body.length > 4096) req.destroy(); // a decision is short; anything larger is not one
     });
-    req.on('end', async () => {
+    req.on('end', () => {
       let out;
       try {
         const { id, answer, custom } = JSON.parse(body);
-        // A fresh read of the board, as before: the task must exist and be unanswered NOW.
-        const snap = await getSnapshot(true);
-        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom), snap?.board?.tasks ?? []);
+        // Read from disk, as before: the task must exist and be unanswered NOW.
+        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom));
       } catch (e) {
         out = { code: 400, msg: String(/** @type {Error} */ (e).message) };
       }
@@ -1404,15 +1980,7 @@ const server = createServer((req, res) => {
     // V-381-r1-8083f497 (Security): refuse anything that did not come from this dashboard's own
     // page — Host/Origin/Content-Type, checked BEFORE the body is even read. See
     // originGateRefusal's own header for exactly what each check stops.
-    const gateRefusal = originGateRefusal(
-      { host: req.headers.host, origin: req.headers.origin, 'content-type': req.headers['content-type'] },
-      PORT,
-    );
-    if (gateRefusal) {
-      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end(`refused: ${gateRefusal}`);
-      return;
-    }
+    if (refusedByOriginGate(req, res)) return;
     let body = '';
     req.on('data', (c) => {
       body += c;
@@ -1437,11 +2005,32 @@ const server = createServer((req, res) => {
     return;
   }
 
+  if (url.pathname === '/api/delete' && req.method === 'POST') {
+    if (refusedByOriginGate(req, res)) return;
+    let body = '';
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 1024) req.destroy();
+    });
+    req.on('end', () => {
+      let out;
+      try {
+        const { id } = JSON.parse(body);
+        out = deleteTask(String(id ?? ''));
+      } catch (e) {
+        out = { code: 400, msg: String(/** @type {Error} */ (e).message) };
+      }
+      res.writeHead(out.code, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(out.msg);
+    });
+    return;
+  }
+
   if (url.pathname === '/api/status') {
     getSnapshot(url.searchParams.has('force'))
       .then((snap) => {
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-        res.end(JSON.stringify(snap));
+        res.end(JSON.stringify(withLiveVault(snap)));
       })
       .catch((e) => {
         res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });

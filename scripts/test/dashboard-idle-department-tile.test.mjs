@@ -31,13 +31,15 @@ function extractLine(re, label) {
   return m[0];
 }
 
-const extractNeedsOwner = () => extractLine(/const needsOwner = t => t\.options\.length > 0 && !t\.answer;/, 'needsOwner()');
-const extractEff = () => extractLine(/const eff = t => \(t\.status === 'blocked' && !needsOwner\(t\)\) \? 'backlog' : t\.status;/, 'eff()');
+const extractOptsOf = () => extractLine(/const optsOf = t => t\.options\.length \? t\.options : \(t\.status==='suggestion' \? \['Approve - move to To do','Decline'\] : \[\]\);/, 'optsOf()');
+const extractNeedsOwner = () => extractLine(/const needsOwner = t => optsOf\(t\)\.length > 0 && !t\.answer;/, 'needsOwner()');
+const extractEff = () => extractLine(/const eff = t => \(t\.status === 'suggestion' \|\| t\.status === 'goal'\) \? t\.status\n\s+: \(t\.status === 'blocked' && !needsOwner\(t\)\) \? 'backlog' : t\.status;/, 'eff()');
+const extractIsWork = () => extractLine(/const isWork = t => t\.status!=='suggestion' && t\.status!=='goal';/, 'isWork()');
 const extractEsc = () => extractLine(/^const esc = s => String\(s \?\? ''\)\.replace\(.*\);$/m, 'esc()');
 
-/** Pull the exact tile-rendering expression verbatim: `['All',...DEPTS].map(t=>{...}).join('')`. */
+/** Pull the exact tile-rendering expression verbatim: `['All','Calendar',...DEPTS].map(t=>{...}).join('')`. */
 function extractTilesExpr() {
-  const start = SOURCE.indexOf("['All',...DEPTS].map(t=>{");
+  const start = SOURCE.indexOf("['All','Calendar',...DEPTS].map(t=>{");
   const endMarker = "}).join('')";
   const end = SOURCE.indexOf(endMarker, start);
   assert.ok(
@@ -58,9 +60,9 @@ function extractTilesExpr() {
  */
 function renderTiles(tasks, view, tilesExpr = extractTilesExpr()) {
   const DEPTS = [...new Set(tasks.map((t) => t.department))];
-  const d = { board: { tasks } };
+  const d = { board: { tasks }, calendar: { items: [] } };
   const VIEW = view;
-  const body = `${extractNeedsOwner()}\n${extractEff()}\n${extractEsc()}\nreturn ${tilesExpr};`;
+  const body = `${extractOptsOf()}\n${extractNeedsOwner()}\n${extractEff()}\n${extractIsWork()}\n${extractEsc()}\nreturn ${tilesExpr};`;
   const fn = vm.runInNewContext(`(function (DEPTS, d, VIEW) {\n${body}\n})`);
   return fn(DEPTS, d, VIEW);
 }
