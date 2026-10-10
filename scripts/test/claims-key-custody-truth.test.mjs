@@ -135,9 +135,9 @@ const SELF = path.relative(REPO, HERE).split(path.sep).join('/');
 //
 // THIS LIST DIVERGES FROM `claims-lede-truth.test.mjs`'s BY TWO ENTRIES, `dist` AND `dist-ssr`, AND
 // THAT IS DELIBERATE. Its header argues at length that skipping build output is how a guard goes
-// vacuous, and it is right for the claim family IT guards: `apps/site-next` publishes the public
+// vacuous, and it is right for the claim family IT guards: `apps/site` publishes the public
 // lede only as prerendered output, so a walk that skips `dist` guards the pages a reader receives
-// by nothing. This family is the opposite shape. No page under `apps/site-next` mentions
+// by nothing. This family is the opposite shape. No page under `apps/site` mentions
 // `FACILITATOR`, a facilitator mode or a keypair — the whole family lives in the runbook, the
 // config templates and `apps/api` source, which are walked here whether or not anything has been
 // built. What `dist` would add is a minified bundle whose token soup can match a prose pattern by

@@ -1,0 +1,7 @@
+{
+  "chainName": "base-sepolia",
+  "chainId": 84532,
+  "_fixtureNote": "FIXTURE. The deployment record the harness validates against. intendedCreator is the FAKE chain signer (cast-fixture-chain.mjs SIGNER_ADDR), because the real base-sepolia record declares the real deployer EOA and the harness signs as neither. Before this existed the harness ran against the real record, which requireIntendedCreator correctly refuses -- the two landed on separate branches and nothing reconciled them until they were merged. kind eoa with the fake chain answering cast code 0x is the AGREEING case, so the happy path exercises the card-179 check rather than skipping it.",
+  "intendedCreator": "0x0000000000000000000000000000000000051de5",
+  "intendedCreatorKind": "eoa"
+}

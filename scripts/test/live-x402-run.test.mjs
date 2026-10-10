@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveRunConfig, assertNoSecrets } from '../live-x402-run.mjs';
+import { resolveRunConfig, assertNoSecrets, bindChain } from '../live-x402-run.mjs';
 import { CONSENT_ENV_VAR } from '../../apps/api/src/facilitator-server.mjs';
 
 const ENV = {
@@ -24,7 +24,13 @@ test('resolveRunConfig accepts a complete environment and applies sane defaults'
   assert.equal(cfg.fund, 50_000n);
   assert.equal(cfg.network, 'base-sepolia');
   assert.equal(cfg.usdcAddress, '0x036CbD53842c5426634e7929541eC2318f3dCF7e');
+  assert.equal(cfg.usdcAddressExplicit, false, 'the default address was not requested by the operator');
   assert.match(cfg.rpcUrl, /^https:\/\//);
+});
+
+test('resolveRunConfig records USDC_ADDRESS as explicit when the operator sets it', () => {
+  const cfg = resolveRunConfig({ env: { ...ENV, USDC_ADDRESS: '0x' + '9'.repeat(40) }, args: {} });
+  assert.equal(cfg.usdcAddressExplicit, true);
 });
 
 test('resolveRunConfig refuses to start without consent or a keystore, listing every problem', () => {
@@ -94,4 +100,57 @@ test('assertNoSecrets keeps tx hashes and nonces — redact() would have eaten t
   const t = { txHash: '0x' + 'c'.repeat(64), nonce: '0x' + 'd'.repeat(64) };
   assertNoSecrets(t);
   assert.equal(JSON.parse(JSON.stringify(t)).txHash, '0x' + 'c'.repeat(64));
+});
+
+// ── the chain-binding gate (issue #204) ──
+//
+// `USDC_ADDRESS` defaults to Base Sepolia's USDC and `RPC_URL` defaults to a Base Sepolia RPC, but
+// the two resolve independently — point RPC_URL at a different testnet chain id and leave
+// USDC_ADDRESS unset, and this runner would read Base Sepolia's USDC contract on a chain it does
+// not exist on. `bindChain` closes that: it takes a `publicClient` object that only needs
+// `getChainId()`, so this is testable with a fake in-memory client — no real RPC, no `viem`
+// transport, no network.
+
+const fakeClient = (chainIdOrThrow) => ({
+  getChainId: async () => {
+    if (chainIdOrThrow instanceof Error) throw chainIdOrThrow;
+    return chainIdOrThrow;
+  },
+});
+
+test('bindChain: the real chain (84532) with the default USDC address proceeds', async () => {
+  const cfg = resolveRunConfig({ env: ENV, args: {} });
+  const chainId = await bindChain({ publicClient: fakeClient(84532), cfg });
+  assert.equal(chainId, 84532);
+});
+
+test('bindChain: a different TESTNET chain with the default USDC address REFUSES', async () => {
+  // 31337 is in TESTNET_CHAIN_IDS (a plain local anvil), so the testnet allowlist alone would let
+  // this through — which is exactly the gap #204 is about: the allowlist checks the chain is SOME
+  // testnet, not that it is the one the default USDC_ADDRESS was written for.
+  const cfg = resolveRunConfig({ env: ENV, args: {} });
+  assert.equal(cfg.usdcAddressExplicit, false, 'precondition: the default address, not an override');
+  await assert.rejects(
+    bindChain({ publicClient: fakeClient(31337), cfg }),
+    /WRONG CHAIN.*84532|84532.*WRONG CHAIN|WRONG CHAIN/,
+  );
+});
+
+test('bindChain: a different chain is fine once USDC_ADDRESS is set explicitly', async () => {
+  const cfg = resolveRunConfig({ env: { ...ENV, USDC_ADDRESS: '0x' + '9'.repeat(40) }, args: {} });
+  const chainId = await bindChain({ publicClient: fakeClient(31337), cfg });
+  assert.equal(chainId, 31337, 'an explicit USDC_ADDRESS means there is no default-chain assumption to bind');
+});
+
+test('bindChain: a non-testnet chain refuses regardless of USDC_ADDRESS', async () => {
+  const cfg = resolveRunConfig({ env: { ...ENV, USDC_ADDRESS: '0x' + '9'.repeat(40) }, args: {} });
+  await assert.rejects(bindChain({ publicClient: fakeClient(8453), cfg }), /testnet only/);
+});
+
+test('bindChain: an unreadable chain id REFUSES as UNPROVEN, not as a pass', async () => {
+  const cfg = resolveRunConfig({ env: ENV, args: {} });
+  await assert.rejects(
+    bindChain({ publicClient: fakeClient(new Error('fetch failed')), cfg }),
+    /UNPROVEN/,
+  );
 });

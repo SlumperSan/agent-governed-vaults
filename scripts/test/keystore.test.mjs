@@ -61,7 +61,11 @@ test('a wrong password fails on the MAC, not on garbage output', { skip: needsVi
 
 test('a tampered ciphertext is rejected', { skip: needsViem }, async () => {
   const ks = makeKeystore(KEY, PW);
-  ks.crypto.ciphertext = ks.crypto.ciphertext.replace(/^../, '00');
+  // Flip the first byte instead of assigning a literal. makeKeystore picks a random IV, so the first
+  // ciphertext byte is uniform, and overwriting it with '00' was a no-op whenever it already WAS 00 —
+  // 1 run in 256, in which the MAC still validated and the suite went red on "Missing expected
+  // rejection" rather than on anything wrong with the keystore code. XOR always changes the byte.
+  ks.crypto.ciphertext = ks.crypto.ciphertext.replace(/^../, (b) => (parseInt(b, 16) ^ 0xff).toString(16).padStart(2, '0'));
   await assert.rejects(() => decryptKeystore(ks, PW), /MAC mismatch/);
 });
 

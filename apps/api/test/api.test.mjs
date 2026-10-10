@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gate, buildChallenge, checkEnvelopeAgainstPrice, decodeSignatureHeader, HEADERS } from '../src/x402.mjs';
+import { gate, buildChallenge, checkEnvelopeAgainstPrice, decodeSignatureHeader, decodeHeaderJson, HEADERS } from '../src/x402.mjs';
 import { createApi } from '../src/server.mjs';
 import { applyAll } from '../../../packages/indexer/src/projections.mjs';
 
@@ -33,7 +33,7 @@ function envelope({ value = '10000', to = PAYTO, asset = USDC, network = 'base',
 test('unpaid request returns a 402 challenge', async () => {
   const v = await gate({ headers: {}, price, facilitator: okFacilitator, nowMs: 1000 });
   assert.equal(v.status, 402);
-  const ch = JSON.parse(v.headers[HEADERS.REQUIRED]);
+  const ch = decodeHeaderJson(v.headers[HEADERS.REQUIRED]);
   assert.equal(ch.asset, USDC);
   assert.equal(ch.amount, '10000');
   assert.equal(ch.x402Version, 2);
@@ -48,7 +48,7 @@ test('valid signature settles and authorizes (200)', async () => {
   });
   assert.equal(v.status, 200);
   assert.equal(v.receiptId, 'rcpt_1');
-  assert.equal(JSON.parse(v.headers[HEADERS.RESPONSE]).receiptId, 'rcpt_1');
+  assert.equal(decodeHeaderJson(v.headers[HEADERS.RESPONSE]).receiptId, 'rcpt_1');
 });
 
 test('underpayment is rejected before the facilitator is called', async () => {
@@ -61,7 +61,7 @@ test('underpayment is rejected before the facilitator is called', async () => {
     nowMs: 1000,
   });
   assert.equal(v.status, 402);
-  assert.match(JSON.parse(v.headers[HEADERS.REQUIRED]) ? v.body.error : '', /underpaid/);
+  assert.match(decodeHeaderJson(v.headers[HEADERS.REQUIRED]) ? v.body.error : '', /underpaid/);
   assert.equal(called, false, 'facilitator must not be billed for a locally-invalid envelope');
 });
 

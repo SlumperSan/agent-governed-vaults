@@ -69,6 +69,10 @@ import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, StubGovernance, StubFeeEngine, StubRegistry} from "../mocks/Mocks.sol";
 import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
 
+/// @dev The per-proposal slippage bound these tests execute under. It rides in the payload that
+/// `actionHash` commits to, so it is fixed at commit time rather than read from a constant.
+uint256 constant MAX_SLIPPAGE_BPS = 200;
+
 interface ICounterparty {
     function onRoute() external;
 }
@@ -268,7 +272,7 @@ contract AuditAdapterScopedSweepTest is Test {
         IExecutionAdapter.SwapOrder[] memory orders = new IExecutionAdapter.SwapOrder[](1);
         orders[0] = o;
         vm.prank(address(gov));
-        vault.executeRebalance(address(adapter), orders);
+        vault.executeRebalance(address(adapter), MAX_SLIPPAGE_BPS, orders);
     }
 
     /// @dev Anyone can do this. No approval, no privilege, no reentrancy — one `transfer`.

@@ -7,8 +7,19 @@
  * script from consuming it until a session with a mainnet RPC has run the checklist in its
  * `verification` block. This is that checklist, executed — one check per line of it.
  *
- * READ-ONLY. No key, no signature, no transaction, no deployment. Every call is `cast call`
- * or `cast code`. Running this against mainnet costs nothing and changes nothing.
+ * READ-ONLY. No key, no signature, no transaction, no deployment. Every call is `cast call`,
+ * `cast code` or `cast chain-id`. Running this against mainnet costs nothing and changes nothing.
+ *
+ * ## The chain binding comes first, and it is a refusal rather than a check
+ *
+ * Every check below reads an address, and an address means nothing without a chain. This script,
+ * unlike `scripts/verify-chainlink-oracle.mjs`, never accepts a `CONFIG` override — it only ever
+ * verifies `base-mainnet.json` — but `BASE_MAINNET_RPC` is still an operator-supplied value, and a
+ * stale export left in a shell from an unrelated session would send every read below to whatever
+ * chain that RPC answers (issue #204). `main` therefore reads `eth_chainId` (via `cast chain-id`)
+ * and exits 1 unless it equals 8453, BEFORE any address is read — a refusal, not a `check` row,
+ * because a result list scored against the wrong chain is not a partial verification, it is one
+ * with no meaning at all. An unreadable chain id refuses too: an unproven binding is not a binding.
  *
  * ## Why this is worth a script rather than a session of ad-hoc `cast` calls
  *
@@ -34,6 +45,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyCallError } from '../packages/canary/src/call-error.mjs';
+import { chainBindingVerdict } from './lib/chain-binding.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RPC = process.env.BASE_MAINNET_RPC ?? 'https://mainnet.base.org';
@@ -113,6 +125,20 @@ function tryCall(to, sig, ...args) {
   }
 }
 
+/**
+ * The RPC's own `eth_chainId`, or null if it could not be read at all. Goes through the same
+ * `cast()` retry/throttle path as every other read in this file, so a transient 429 does not read
+ * as an unbound chain any more than it reads as a broken feed elsewhere in this script.
+ */
+function readRpcChainId() {
+  try {
+    const id = Number(cast(['chain-id']));
+    return Number.isInteger(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 function check(label, fn) {
   let outcome;
   try {
@@ -142,12 +168,28 @@ if (!JSON_OUT) {
   console.log(`current status: ${cfg.status}\n`);
 }
 
-// ── chain identity ──
-check('RPC is Base mainnet (chain id 8453)', () => {
-  const id = Number(cast(['chain-id']));
-  return id === cfg.chainId && id === 8453 ? { pass: true, detail: `chainId ${id}` }
-    : { pass: false, detail: `RPC reports ${id}, config says ${cfg.chainId}` };
+// ── chain identity: refuse before any check runs (issue #204) ──
+// Every check below reads an address, and an address means nothing without a chain. This script
+// only ever verifies base-mainnet.json, so the config's OWN chainId is hard-pinned to 8453 first
+// (catches an edit to the config itself); then the RPC actually answering has to prove it too, or
+// the run refuses rather than sweeping a chain nobody named.
+if (Number(cfg.chainId) !== 8453) {
+  console.error(
+    `verify-mainnet-config: base-mainnet.json declares chainId ${JSON.stringify(cfg.chainId)}, but this ` +
+      'script only verifies Base mainnet (8453) — refusing rather than sweeping a config for a chain it does not name.',
+  );
+  process.exit(1);
+}
+const binding = chainBindingVerdict({
+  declaredChainId: cfg.chainId,
+  rpcChainId: readRpcChainId(),
+  rpc: RPC,
+  declaredBy: 'contracts/config/base-mainnet.json',
 });
+if (!binding.ok) {
+  console.error(`verify-mainnet-config: ${binding.message}`);
+  process.exit(1);
+}
 
 // ── USDC ──
 check('usdc: symbol() == USDC, decimals() == 6, Circle-native (not USDbC)', () => {

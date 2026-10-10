@@ -13,6 +13,10 @@ import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, StubFeeEngine, StubRegistry} from "./mocks/Mocks.sol";
 
+/// @dev The per-proposal slippage bound these tests execute under. It rides in the payload that
+/// `actionHash` commits to, so it is fixed at commit time rather than read from a constant.
+uint256 constant MAX_SLIPPAGE_BPS = 200;
+
 /// A minimal constant-product V2 pair for two mock tokens.
 contract MockV2Pair is IUniswapV2Pair {
     address public token0;
@@ -177,7 +181,7 @@ contract DirectPoolAdapterTest is Test {
             deadline: block.timestamp + 30 days,
             routeData: ""
         });
-        bytes memory payload = abi.encode(address(adapter), orders);
+        bytes memory payload = abi.encode(address(adapter), MAX_SLIPPAGE_BPS, orders);
 
         uint256 navBefore = vault.navWad();
 

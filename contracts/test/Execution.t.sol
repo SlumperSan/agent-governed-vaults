@@ -14,6 +14,10 @@ import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, StubFeeEngine, StubRegistry} from "./mocks/Mocks.sol";
 
+/// @dev The per-proposal slippage bound these tests execute under. It rides in the payload that
+/// `actionHash` commits to, so it is fixed at commit time rather than read from a constant.
+uint256 constant MAX_SLIPPAGE_BPS = 200;
+
 // ── fixtures ─────────────────────────────────────────────────────────────────
 
 contract MockPriceSource is IPriceSource {
@@ -305,7 +309,7 @@ contract ExecutionTest is Test {
             deadline: block.timestamp + 30 days,
             routeData: abi.encodeCall(MockRouter.swap, (address(usdc), address(weth), 1_500 * USDC_1, 6, 18))
         });
-        bytes memory payload = abi.encode(address(adapter), orders);
+        bytes memory payload = abi.encode(address(adapter), MAX_SLIPPAGE_BPS, orders);
 
         vm.prank(creator);
         uint256 pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(payload));
@@ -360,7 +364,7 @@ contract ExecutionTest is Test {
     function test_rebalanceOnlyThroughGovernance() public {
         IExecutionAdapter.SwapOrder[] memory orders = new IExecutionAdapter.SwapOrder[](0);
         vm.expectRevert(VaultCore.OnlyGovernance.selector);
-        vault.executeRebalance(address(adapter), orders);
+        vault.executeRebalance(address(adapter), MAX_SLIPPAGE_BPS, orders);
     }
 
     function test_rebalanceRejectsUnlistedAdapter() public {
@@ -370,7 +374,7 @@ contract ExecutionTest is Test {
         AggregationRouterAdapter rogue = new AggregationRouterAdapter(address(router), sels);
 
         IExecutionAdapter.SwapOrder[] memory orders = new IExecutionAdapter.SwapOrder[](0);
-        bytes memory payload = abi.encode(address(rogue), orders);
+        bytes memory payload = abi.encode(address(rogue), MAX_SLIPPAGE_BPS, orders);
 
         vm.prank(creator);
         uint256 pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(payload));
@@ -406,7 +410,7 @@ contract ExecutionTest is Test {
                 MockRouter.swap, (address(usdc), address(rogueToken), 100 * USDC_1, 6, 18)
             )
         });
-        bytes memory payload = abi.encode(address(adapter), orders);
+        bytes memory payload = abi.encode(address(adapter), MAX_SLIPPAGE_BPS, orders);
 
         vm.prank(creator);
         uint256 pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(payload));
@@ -436,7 +440,7 @@ contract ExecutionTest is Test {
         internal
         returns (bytes memory payload, uint256 pid)
     {
-        payload = abi.encode(address(adapter), orders);
+        payload = abi.encode(address(adapter), MAX_SLIPPAGE_BPS, orders);
         vm.prank(creator);
         pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(payload));
         vm.prank(creator);
@@ -457,6 +461,89 @@ contract ExecutionTest is Test {
         // exactly as the flagship e2e test does. Rebalance now READS the oracle (H-4), which
         // makes this mandatory rather than incidental.
         _setAllSources(4_000e18);
+    }
+
+    /// @dev As {_passRebalance}, but the proposal carries an explicit slippage bound so a test can
+    /// prove the executed tolerance is the one the voters committed to.
+    function _passRebalanceWithBound(IExecutionAdapter.SwapOrder[] memory orders, uint256 boundBps)
+        internal
+        returns (bytes memory payload, uint256 pid)
+    {
+        payload = abi.encode(address(adapter), boundBps, orders);
+        vm.prank(creator);
+        pid = gov.propose(address(vault), Governance.ProposalType.Rebalance, keccak256(payload));
+        vm.prank(creator);
+        gov.commitVote(pid, keccak256(abi.encode(pid, creator, true, SALT)));
+        vm.prank(alice);
+        gov.commitVote(pid, keccak256(abi.encode(pid, alice, true, SALT)));
+        (uint64 commitD, uint64 revealD,) = _deadlines(pid);
+        vm.warp(commitD);
+        vm.prank(creator);
+        gov.revealVote(pid, true, SALT);
+        vm.prank(alice);
+        gov.revealVote(pid, true, SALT);
+        vm.warp(revealD);
+        gov.finalize(pid);
+        (,, uint64 execAt) = _deadlines(pid);
+        vm.warp(execAt);
+        _setAllSources(4_000e18);
+    }
+
+    // ── the bound is CARRIED BY THE PROPOSAL, not by a constant ──────────────────────────
+    //
+    // Before this, the tolerance every rebalance executed under was MAX_REBALANCE_SLIPPAGE_BPS —
+    // a compile-time constant that no voter had ever approved. These tests fail if it reverts to
+    // reading that constant, which is the only thing they are for.
+
+    /// @dev The discriminating case: one order, two proposals, different bounds, opposite
+    /// outcomes. A 1.5% shortfall clears the 2% ceiling but must NOT clear a 0.5% bound.
+    function test_slippageBound_tighterProposalBoundRejectsWhatTheCeilingAllows() public {
+        router.setRate(0.00025e18);
+        // 1500 USDC at $4,000/ETH is 0.375 ETH fair; ask for 0.369375 = 1.5% under.
+        IExecutionAdapter.SwapOrder[] memory orders = _usdcToWeth(1_500 * USDC_1, 0.369375e18);
+
+        (bytes memory loose, uint256 loosePid) = _passRebalanceWithBound(orders, 200);
+        gov.execute(loosePid, loose); // 1.5% < 2% ceiling: allowed
+
+        // Same order, same prices, bound tightened to 0.5%: the vault must refuse it.
+        IExecutionAdapter.SwapOrder[] memory orders2 = _usdcToWeth(1_500 * USDC_1, 0.369375e18);
+        (bytes memory tight, uint256 tightPid) = _passRebalanceWithBound(orders2, 50);
+        vm.expectRevert(VaultCore.MinOutTooLow.selector);
+        gov.execute(tightPid, tight);
+    }
+
+    /// @dev THE COMMIT-TIME PROPERTY. The bound is inside the bytes `actionHash` commits to, so a
+    /// payload whose bound differs from the proposed one is not the approved action at all.
+    function test_slippageBound_isFixedAtCommitTime_cannotBeSwappedAtExecute() public {
+        router.setRate(0.00025e18);
+        IExecutionAdapter.SwapOrder[] memory orders = _usdcToWeth(1_500 * USDC_1, 0.369375e18);
+        (, uint256 pid) = _passRebalanceWithBound(orders, 50);
+
+        // Re-encode the identical adapter and orders with a LOOSER bound and try to execute that.
+        bytes memory widened = abi.encode(address(adapter), uint256(200), orders);
+        vm.expectRevert(Governance.BadPayload.selector);
+        gov.execute(pid, widened);
+    }
+
+    /// @dev The ceiling still holds: a passing vote cannot widen the tolerance past what the
+    /// contract has always allowed.
+    function test_slippageBound_cannotExceedTheCeiling() public {
+        router.setRate(0.00025e18);
+        IExecutionAdapter.SwapOrder[] memory orders = _usdcToWeth(1_500 * USDC_1, 0.37e18);
+        (bytes memory payload, uint256 pid) =
+            _passRebalanceWithBound(orders, vault.MAX_REBALANCE_SLIPPAGE_BPS() + 1);
+        vm.expectRevert(VaultCore.BadSlippageBound.selector);
+        gov.execute(pid, payload);
+    }
+
+    /// @dev A zero bound would demand exact oracle parity and make every real swap unexecutable,
+    /// so it is rejected rather than silently freezing rebalancing.
+    function test_slippageBound_zeroIsRejected() public {
+        router.setRate(0.00025e18);
+        IExecutionAdapter.SwapOrder[] memory orders = _usdcToWeth(1_500 * USDC_1, 0.37e18);
+        (bytes memory payload, uint256 pid) = _passRebalanceWithBound(orders, 0);
+        vm.expectRevert(VaultCore.BadSlippageBound.selector);
+        gov.execute(pid, payload);
     }
 
     function _usdcToWeth(uint256 amountInUsdc, uint256 minOutWeth)

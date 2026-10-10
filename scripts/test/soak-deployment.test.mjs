@@ -12,6 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import fs from 'node:fs';
 import {
   parseDeployment, wiringExpectations, loadDeployment, deploymentPath, assertLiveChainId,
 } from '../soak/deployment.mjs';
@@ -88,6 +89,71 @@ test('parseDeployment rejects a malformed address rather than passing it to cast
   const raw = good();
   raw.singletons.Governance = '0xdeadbeef';
   assert.throws(() => parseDeployment(raw), /Governance is not a 20-byte address/);
+});
+
+// ── startBlock must never default to 0 ──────────────────────────────────────
+//
+// `d.startBlock ?? d.deployBlock ?? 0` used to fall through to 0 when the address book had
+// neither field. An indexer built from that would silently index from genesis — the exact shape
+// of the defect that cost a soak run ~2 hours against a 5-minute catch-up deadline (unset
+// START_BLOCK in .env, same failure, one layer down). These pin the refusal.
+
+test('parseDeployment refuses a book with neither startBlock nor deployBlock', () => {
+  const raw = good();
+  delete raw.startBlock;
+  assert.throws(() => parseDeployment(raw), /no startBlock or deployBlock/);
+});
+
+test('parseDeployment names the source file when it refuses', () => {
+  const raw = good();
+  delete raw.startBlock;
+  assert.throws(() => parseDeployment(raw, { source: '/tmp/my-book.json' }), /\/tmp\/my-book\.json.*no startBlock/);
+});
+
+test('parseDeployment falls back to deployBlock, not to 0, when startBlock is absent', () => {
+  const raw = good();
+  delete raw.startBlock;
+  raw.deployBlock = 46307173;
+  assert.equal(parseDeployment(raw).startBlock, 46307173);
+});
+
+test('parseDeployment refuses startBlock: 0', () => {
+  // 0 is a syntactically valid integer and would satisfy a bare `Number.isInteger` check, but it
+  // is never a real deploy block for any chain this repo targets, and it is the exact value the
+  // old `?? 0` fallback silently produced. Reject it the same as a missing field.
+  const raw = good();
+  raw.startBlock = 0;
+  assert.throws(() => parseDeployment(raw), /must be a positive integer, got 0/);
+});
+
+test('parseDeployment refuses a non-numeric startBlock', () => {
+  const raw = good();
+  raw.startBlock = 'not-a-block';
+  assert.throws(() => parseDeployment(raw), /must be a positive integer, got not-a-block/);
+});
+
+test('loadDeployment names the actual path in the refusal', () => {
+  const raw = good();
+  delete raw.startBlock;
+  delete raw.deployBlock;
+  const tmp = path.join(ROOT, 'scripts', 'test', 'fixtures', '.no-start-block.tmp.json');
+  fs.writeFileSync(tmp, JSON.stringify(raw));
+  try {
+    // The path itself must appear, not just the generic message — an operator staring at a
+    // refusal needs to know WHICH file to fix.
+    assert.throws(() => loadDeployment(tmp), (e) => {
+      assert.ok(e.message.includes(tmp), `expected the path ${tmp} in: ${e.message}`);
+      assert.match(e.message, /no startBlock or deployBlock/);
+      return true;
+    });
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});
+
+test('the committed base-sepolia address book carries a usable startBlock', () => {
+  const d = loadDeployment(BOOK, { expectChainId: 84532 });
+  assert.equal(d.startBlock, 46307173);
 });
 
 test('parseDeployment rejects an asset with no oracle sources', () => {

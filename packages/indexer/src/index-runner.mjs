@@ -144,6 +144,17 @@ export async function buildIndexer(cfg, { log, logger = loggerFromEnv('indexer')
     }),
   });
 
+  // BEFORE the first poll: prove the RPC is the chain CHAIN_ID names, or refuse to build at all
+  // (#204). Eager rather than lazy on purpose — every address in `cfg.addresses` and every log
+  // topic below is chain-specific, so an indexer pointed at the wrong chain does not produce a
+  // partial projection, it produces a confident wrong one that then gets written to STATE_PATH.
+  //
+  // Deliberately NOT inside a read: `fetchEvents`' callers treat a throw as one degraded poll and
+  // carry on, so a refusal raised down there would be logged as a warning and the daemon would keep
+  // indexing the wrong chain — the fix reintroducing the bug. This throws out of `buildIndexer`,
+  // which `main()` does not catch, so the process exits non-zero.
+  await source.assertBoundToDeclaredChain();
+
   const writer = createSnapshotWriter({
     path: cfg.statePath, backups: cfg.backups ?? 0, backupIntervalMs: cfg.backupIntervalMs ?? 0,
   });
@@ -177,6 +188,19 @@ export async function buildIndexer(cfg, { log, logger = loggerFromEnv('indexer')
     // START_BLOCK will never be discovered (its VaultCore events go unindexed). Set START_BLOCK
     // to the deploy block, not later. Warn so this is never silent.
     line(`⚠ indexer: START_BLOCK=${cfg.startBlock} on a fresh snapshot — vaults created before block ${cfg.startBlock} will NOT be discovered. Use the factory deploy block.`);
+  } else if (fresh && cfg.startBlock === 0) {
+    // START_BLOCK unset (or explicitly 0) on a fresh snapshot means "index from genesis" and was
+    // completely silent here: this branch never ran because `cfg.startBlock > 0` above is false
+    // for 0. On a chain with real history that is the same defect as the `?? 0` shape elsewhere in
+    // this repo — an unset value quietly doing something enormously expensive instead of failing —
+    // and it is exactly what cost a soak run ~2 hours of empty catch-up against a 5-minute deadline.
+    // This process has no notion of "the deployment record", so it cannot refuse outright the way
+    // the soak launcher now does; it can only make the choice loud.
+    logger.warn?.('indexer.startBlock.unsetOnFresh', {
+      detail: 'START_BLOCK is 0 (unset, or explicitly 0) on a fresh snapshot — indexing the ENTIRE chain from genesis',
+      fix: 'set START_BLOCK to the factory deploy block (contracts/config/deployments/<chain>.json: startBlock/deployBlock), unless indexing from genesis is genuinely intended',
+    });
+    line('⚠ indexer: START_BLOCK is 0 (unset) on a fresh snapshot — indexing the ENTIRE chain from genesis. Set START_BLOCK to the factory deploy block unless this is intended.');
   }
 
   const ac = new AbortController();

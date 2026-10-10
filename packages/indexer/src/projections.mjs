@@ -49,6 +49,9 @@
  * @property {bigint} forWeight
  * @property {bigint} againstWeight
  * @property {bigint} revealedWeight
+ * @property {bigint|null} delegatedForWeight cranked delegated weight on the FOR side (VO-2b), or
+ *   null when it was not recorded by the snapshot this state was resumed from; excluded
+ *   from `revealedWeight` and subtracted out of the sub-five stake terms by `finalize`
  * @property {number} revealedVoters
  */
 
@@ -345,6 +348,7 @@ export function apply(state, e) {
         againstWeight: 0n,
         revealedWeight: 0n,
         revealedVoters: 0,
+        delegatedForWeight: 0n,
       });
       state.activeProposal.set(a.vault, pid);
       break;
@@ -367,7 +371,18 @@ export function apply(state, e) {
         const w = big(a.weight ?? 0);
         if (a.support) p.forWeight += w;
         else p.againstWeight += w;
-        if (e.name === 'DelegatedRevealed') p.revealedWeight += w; // defaults never count in quorum
+        // VO-2b: NEITHER of these two events feeds `revealedWeight`. Both are absentee weight —
+        // an applied standing default and a cranked delegation — and absentee weight counts toward
+        // the tally and never toward quorum. `DelegatedRevealed` used to increment it here, which
+        // mirrored the contract faithfully and mirrored a defect: one member's reveal plus a
+        // permissionless cranker reached quorum on chain. See Governance.revealDelegated and
+        // contracts/test/audit/AuditDelegatedQuorum.t.sol.
+        // ONCE UNKNOWN, ALWAYS UNKNOWN. `null` arrives from a pre-VO-2b snapshot that recorded no
+        // cranked history; adding the cranks seen since would produce a definite number that is
+        // definitely too small, which is worse than reporting that it is not known.
+        if (e.name === 'DelegatedRevealed' && a.support && p.delegatedForWeight !== null) {
+          p.delegatedForWeight += w;
+        }
       }
       break;
     }

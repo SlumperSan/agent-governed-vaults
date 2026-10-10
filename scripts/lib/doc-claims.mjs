@@ -118,9 +118,9 @@ export function isHistoricalRecord(text) {
  * claim is retracted when a marker appears within `RETRACTION_WINDOW` lines after it, and the
  * marker must carry a DATE.
  *
- * The date requirement is not decoration — it is what makes this safe. `**STALE**` is already used
- * in `docs/vault/launch-readiness-gates.md` as a *status value* in the gate table ("| 2 | Testnet
- * full lifecycle proven | **STALE** — ..."). Matching a bare `**STALE**` silenced a live citation
+ * The date requirement is not decoration — it is what makes this safe. `**STALE**` is also used as a
+ * *status value* in gate tables ("| 2 | Testnet full lifecycle proven | **STALE** — ..."), and
+ * matching a bare `**STALE**` silenced a live citation
  * fourteen lines away in an unrelated row, which is precisely the fail-silent direction this whole
  * module exists to avoid; the first version of this function did exactly that and the waiver
  * bookkeeping is what surfaced it. Every genuine retraction in this repo and vault is dated

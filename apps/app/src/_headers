@@ -29,11 +29,12 @@
 #   /app.css and nothing else. This also blocks every style="..." attribute in
 #   the document, so the markup carries none.
 #
-# connect-src 'self' https://rpc.mainnet.chain.robinhood.com
-#   THE ONE THIRD-PARTY ORIGIN ON THIS PAGE, and it is the chain's own public
-#   RPC. It is what makes the LIVE READS panel possible and it is the entire
-#   list. Narrow it and the reads stop; widen it and the page can talk to
-#   somewhere the reader did not agree to.
+# connect-src 'self'
+#   No third-party origin. The protocol is not deployed on Arc, so this page
+#   makes no chain call: there is no address for it to read and no RPC to call.
+#   This used to name the abandoned chain's public RPC, which made the LIVE
+#   READS panel possible. Widen this only when a live read exists again to
+#   point at, not before.
 #
 # img-src 'self'
 #   The favicon. There is no other image and no data: or blob: anywhere.
@@ -57,7 +58,7 @@
 #   first stops the path leaking to the explorer on an outbound click, the
 #   second turns off device APIs this page does not use and must never use.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://rpc.mainnet.chain.robinhood.com; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()

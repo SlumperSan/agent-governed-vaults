@@ -263,7 +263,9 @@ MODE I — instant (common path)
   • Preview an ITEMIZED "what you'll receive": in-kind pro-rata slice of EVERY basket
     asset + share of idle USDC, MINUS the exit fee (§4.5). Show per-asset amounts.
   • Exit-fee line: current fee = feeMax·max(0,1 − tenure/decay) (§4.6). Show the exact
-    number AND "fee accrues to REMAINING members, not the operator" (§4.6) — this is a
+    number AND "fee stays in the vault, adding to the value of every REMAINING share" (§4.6) — the
+    operator shares in it only through its own position (THREAT-MODEL EE-9), so never print "not
+    the operator" — this is a
     trust-positive fact that reads as a scam if unexplained.
   • [SIGN] exit → settles in the same transaction at current NAV. Shares burn at
     settlement. Done.
@@ -542,7 +544,8 @@ Ordered by how hard they block the build.
    over display names, and show operator losses and wound-down vaults (no cherry-picking).
 6. **Disclose fees where the decision is made:** an exit-fee decay widget, an itemized in-kind
    payout preview, and the contract-mirrored stacked sub-vault math, with the trust-positive
-   truth that exit fees accrue to members, not the operator.
+   truth that exit fees stay in the vault and accrue pro rata to every member who remains —
+   never routed to the operator, who shares in them only through its own position.
 7. **The current data layer cannot back this product.** New indexer projections (proposal state,
    per-member position/pending, Mode-F queue, HWM carry, NAV/basket, operator names) are a
    precondition, and `vaultCount` is currently broken. These are ship-blockers, not polish.

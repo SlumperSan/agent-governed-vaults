@@ -265,7 +265,10 @@ contract GovernanceTest is Test {
         (,,,,,,,,,,,, uint256 forW, uint256 againstW, uint256 revealedW,) = _p(pid);
         assertEq(againstW, 2_000 * USDC_1 * 1e12, "carol's weight follows alice");
         assertEq(forW, 1_000 * USDC_1 * 1e12);
-        assertEq(revealedW, 3_000 * USDC_1 * 1e12, "delegated reveal counts in quorum");
+        // VO-2b: the crank moves the TALLY and never the QUORUM numerator, so `revealedWeight` is
+        // creator's and alice's own reveals only - carol's cranked 1000 is absent from it.
+        // test/audit/AuditDelegatedQuorum.t.sol is why.
+        assertEq(revealedW, 2_000 * USDC_1 * 1e12, "cranked weight is excluded from quorum");
     }
 
     function test_concentrationCapBlocksExcessDelegation() public {
@@ -579,9 +582,9 @@ contract GovernanceTest is Test {
         // test/audit/AuditProposalThresholdFloor.t.sol for the freeze that one would cause.
         Governance.GovConfig memory c = _cfg();
 
-        // Concentration cap at 100%: one delegate carries all snapshot stake, so a single live
-        // participant plus a permissionless cranker manufactures full quorum from offline
-        // delegators. Refused.
+        // Concentration cap at 100%: one delegate carries all snapshot stake and can swing the
+        // whole TALLY. Refused. (It is not a quorum defence - cranked weight never reaches
+        // `revealedWeight` at all under VO-2b; see test/audit/AuditDelegatedQuorum.t.sol.)
         c = _cfg();
         c.concentrationCapBps = 10_000;
         _expectBadConfig(c);

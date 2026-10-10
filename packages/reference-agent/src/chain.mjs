@@ -11,7 +11,14 @@
  * Read set, and why each one is load-bearing:
  *
  *   VaultCore.navPerShareWad()        drawdown policy, and the oracle liveness probe (below)
- *   VaultCore.exitFeeBpsOf(member)    join gate — the fee THIS agent would actually pay
+ *   VaultCore.exitFeeBpsOf(member)    join gate — the TENURE-DECAYED fee, which is NOT always the
+ *                                       fee this agent would pay. The sole-holder waiver is applied
+ *                                       at settlement (`_settleExit` zeroes it when the member holds
+ *                                       every share) and this view does not model it, as its own
+ *                                       NatSpec says: "before any sole-holder waiver applied at
+ *                                       settlement". A sole holder reading this view is told it owes
+ *                                       a fee it does not owe. Treat it as a ceiling on the join
+ *                                       decision, never as the amount
  *   VaultCore.pendingDeposit(member)  → (amount, availableAt): schedule activate at the REAL
  *                                       window end, not a guessed now+4h
  *   VaultCore.sharesOf/queuedExitShares/windowCleared/skipOptIn/capacityCapUsdc/totalAssets
@@ -32,6 +39,8 @@
  * repeated NAV-read failure as its degradation signal and the docs say plainly that this is
  * detection after the fact, not prevention.
  */
+
+import { assertChainBinding } from '../../chain-config/src/chain-binding.mjs';
 
 const lc = (a) => (typeof a === 'string' ? a.toLowerCase() : a);
 
@@ -199,6 +208,30 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
 
   return {
     read,
+
+    /**
+     * Refuse unless the RPC actually answers for `chainId` (#204). `run.mjs` calls this right after
+     * building the reader, before the first read.
+     *
+     * `chainId` here DEFAULTS to 84532, and `run.mjs`'s `TESTNET_CHAIN_IDS` gate tests that declared
+     * value rather than one read from the RPC — so `--rpc <some mainnet>` with `--chain-id` left
+     * alone passes the testnet gate and then reads mainnet addresses believing it is on Base
+     * Sepolia. This closes that: the declared id is checked AGAINST the connection instead of being
+     * asserted onto it.
+     *
+     * Only the `rpcUrl` path is bound; an injected client (tests) came from this same process.
+     * Throws `ChainBindingError` rather than degrading a field — every `read` below is deliberately
+     * fault-tolerant, and "one field came back null" is not how a wrong chain should present.
+     */
+    async assertBoundToDeclaredChain() {
+      if (client) return { ok: true, message: 'client injected — no RPC was resolved by this module' };
+      return assertChainBinding({
+        client: await getClient(),
+        declaredChainId: chainId,
+        rpc: rpcUrl ?? '(no rpcUrl)',
+        declaredBy: `the agent --chain-id (${chainName})`,
+      });
+    },
 
     /**
      * Everything about one vault the agent needs, from the agent's own point of view.

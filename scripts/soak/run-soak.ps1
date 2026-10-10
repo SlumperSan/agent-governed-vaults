@@ -34,6 +34,20 @@
 # Env SET by this script (your value is overwritten): SOAK_SIGNER_ARGS, SOAK_PROBE_MEMBER,
 #                          SOAK_PHASE, AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS, SOAK_AGENT_KEYSTORE,
 #                          SOAK_AGENT_KEYSTORE_PASSWORD
+#                          START_BLOCK - defaulted from startBlock/deployBlock in the SOAK_DEPLOYMENT
+#                          address book, ONLY if not already set in your environment. The script
+#                          refuses to start (throws before launching anything) if that record has no
+#                          usable block, rather than letting the indexer default it to 0.
+#
+# Also refuses to start if the smoke vault already carries an unfinalized proposal from an earlier
+# aborted run (scripts/soak/preflight-governance.mjs) -- prints the diagnosis and, where one exists,
+# the exact `cast send ... finalize(uint256) ...` (or markExpired) remedy. Never sends it for you.
+#
+# Also refuses to start if the api would crash on boot (scripts/soak/preflight-api-env.mjs, e.g. a
+# missing PRICE_ASSET/PRICE_PAYTO) or if the configured RPC rate-limits under this launcher's own
+# concurrency (scripts/soak/preflight-rpc-concurrency.mjs). And every service this script starts or
+# reuses (Start-ManagedProcess, soak-pidset.psm1) is only reported/recorded as running once it has
+# survived a moment past launch -- a pid is not evidence a process survived.
 
 param(
   [string]$SignerPasswordFile = "$env:USERPROFILE\.soak.pw",
@@ -45,24 +59,35 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$LogDir  = Join-Path $Root 'logs'
+# SOAK_LOG_DIR overrides where the pid file and logs live -- undocumented for normal use (the
+# default is right), but it is what lets a test point a real invocation of THIS script at a throwaway
+# directory instead of the worktree's own logs/, so -Status/-Stop can be exercised for real without
+# colliding with (or leaving behind) state from an actual run.
+$LogDir  = if ($env:SOAK_LOG_DIR) { $env:SOAK_LOG_DIR } else { Join-Path $Root 'logs' }
 $PidFile = Join-Path $LogDir 'soak-pids.txt'
+
+Import-Module -Force (Join-Path $PSScriptRoot 'soak-pidset.psm1')
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Set-Location $Root
 
 # ── -Status / -Stop ──────────────────────────────────────────────────────────
+# Both read ONLY Get-ManagedPidEntries / Test-ManagedProcessAlive (soak-pidset.psm1) -- the same
+# functions every start-or-reuse path below writes through, so what -Stop kills and what -Status
+# reports can never diverge from what this script actually considers "ours".
 
 if ($Status) {
   Write-Host "`n=== running processes ===" -ForegroundColor Cyan
-  if (Test-Path $PidFile) {
-    foreach ($line in Get-Content $PidFile) {
-      $name, $procId = $line -split '=', 2
-      $alive = $null -ne (Get-Process -Id $procId -ErrorAction SilentlyContinue)
+  $entries = Get-ManagedPidEntries $PidFile
+  if ($entries.Count -eq 0) {
+    Write-Host '  (no pid file - nothing was started)'
+  } else {
+    foreach ($e in $entries) {
+      $alive = Test-ManagedProcessAlive -ProcessId $e.ProcessId -Needle $e.Needle
       $tag = if ($alive) { 'RUNNING' } else { 'exited ' }
-      Write-Host ("  [{0}] {1} (pid {2})" -f $tag, $name, $procId)
+      Write-Host ("  [{0}] {1} (pid {2})" -f $tag, $e.Name, $e.ProcessId)
     }
-  } else { Write-Host '  (no pid file - nothing was started)' }
+  }
   Write-Host "`n=== log tails ===" -ForegroundColor Cyan
   Get-ChildItem $LogDir -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object {
     Write-Host "`n--- $($_.Name) ---" -ForegroundColor Yellow
@@ -72,14 +97,20 @@ if ($Status) {
 }
 
 if ($Stop) {
-  if (Test-Path $PidFile) {
-    foreach ($line in Get-Content $PidFile) {
-      $name, $procId = $line -split '=', 2
-      try { Stop-Process -Id $procId -Force -ErrorAction Stop; Write-Host "stopped $name (pid $procId)" }
-      catch { Write-Host "$name (pid $procId) was not running" }
+  $entries = Get-ManagedPidEntries $PidFile
+  if ($entries.Count -eq 0) {
+    Write-Host 'nothing to stop'
+  } else {
+    foreach ($e in $entries) {
+      if (Test-ManagedProcessAlive -ProcessId $e.ProcessId -Needle $e.Needle) {
+        try { Stop-Process -Id $e.ProcessId -Force -ErrorAction Stop; Write-Host "stopped $($e.Name) (pid $($e.ProcessId))" }
+        catch { Write-Host "$($e.Name) (pid $($e.ProcessId)) was not running" }
+      } else {
+        Write-Host "$($e.Name) (pid $($e.ProcessId)) was not running"
+      }
     }
-    Remove-Item $PidFile -Force
-  } else { Write-Host 'nothing to stop' }
+    Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+  }
   exit 0
 }
 
@@ -101,10 +132,33 @@ $Book = if ($env:SOAK_DEPLOYMENT) {
           if ([System.IO.Path]::IsPathRooted($env:SOAK_DEPLOYMENT)) { $env:SOAK_DEPLOYMENT }
           else { Join-Path $Root $env:SOAK_DEPLOYMENT }
         } else { Join-Path $Root 'contracts\config\deployments\base-sepolia.json' }
+if (-not (Test-Path $Book)) { throw "deployment record not found: $Book - set SOAK_DEPLOYMENT or fix the default path" }
+$BookJson = Get-Content -Raw $Book | ConvertFrom-Json
 # Read the signer from that book rather than repeating it here. The preflight below unlocks a
 # keystore and compares the derived address against this value, so a second copy that drifted would
 # reject the correct key or accept the wrong one.
-$Deployer = (Get-Content -Raw $Book | ConvertFrom-Json).deployer
+$Deployer = $BookJson.deployer
+
+# START_BLOCK for the indexer this script starts, from the SAME address book as $Deployer above -
+# not from .env, and never defaulted to 0. This is the fix for the 2026-09 soak failure: .env.example
+# ships START_BLOCK=0 as a placeholder, an operator's .env can carry that unedited or omit the line
+# entirely, and index-runner.mjs's own default is 0 - so a normal `cp .env.example .env` produces an
+# indexer that silently starts at the genesis block instead of the deployment's. Measured that day:
+# lastBlock stuck near 2.8M against a chain head of 47.13M, ~2 hours to catch up against this
+# script's own 5-minute deadline below.
+#
+# Setting $env:START_BLOCK here (before Start-Service-Once launches the indexer with
+# --env-file=.env) wins over a stale or absent line in .env: Node's --env-file does NOT override a
+# variable already present in the process environment (verified against the Node version in this
+# worktree: `START_BLOCK=123 node --env-file=<file with START_BLOCK=0> -e "console.log(...)"` prints
+# 123). An operator's own explicit override - set before invoking this script - is still respected.
+$bookStartBlock = $BookJson.startBlock
+if (-not $bookStartBlock) { $bookStartBlock = $BookJson.deployBlock }
+if (-not $bookStartBlock -or [int]$bookStartBlock -le 0) {
+  throw "deployment record $Book has no usable startBlock or deployBlock - refusing to start the indexer, which would otherwise default START_BLOCK to 0 and index the entire chain from genesis. Fix the address book before running the soak."
+}
+if (-not $env:START_BLOCK) { $env:START_BLOCK = "$bookStartBlock" }
+Write-Host "  START_BLOCK = $env:START_BLOCK (from $Book)" -ForegroundColor Green
 
 $env:SOAK_SIGNER_ARGS = "--account deployer --password-file $SignerPasswordFile"
 
@@ -123,6 +177,21 @@ if ($LASTEXITCODE -ne 0 -or "$addr".Trim() -ne $Deployer) {
 }
 Write-Host "  OK - signer resolves to $Deployer" -ForegroundColor Green
 Write-Host "  SOAK_SIGNER_ARGS = $env:SOAK_SIGNER_ARGS"
+
+# Governance preflight: refuse loudly, before starting anything, if the smoke vault already
+# carries a proposal from an earlier aborted run that governance's per-vault serialization would
+# block every drill on. Measured 2026-09: track B failed at drill 2 twelve days after a run
+# proposed-then-abandoned, with a message that named the symptom ("proposal 11 in status Active")
+# deep inside drill 2's own preflight rather than the fix, before any drill had even started this
+# time. scripts/soak/preflight-governance.mjs reads the SAME governance state and, when it refuses,
+# prints the exact remedy command using the SOAK_SIGNER_ARGS just proven above -- but it never
+# sends anything itself: finalizing on the operator's behalf, even to clear the script's own mess,
+# is a broadcast this launcher must not make silently.
+Write-Host "`nchecking governance state on the smoke vault..." -ForegroundColor Cyan
+& node (Join-Path $PSScriptRoot 'preflight-governance.mjs')
+if ($LASTEXITCODE -ne 0) {
+  throw 'governance preflight refused to proceed (see the diagnosis and remedy printed above) -- settle it, then re-run'
+}
 
 $runAgent = -not $SkipAgent
 if ($runAgent -and -not (Test-Path $AgentPasswordFile)) {
@@ -154,22 +223,57 @@ $env:SOAK_API         = if ($env:SOAK_API) { $env:SOAK_API } else { 'http://127.
 # none, so the absence can never be silent again. Set SOAK_VAULTS only to override that.
 $env:SOAK_PROBE_MEMBER = $Deployer
 
+# Services read their configuration from .env (RPC_URL, the contract addresses, START_BLOCK,
+# STATE_PATH, ...). Starting them WITHOUT --env-file silently produces a differently-configured
+# indexer pointing at defaults, which is worse than not starting one at all. Resolved here (rather
+# than right before Start-Service-Once, where it used to live) so the api-env preflight below
+# checks the environment under EXACTLY the flag the api will actually be started with.
+$EnvArg = @()
+if (Test-Path (Join-Path $Root '.env')) { $EnvArg = @('--env-file=.env') }
+else { Write-Host "`n  WARNING: no .env found - services will run on defaults" -ForegroundColor Yellow }
+
+# API env preflight: refuse loudly, before spawning anything, if the api would crash at startup.
+# Measured: run-soak.ps1 printed "started api pid 23120" for an api that had already crashed
+# inside resolveApiConfig on a missing PRICE_ASSET/PRICE_PAYTO -- a pid is not evidence a process
+# survived (Start-ManagedProcess, above, is the OTHER half of that fix, for whichever env problem
+# this preflight does not anticipate). This calls the REAL resolveApiConfig, not a hand-copied
+# list of required vars, with the SAME --env-file the api itself launches under.
+Write-Host "`nchecking the api would boot with this environment..." -ForegroundColor Cyan
+& node $EnvArg (Join-Path $PSScriptRoot 'preflight-api-env.mjs')
+if ($LASTEXITCODE -ne 0) {
+  throw 'api env preflight refused to proceed (see the missing/invalid var printed above) -- fix .env, then re-run'
+}
+
+# RPC concurrency preflight: refuse loudly if the configured endpoint rate-limits under the load
+# THIS launcher itself creates (indexer + canary + sampler + 2 drill tracks, all polling the same
+# RPC). Measured: `over rate limit` from sepolia.base.org on eth_getLogs mid-soak, degrading the
+# indexer (poll.failed) and blinding the canary (DETECTOR BROKEN) for hours. A DIFFERENT failure
+# from the pruning one lib.mjs already guards -- see the script's own header for why, and why this
+# fires a bounded concurrent burst rather than either hammering the endpoint or asking once.
+#
+# HONEST SCOPE, stated here because this is where an operator actually reads it: this is a
+# ~1-2s STARTUP TRIPWIRE, not a sustained-load guarantee. A clean result rules out an endpoint
+# that is already struggling right now; it says nothing about throttling that only emerges after
+# hours of continuous concurrent polling, which is the actual failure this preflight exists
+# because of. Do not reword the line below back toward "sustains"/"survives the run" -- that
+# wording is exactly the defect this preflight was written to stop happening one level up.
+Write-Host "`nprobing whether the RPC endpoint serves this run's concurrency right now (startup tripwire, not a sustained-load guarantee)..." -ForegroundColor Cyan
+& node (Join-Path $PSScriptRoot 'preflight-rpc-concurrency.mjs')
+if ($LASTEXITCODE -ne 0) {
+  throw 'RPC concurrency preflight refused to proceed (see the diagnosis and remedy printed above) -- point SOAK_RPC at a dedicated endpoint, or SOAK_RPC_CONCURRENCY_CHECK=skip to proceed anyway'
+}
+
 # ── launch ───────────────────────────────────────────────────────────────────
 
 if (Test-Path $PidFile) { Remove-Item $PidFile -Force }
 
-# NOTE: the argument parameter must NOT be called $Args. PowerShell is case-insensitive and
-# $args is an automatic variable, so a parameter of that name is silently shadowed by the
-# (empty) built-in and Start-Process receives null.
-function Start-Bg([string]$Name, [string]$File, [string[]]$ArgList) {
-  $out = Join-Path $LogDir "$Name.log"
-  $err = Join-Path $LogDir "$Name.err.log"
-  $p = Start-Process -FilePath $File -ArgumentList $ArgList -NoNewWindow -PassThru `
-       -RedirectStandardOutput $out -RedirectStandardError $err
-  Add-Content -Path $PidFile -Value "$Name=$($p.Id)"
-  Write-Host ("  started {0,-16} pid {1}" -f $Name, $p.Id) -ForegroundColor Green
-  return $p
-}
+# NOTE: an argument-list parameter must NOT be called $Args -- PowerShell is case-insensitive and
+# $args is an automatic variable, so a parameter of that name is silently shadowed by the (empty)
+# built-in and Start-Process receives null. (Kept as a note here: Start-ManagedProcess, in
+# soak-pidset.psm1, is what actually launches everything below -- it starts the process, waits a
+# moment, and reports/records FAILED rather than started if it did not survive that moment. That
+# is the fix for run-soak.ps1 once printing "started api pid 23120" for an api that had already
+# crashed inside resolveApiConfig on a missing required env var.)
 
 # One track step: run a node script, and abandon the track if it fails.
 #
@@ -186,15 +290,9 @@ function New-NodeStep([string]$Script, [string]$Phase = '') {
 # starts the moment drill 1 finishes without anyone watching for it. Each element must be a
 # single-line statement - they are joined with '; '.
 function Start-Track([string]$Name, [string[]]$Steps) {
-  return Start-Bg $Name 'powershell.exe' @('-NoProfile','-ExecutionPolicy','Bypass','-Command', ($Steps -join '; '))
+  return Start-ManagedProcess -PidFile $PidFile -LogDir $LogDir -Name $Name -File 'powershell.exe' `
+    -ArgList @('-NoProfile','-ExecutionPolicy','Bypass','-Command', ($Steps -join '; '))
 }
-
-# Services read their configuration from .env (RPC_URL, the contract addresses, START_BLOCK,
-# STATE_PATH, ...). Starting them WITHOUT --env-file silently produces a differently-configured
-# indexer pointing at defaults, which is worse than not starting one at all.
-$EnvArg = @()
-if (Test-Path (Join-Path $Root '.env')) { $EnvArg = @('--env-file=.env') }
-else { Write-Host "`n  WARNING: no .env found - services will run on defaults" -ForegroundColor Yellow }
 
 # A second copy of a service is not harmless: two indexers write the same STATE_PATH, and two
 # samplers interleave lines into the same series. Detect what is already running and leave it.
@@ -213,16 +311,34 @@ function Start-Service-Once([string]$Name, [string]$Script) {
     } else {
       Write-Host ("  {0,-8} already running (pid {1}) - reusing it" -f $Name, $ids) -ForegroundColor Yellow
     }
-    return
+    # Record every REUSED pid too, not only freshly-started ones. -Stop and -Status only ever see
+    # $PidFile (via soak-pidset.psm1); a service this invocation is relying on -- because it
+    # skipped starting a duplicate -- but never wrote down cannot be stopped or shown by either.
+    # This is the actual shape of the measured defect: indexer/canary/sampler were "already
+    # running" from an earlier invocation and this branch ran for them, silently, while only the
+    # freshly-started service (that one run: api) ended up in the new $PidFile.
+    foreach ($p in $existing) { Add-ManagedPid -PidFile $PidFile -Name $Name -ProcessId $p.ProcessId -Needle $Script }
+    return $true
   }
-  Start-Bg $Name 'node' ($EnvArg + @($Script)) | Out-Null
+  $p = Start-ManagedProcess -PidFile $PidFile -LogDir $LogDir -Name $Name -File 'node' -ArgList ($EnvArg + @($Script)) -Needle $Script
+  return $null -ne $p
 }
 
 Write-Host "`nstarting read-only services..." -ForegroundColor Cyan
-Start-Service-Once 'indexer' 'packages/indexer/src/index-runner.mjs'
-Start-Service-Once 'api'     'apps/api/src/serve.mjs'
-Start-Service-Once 'canary'  'packages/canary/src/canary-runner.mjs'
-Start-Service-Once 'sampler' 'scripts/soak/oracle-sampler.mjs'
+# Each of these FOUR is load-bearing for the whole run (drill 2 reads the api; every drill reads
+# the indexer through it or through the canary's own projection; the sampler is the freeze-safety
+# leg). A core service that died on arrival and went unreported is exactly the defect this fixes,
+# so a confirmed launch failure here stops the run NOW, in the first few seconds, rather than
+# hours into a 14h soak when a drill finally trips over its absence in a way that reads as an
+# unrelated failure.
+$coreOk = $true
+$coreOk = (Start-Service-Once 'indexer' 'packages/indexer/src/index-runner.mjs') -and $coreOk
+$coreOk = (Start-Service-Once 'api'     'apps/api/src/serve.mjs') -and $coreOk
+$coreOk = (Start-Service-Once 'canary'  'packages/canary/src/canary-runner.mjs') -and $coreOk
+$coreOk = (Start-Service-Once 'sampler' 'scripts/soak/oracle-sampler.mjs') -and $coreOk
+if (-not $coreOk) {
+  throw 'one or more core services failed to start (see FAILED above and its .err.log tail) -- refusing to proceed into drills against a service set that is not actually running'
+}
 
 # The indexer must be running and CAUGHT UP before createVault is signed, or drill 1's
 # dynamic-discovery claim is indistinguishable from a cold backfill. Rather than sleeping a

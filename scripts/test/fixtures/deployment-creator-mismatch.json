@@ -1,0 +1,7 @@
+{
+  "chainName": "base-sepolia",
+  "chainId": 84532,
+  "_fixtureNote": "FIXTURE. Identical to deployment-happy.json except intendedCreator names an EOA that is NOT the fake chain's signer (cast-fixture-chain.mjs SIGNER_ADDR) -- the exact 4663 shape, driven through the REAL runner rather than through a unit test of requireIntendedCreator alone. Before this fixture existed, no scenario exercised requireIntendedCreator's own refusal end to end: every negative control in smoke-test-harness.test.mjs faults something AFTER stepCreateVault's first guard, so a helper that swallowed only requireIntendedCreator's throw (leaving requireCreatorCode intact) reached BROADCAST at full green.",
+  "intendedCreator": "0x1111111111111111111111111111111111111111",
+  "intendedCreatorKind": "eoa"
+}

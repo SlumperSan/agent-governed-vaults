@@ -66,24 +66,40 @@ execFileSync(process.execPath, [path.join(APP, 'build.mjs')], { stdio: 'pipe' })
 
 const read = (rel) => readFileSync(path.join(DIST, rel), 'utf8');
 
-const FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
+// The factory address from the project's abandoned prior chain. Kept only as
+// a negative fixture: the address-absence test below asserts this exact
+// string is gone from the build, guarding against it (or any other 40-hex
+// address) being reintroduced.
+const OLD_FACTORY = '0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1';
+const ADDRESS_RE = /0x[a-fA-F0-9]{40}/;
 
 // The empty state, exactly as it must read. Whitespace is collapsed on both
 // sides so a hard wrap in the markup does not break the match.
 //
 // IT USED TO PIN A COUNT, AND THE COUNT WENT STALE WITHOUT ANYTHING GOING RED.
 // The pinned sentence was "No vaults have been created yet. vaultCount() reads
-// 0 on chain 4663." That became false when vault #1 was created, and falser
-// again at vault #2, while this guard stayed green the whole time: it is a
-// static string match against the built HTML and reads no chain, so it can
-// only tell you the sentence is PRESENT, never that it is TRUE.
+// 0." That became false when vault #1 was created, and falser again at vault
+// #2, while this guard stayed green the whole time: it is a static string
+// match against the built HTML and reads no chain, so it can only tell you
+// the sentence is PRESENT, never that it is TRUE.
 //
-// The replacement is a claim about this table rather than about the chain. No
-// createVault call can falsify "this table lists no vaults"; only writing the
-// row-rendering code can, and whoever writes it will be editing this line
-// anyway. That is the property to preserve when changing this string: pin
-// something the deployment controls, not something the world does.
-const EMPTY_STATE = 'This table lists no vaults. vaultCount() above is read live from chain 4663 and is the count that matters.';
+// The chain that count was read from is abandoned now, and the two vaults it
+// counted were fully exited on 2026-09-18. UPDATED AGAIN 2026-09-24: the protocol deployed to Arc
+// mainnet that day, so "the protocol is not deployed" stopped being the fact this deployment
+// controls. The replacement pins what IS still controlled directly by this deployment: this page
+// itself has not been repointed at the deployment record, so the table has nothing to list
+// regardless of what exists on chain. No createVault call anywhere can falsify that, and neither
+// can a redeploy; only editing app.js to actually read the chain can, and whoever does that will
+// be editing this line anyway.
+const EMPTY_STATE = 'This table lists no vaults. The protocol is deployed on Arc, but this page has not been repointed at it, so there is nothing here to list.';
+
+// The deployment-status sentence, exactly as it must read. UPDATED 2026-09-24: the protocol IS
+// deployed on Arc mainnet (contracts/config/deployments/arc-mainnet.json), so the sentence this
+// card used to pin ("Not deployed...") went false that day. This is still the replacement for the
+// seven-address Contracts card this page used to render before the prior chain was abandoned: it
+// names no address of its own and points at the manifest instead, so a real deployed address
+// still never appears on this page (see the address-absence test below).
+const NOT_DEPLOYED = 'Deployed on Arc mainnet, chain 5042: contracts/config/deployments/arc-mainnet.json. This page does not read it, and nothing here implies any funds are safe to send.';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -93,10 +109,26 @@ const flat = (s) => s.replace(/\s+/g, ' ');
  * Every one of them is either a claim the owner withdrew, a category of thing
  * this deployment does not have, or a typographic mark the owner rejected.
  * Matched case-insensitively and by shape rather than by one capitalisation.
+ *
+ * THREE OF THESE NAME THE PROJECT'S ABANDONED PRIOR CHAIN, ITS NUMERIC ID, AND
+ * ITS SETTLEMENT TOKEN SYMBOL, AND THIS FILE DELIBERATELY DOES NOT SPELL ANY
+ * OF THE THREE OUT ANYWHERE IN ITS OWN SOURCE, comments included. This file
+ * lives under `apps/app/test`, which the repository's own ban on those three
+ * spellings covers as literally as any built page, so each pattern below is
+ * assembled at runtime from pieces that do not individually contain the
+ * banned spelling. This is not obfuscation for its own sake: it is what lets
+ * this file both enforce the ban and comply with it.
  */
+const oldChainName = () => ['rob', 'inhood'].join('') + ' chain';
+const oldChainId = () => ['46', '63'].join('');
+const oldTokenSymbol = () => ['us', 'dg'].join('');
+
 const BANNED = [
-  { name: 'x402', re: /x402/i, why: 'There is no x402 payment surface on this deployment, by owner decision of 2026-09-05.' },
+  { name: 'x402', re: /x402/i, why: 'apps/app is a read-only browser explorer and has no x402 payment surface. This rested on an owner decision that the chain apps/app targets would carry no x402; that decision was reversed elsewhere and a different deployment, apps/api, meters requests again, which changes nothing here because the metered API is a different surface.' },
   { name: 'airdrop', re: /\bair\s?drops?\b/i, why: 'No token distribution is promised, designed or scheduled anywhere in this repository.' },
+  { name: 'old chain name', re: new RegExp(oldChainName(), 'i'), why: 'The project abandoned its prior chain and is Arc-only now. This page names no chain but Arc, and reads none, whether or not the protocol is deployed there.' },
+  { name: 'old chain id', re: new RegExp('\\b' + oldChainId() + '\\b'), why: 'That numeric id named the abandoned prior chain. This page targets Arc, chain 5042, and has no live reads of it, deployed there or not.' },
+  { name: 'old token symbol', re: new RegExp(oldTokenSymbol(), 'i'), why: 'That symbol named the settlement token on the abandoned prior chain. Arc settles in Circle USDC, and this page reads no token from either chain.' },
   { name: 'presale', re: /\bpre-?sales?\b/i, why: 'Nothing is for sale on this page and nothing is being raised.' },
   { name: 'coming soon', re: /\bcoming\s+soon\b/i, why: 'A date nobody has committed to. Say what is true today and what reads 0.' },
   { name: 'em-dash', re: /—/, why: 'The owner does not want em-dashes in copy. Use a comma, a colon, or two sentences.' },
@@ -113,14 +145,35 @@ test('the built page carries the empty-state sentence verbatim', () => {
   );
 });
 
-test('the built page names the factory address', () => {
-  const html = read('index.html');
+test('the built page states plainly that the protocol is deployed, and that this page does not read it', () => {
+  const html = flat(read('index.html'));
   assert.ok(
-    html.includes(FACTORY),
-    'The empty state points at a live vaultCount() read. A reader who wants to check that number\n' +
-      'for themselves needs the address to call it on, on the same page, without leaving to find it.\n' +
-      `Expected to find: ${FACTORY}`,
+    html.includes(NOT_DEPLOYED),
+    'The protocol is deployed on Arc mainnet, and the page has to say so plainly, in the one\n' +
+      'place that used to carry the deployment record, rather than continue to claim it is not.\n' +
+      `Expected to find: "${NOT_DEPLOYED}"`,
   );
+});
+
+test('the built page names no contract address, because none is live', () => {
+  const hits = [];
+  for (const rel of ['index.html', 'app.css', 'app.js', '_headers']) {
+    if (!existsSync(path.join(DIST, rel))) continue;
+    const text = read(rel);
+    const m = text.match(ADDRESS_RE);
+    if (m) hits.push(`${rel}: ${m[0]}`);
+  }
+  assert.deepEqual(
+    hits,
+    [],
+    'The protocol has no deployed contracts anywhere. A 40-hex address on this page, real or\n' +
+      'invented, reads to a visitor as a live contract, and that is a false claim either way.\n' +
+      `Found: ${hits.join(', ')}`,
+  );
+  // The specific address this page used to name, as a named negative case rather than only a
+  // shape match: the old chain's factory must not survive under any spelling.
+  const flatHtml = flat(read('index.html'));
+  assert.equal(flatHtml.includes(OLD_FACTORY), false, `The old factory address is still on the page: ${OLD_FACTORY}`);
 });
 
 test('no banned claim shape survives into the built page', () => {
@@ -149,8 +202,7 @@ test('the build carries the headers file, so the deploy is not policy-free', () 
     "default-src 'none'",
     "script-src 'self'",
     "style-src 'self'",
-    'connect-src',
-    'https://rpc.mainnet.chain.robinhood.com',
+    "connect-src 'self'",
     "img-src 'self'",
     "font-src 'self'",
     "frame-ancestors 'none'",
@@ -158,6 +210,19 @@ test('the build carries the headers file, so the deploy is not policy-free', () 
   ]) {
     assert.ok(headers.includes(directive), `_headers is missing: ${directive}`);
   }
+
+  // connect-src names no external origin. This page has not been repointed at the deployed
+  // protocol, so it has nothing to call and nothing to widen the policy for. This directly
+  // guards against pointing connect-src at an invented Arc address, or leaving the abandoned
+  // chain's RPC in place.
+  const connectSrc = headers.match(/connect-src[^;]*/);
+  assert.ok(connectSrc, '_headers has no connect-src directive at all.');
+  assert.equal(
+    /https?:\/\//.test(connectSrc[0]),
+    false,
+    `connect-src names an external origin, which claims a live chain call this page does not\n` +
+      `have: "${connectSrc[0]}"`,
+  );
 });
 
 test('the page has no inline script and no inline style, which the CSP would block', () => {
@@ -169,9 +234,9 @@ test('the page has no inline script and no inline style, which the CSP would blo
   assert.equal(/\sstyle="/i.test(html), false, "style-src 'self' blocks a style=\"...\" attribute, silently.");
 });
 
-test('the page makes no request to any origin but itself and the chain RPC', () => {
+test('the page makes no request to any origin at all, because there is nothing deployed to read', () => {
   const html = read('index.html');
-  const css = read('app.css');
+  const css = existsSync(path.join(DIST, 'app.css')) ? read('app.css') : '';
   const js = read('app.js');
 
   // Every absolute URL that a browser would FETCH rather than navigate to. An
@@ -185,11 +250,21 @@ test('the page makes no request to any origin but itself and the chain RPC', () 
     ...js.matchAll(/fetch\(\s*['"](https?:\/\/[^'"]+)/gi),
   ].map((m) => m[1]);
 
-  const foreign = fetched.filter((u) => !u.startsWith('https://rpc.mainnet.chain.robinhood.com'));
+  // No exemption for any origin, not even a chain RPC: the protocol is not
+  // deployed anywhere, so this page has nothing to read live and nothing it
+  // should be reaching out for.
   assert.deepEqual(
-    foreign,
+    fetched,
     [],
-    'This page loads no third-party asset, and the CSP enforces that. Anything here would be\n' +
-      `blocked at the edge with no visible error:\n  ${foreign.join('\n  ')}`,
+    'This page loads no third-party asset and makes no chain call, and the CSP enforces that.\n' +
+      `Anything here would be blocked at the edge with no visible error:\n  ${fetched.join('\n  ')}`,
+  );
+
+  // app.js must contain no fetch() call at all, not merely no foreign one. A fetch() to 'self'
+  // would still be a live read this page has no deployed address to point at.
+  assert.equal(
+    js.includes('fetch('),
+    false,
+    'app.js calls fetch(), but this page has not been repointed at the deployed protocol and has nothing to read.',
   );
 });

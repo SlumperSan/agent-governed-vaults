@@ -31,8 +31,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import {
-  ROOT, RPC, log, assert, call, callU, send, tryCall, waitUntilChainTime,
+  ROOT, RPC, log, assert, call, callU, send, tryCall, chainNow, waitUntilChainTime,
   openState, SIGNER_ARGS, cast, abiEncode, keccakOf, readProposal, pollUntil, TOPIC,
+  decideReveal, finalizeDeadRound,
 } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 
@@ -69,8 +70,15 @@ if (!state.pid) {
 
 // ── propose the no-op rebalance (same shape Sprint 9 proved) ──
 if (!state.steps.propose?.done) {
+  // THREE-field payload, not two (card 207): Governance.execute's Rebalance branch decodes
+  // `(address adapter, uint256 maxSlippageBps, IExecutionAdapter.SwapOrder[] orders)`. A
+  // 2-field encode here decodes on-chain as garbage and Panics. maxSlippageBps = 100 (1%):
+  // VaultCore.executeRebalance rejects 0 outright (BadSlippageBound) and the ceiling is
+  // MAX_REBALANCE_SLIPPAGE_BPS (2%); orders stays empty either way, so no swap is attempted —
+  // this bound only has to be IN RANGE. Same value scripts/smoke-test.mjs and
+  // apps/vaults-ui/test/lib/ui-smoke-chain.mjs use for the identical no-op.
   const payload = saveFirst('payload',
-    abiEncode('f(address,(address,address,uint256,uint256,uint256,bytes)[])', dep.adapter, '[]'));
+    abiEncode('f(address,uint256,(address,address,uint256,uint256,uint256,bytes)[])', dep.adapter, 100, '[]'));
   saveFirst('actionHash', keccakOf(payload));
   const r = send('governance.propose(no-op, agent vote host)', dep.governance,
     'propose(address,uint8,bytes32)', VAULT, 0, state.actionHash);
@@ -97,12 +105,49 @@ if (!state.steps.commit?.done) {
 }
 
 // ── reveal after the commit phase closes ──
+//
+// RE-READ CHAIN TRUTH BEFORE REVEALING — the identical unguarded shape #369 fixed in drill 2
+// (proposal 12) and this same task fixed in drill 3 (proposal 13): trusting the persisted
+// `commitDeadline`/`revealDeadline` across a stop/resume reverts WrongPhase once the reveal
+// window has closed underneath the drill.
+//
+// UNLIKE drill 2 and drill 3, a dead round here is NOT auto-restarted. This proposal is
+// CO-DRIVEN: drill5-agent-execute.mjs reads `activeProposalOf` once, commits and polls
+// `hasRevealed()` against THIS pid, with no way to learn about a fresh one this script might
+// raise. Restarting here would desynchronize the two processes — the agent side would poll a pid
+// that no longer has a live round, and `MAX_TICKS` later fail with a HARNESS-shaped message for a
+// COORDINATION cause, the exact substitution `budgetExhaustedFailure`'s doc comment (lib.mjs)
+// warns against. So a dead round is finalized (to free the vault for the NEXT round rather than
+// leave it permanently `Active`-but-unfinalizable) and then failed loudly, naming the fix.
 if (!state.steps.reveal?.done) {
   await waitUntilChainTime(state.commitDeadline, 'commit phase end (1h)');
-  const r = send('governance.revealVote(deployer, FOR)', dep.governance,
-    'revealVote(uint256,bool,bytes32)', state.pid, 'true', state.salt);
-  state.steps.reveal = { done: true, tx: r.transactionHash };
-  save();
+
+  const p = readProposal(dep.governance, state.pid);
+  const now = chainNow();
+  const hasCommit = callU(dep.governance, 'commitOf(uint256,address)(bytes32)', state.pid, state.signer) !== 0n;
+  const alreadyRevealed = call(dep.governance, 'revealedOf(uint256,address)(bool)', state.pid, state.signer)[0] === 'true';
+  const { action, reason } = decideReveal(p, { now, hasCommit, alreadyRevealed });
+
+  if (action === 'already-revealed') {
+    log('deployer reveal: revealedOf[pid][signer] is already true on-chain — recording without re-sending');
+    state.steps.reveal = { done: true, tx: '(recovered: already revealed on-chain)' };
+    save();
+  } else if (action === 'reveal') {
+    const r = send('governance.revealVote(deployer, FOR)', dep.governance,
+      'revealVote(uint256,bool,bytes32)', state.pid, 'true', state.salt);
+    state.steps.reveal = { done: true, tx: r.transactionHash };
+    save();
+  } else if (action === 'restart') {
+    await finalizeDeadRound(dep.governance, state.pid, 'deployer reveal (companion)');
+    assert(false,
+      `proposal ${state.pid} died while this drill was stopped (status ${p?.status}, ` +
+      `revealDeadline ${p?.revealDeadline}, chain now ${now}) and has been finalized so the vault ` +
+      'is not left permanently blocked. This round is CO-DRIVEN with drill5-agent-execute.mjs, so ' +
+      'it cannot be auto-restarted here: restart BOTH drill5-agent-execute.mjs (vote phase) and ' +
+      'this companion together against a fresh proposal.');
+  } else {
+    assert(false, `deployer reveal: cannot reveal proposal ${state.pid} and this is not a stale-window case — ${reason}`);
+  }
 }
 
 // ── finalize + execute once the reveal phase closes ──

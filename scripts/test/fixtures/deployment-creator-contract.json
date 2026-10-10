@@ -1,0 +1,7 @@
+{
+  "chainName": "base-sepolia",
+  "chainId": 84532,
+  "_fixtureNote": "FIXTURE, card 179. Identical to deployment-happy.json except it declares a CONTRACT creator. The fake chain answers cast code with 0x, so this drives the live Arc failure end to end: a Safe address recorded before it was ever activated, which passes every string comparison because a Safe address is deterministic.",
+  "intendedCreator": "0x0000000000000000000000000000000000051de5",
+  "intendedCreatorKind": "contract"
+}

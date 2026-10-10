@@ -58,7 +58,29 @@ const ENTRYPOINTS = [
   // once without being added here" until 2026-09-13; the file has never been on protocol/main, and
   // after a squash merge that sentence would have read as history about main that never happened.
   'scripts/build-rebalance-order.mjs',
+  // Added 2026-09-23, same reasoning as build-rebalance-order.mjs immediately above: this is run BY
+  // HAND against a live chain (the owner, importing its output at app.safe.global) once Arc 5042 is
+  // deployed, and nothing in CI executes the file directly — scripts/test/safe-tx-builder-fork.test.mjs
+  // and scripts/test/safe-tx-builder-refusals.test.mjs only ever SPAWN it as a child process with a
+  // controlled env, which parses it incidentally on whichever code path each test happens to reach,
+  // never the whole file up front the way `node --check` does.
+  'scripts/build-safe-tx-builder.mjs',
+  // Added 2026-09-18, after a parse error took the board server down TWICE in one day. Its whole
+  // page is one template literal, so a single stray backtick inside a comment in that literal
+  // terminates the string and the file stops parsing — a class of defect no test here can reach,
+  // because nothing imports this module and the board is started by hand. `node --check` catches
+  // it in 0.3s. Note what the comment above says about this list: it errors on
+  // listed-but-missing and is SILENT about missing-from-list, which is why the file went two
+  // breakages without being covered.
+  'scripts/dashboard.mjs',
 ];
+
+/**
+ * The same idea for shell. `node --check` cannot parse a `.sh`, so these had NOTHING parsing them:
+ * a syntax error in one reached whoever next ran it against a live chain. Checked with `bash -n`
+ * in runSyntaxStep, and mirrored by the syntax-check step in ci.yml.
+ */
+const SHELL_ENTRYPOINTS = ['scripts/verify-x402-run.sh'];
 
 /**
  * @typedef {object} Step
@@ -116,25 +138,22 @@ const STEPS = [
   },
   {
     id: 'site-build',
-    title: 'npm run build --workspace apps/site-next',
+    title: 'npm run build --workspace apps/site',
     cmd: WIN ? 'npm.cmd' : 'npm',
-    args: ['run', 'build', '--workspace', 'apps/site-next'],
+    args: ['run', 'build', '--workspace', 'apps/site'],
     cwd: REPO,
-    // ORDERING IS LOAD-BEARING, and for TWO consumers, not one. It used to sit after `backend`.
-    //
-    // The near one: `site-test` reads the BUILT pages (prerendered HTML in dist/) and skips
-    // itself when dist/ is absent.
-    // The far one, and the reason this moved: the repository-wide claims guards run by `backend`
-    // -- claims-lede-truth.test.mjs and config-doc-truth.test.mjs -- enumerate .md/.html/.txt/
-    // .json from the filesystem and neither skips `dist`. `apps/site-next/.gitignore` ignores
-    // `dist`, so on a fresh checkout the redesign's prerendered pages are not there to be
-    // walked, and those guards cover none of them while still reporting a pass.
-    //
-    // NOT DROPPED BY --quick, and the runtime is beside the point: with `backend` now depending
-    // on this step's output, a --quick run that skipped it would take the backend suite red
-    // rather than save time. claims-lede-truth.test.mjs asserts every prerendered page is in the
-    // walk, so that failure is loud instead of silent.
-    why: 'Must precede `backend` AND `site-test`: without dist/ the claims guards walk zero redesign pages.',
+    // Same ordering argument as `site-build` below, for the same two consumers: this app's own
+    // suite reads the prerendered dist/, and the repository-wide claims guards run by `backend`
+    // walk dist/ as a public surface. Built before either, or both check a page that is not there.
+    why: 'apps/site is prerendered; its dist/ is what its suite and the claims guards both read.',
+  },
+  {
+    id: 'site-test',
+    title: 'npm test --workspace apps/site',
+    cmd: WIN ? 'npm.cmd' : 'npm',
+    args: ['test', '--workspace', 'apps/site'],
+    cwd: REPO,
+    why: 'apps/site/test/site.test.mjs: prerender non-vacuity, copy reached the page, no deployment claim.',
   },
   {
     id: 'app-test',
@@ -166,12 +185,48 @@ const STEPS = [
     why: 'Backend + frontend logic suite. Needs `build`, `site-build` and `app-test` first (see above).',
   },
   {
-    id: 'site-test',
-    title: 'npm test --workspace apps/site-next',
-    cmd: WIN ? 'npm.cmd' : 'npm',
-    args: ['test', '--workspace', 'apps/site-next'],
+    id: 'vault-addresses',
+    title: 'vault-addresses-lint (apps/vaults-ui vs contracts/config/deployments)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-addresses-lint.mjs')],
     cwd: REPO,
-    why: 'apps/site-next/test/site.test.mjs: pinned strings, banned shapes and non-vacuous guards, against dist/.',
+    // BLOCKING, unlike vault-lint (a local machine path absent from CI) and deployment-currency
+    // (advisory because both recorded deployments are KNOWINGLY behind mainline -- a fact no PR can
+    // fix). Every input here -- apps/vaults-ui/.env* and contracts/config/deployments/*.json -- is
+    // checked into this repository, so there is no environment where this is expected to be red for
+    // a reason other than a real config error. VITE_VAULT_ADDRESSES is hand-edited on deploy day
+    // with zero prior cross-check against what is actually deployed; a typo, a stale address, or an
+    // address from the wrong chain would silently ship. Card A2.
+    why: 'Does VITE_VAULT_ADDRESSES name a real deployed vault, on the chain VITE_CHAIN_ID declares? Card A2.',
+  },
+  {
+    id: 'deployment-currency',
+    title: 'verify-deployment-currency (advisory)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/verify-deployment-currency.mjs')],
+    cwd: REPO,
+    // ADVISORY ON PURPOSE, and narrowly so. Both recorded deployments are BEHIND the mainline
+    // today -- a BUSL-1.1 -> MIT relicense touched all 19 `contracts/src` files -- so a blocking
+    // step would red every contributor's gate over a fact no pull request can fix. The remedy is a
+    // redeploy, an owner action under docs/SWARM.md section 10. The script's own exit 1 is
+    // unchanged, so this becomes blocking by deleting the `advisory` line once the records are
+    // refreshed. The part of #261 that DOES block is scripts/test/deployment-currency.test.mjs,
+    // which `backend` already runs.
+    advisory: true,
+    why: 'Is each deployment record still current with contracts/src? Advisory: both records are knowingly behind.',
+  },
+  {
+    id: 'vault-lint',
+    title: 'vault-lint (advisory)',
+    cmd: process.execPath,
+    args: [path.join(REPO, 'scripts/vault-lint.mjs')],
+    cwd: REPO,
+    // ADVISORY for one week from 2026-09-19, then blocking (card 189, Chairman directive 6). The
+    // vault is a local machine path outside this repo and outside CI's reach -- the script itself
+    // exits 0 with a notice when the vault is simply absent from this environment, which is why
+    // this step is safe to run unconditionally rather than gated on a path check here.
+    advisory: true,
+    why: 'Do Tasks/ cards carry a shell fragment, a value outside a closed set, or a truncated body? Card 135\'s post-mortem.',
   },
   {
     id: 'test',
@@ -348,12 +403,109 @@ async function runSyntaxStep() {
     const code = await run(process.execPath, ['--check', abs], REPO);
     if (code !== 0) return code;
   }
+  // The SHELL entrypoints, which `node --check` cannot see. `scripts/verify-x402-run.sh` reads a
+  // live chain through `cast` and nothing in this repo parsed it, so a syntax error in it shipped
+  // silently -- the same category ENTRYPOINTS exists for, one interpreter over.
+  //
+  // Run here, serially, rather than from inside the backend suite: `bash -n` spawned from a
+  // `node --test` worker intermittently fails on Windows under that suite's parallelism, and a
+  // gate that reds at random teaches people to ignore red. SKIPPED with a notice when bash is
+  // absent, exactly as slither is -- on CI's ubuntu runner it always runs.
+  for (const f of SHELL_ENTRYPOINTS) {
+    const abs = path.join(REPO, f);
+    if (!existsSync(abs)) {
+      console.error(`${C.r}missing shell entrypoint: ${f}${C.x} -- update SHELL_ENTRYPOINTS in scripts/gate.mjs`);
+      return 1;
+    }
+    const probe = spawnSync('bash', ['--version'], { stdio: 'ignore' });
+    if (probe.error) {
+      console.log(`${C.y}SKIP${C.x} bash -n ${f} ${C.d}-- bash not installed${C.x}`);
+      continue;
+    }
+    const code = await run('bash', ['-n', abs], REPO);
+    if (code !== 0) return code;
+  }
   return 0;
 }
 
 /**
- * Persist the run for `npm run cc`. Untracked (see .gitignore) -- it describes THIS machine's last
- * run, not a property of the branch, so committing it would just create merge conflicts.
+ * The states that mean a check ACTUALLY RAN. `skip` did not run, and `notrun` is the tail this
+ * script fills in after a fail-fast break, so neither is evidence about anything.
+ */
+const EXECUTED = Object.freeze(['pass', 'fail', 'warn']);
+
+/**
+ * The verdict, DERIVED IN ONE PLACE, because the three things that publish it must not be able to
+ * disagree: the console line, the exit code, and `passed` in `.gate-state.json`. Before this, the
+ * console read a local `failed` flag while `writeGateState` recomputed the verdict for itself, so
+ * fixing one of them would have left the terminal saying GATE PASSED while the board said otherwise.
+ *
+ * 'inconclusive' IS THE CASE #309's FLOOR DOES NOT REACH. That floor guards the step LIST; this
+ * guards the OUTCOMES, and a `skip` is not a `fail`. The one runtime skip today is slither when it
+ * is absent from PATH, so `--only slither` on a machine without slither selected one step, cleared
+ * the floor, skipped it, and reported a pass over zero executed checks -- `{"passed":true}` into the
+ * file `scripts/lib/project-status.mjs` reads and `npm run cc` presents as live state to whoever
+ * reads it first. A pass now requires at least one step that RAN, not one that was selected.
+ *
+ * A failing run is still a failure and never inconclusive: `fail` is tested first, and it is itself
+ * an executed step.
+ *
+ * @param {{state: string}[]} results
+ * @returns {'pass' | 'fail' | 'inconclusive'}
+ */
+function verdictFor(results) {
+  if (results.some((r) => r.state === 'fail')) return 'fail';
+  if (!results.some((r) => EXECUTED.includes(r.state))) return 'inconclusive';
+  return 'pass';
+}
+
+/**
+ * Where the run is recorded. `.gate-state.json` at the repo root by default, which is the file
+ * `npm run cc` reads; untracked (see .gitignore), because it describes THIS machine's last run
+ * rather than a property of the branch.
+ *
+ * `GATE_STATE_PATH` OVERRIDES IT, AND THE REASON IS A RACE THAT WAS REAL. The path is repo-global,
+ * so two gates running at once on one checkout overwrite each other's record — and a test that
+ * spawns a gate and then reads the file gets whichever run finished last. That happened: a gate
+ * spawned by one test file was read by another as if it were its own, producing
+ * `caveats did not say the run checked nothing: ["was --only fmt"]` on an unrelated head, twice,
+ * intermittently. Any caller that runs gates concurrently should point each at its own file; tests
+ * that assert on a run's record MUST, or they are asserting on whatever else the machine is doing.
+ */
+const STATE_PATH = process.env.GATE_STATE_PATH
+  ? path.resolve(process.env.GATE_STATE_PATH)
+  : path.join(REPO, '.gate-state.json');
+
+// ENFORCED HERE, BY THE WRITER, BECAUSE A STATIC WALK FOR SPAWNERS CANNOT BE MADE TO WORK.
+//
+// The first attempt at making the isolation construction was a guard that walked the repo for files
+// spawning this script and required each to set GATE_STATE_PATH. A review found its floor could never
+// fire -- the input set contained this file and the guard's own source, whose regex literal matched
+// the pattern it searched for -- and that four spawn shapes evaded it entirely: `npm run gate`,
+// spawning gate-logged.mjs instead, a path assembled from a variable, and a `.js` file. It was also
+// per-file, so a second unisolated spawn inside a compliant file was invisible.
+//
+// So the check lives where it cannot be walked around: in the process that writes the record. Node's
+// test runner sets NODE_TEST_CONTEXT in the test process and children inherit it, so any gate whose
+// ancestry is a test -- through npm, through the wrapper, however the path was assembled, whatever the
+// caller's file extension -- arrives here with that variable set. If it did not also isolate its
+// record, it would write the file `npm run cc` reads and could read another run as its own. Refuse.
+//
+// Exit 2 is this script's code for "the gate could not run" rather than for a defect, which is what
+// this is: a harness mistake, not a failing check.
+if (process.env.NODE_TEST_CONTEXT && !process.env.GATE_STATE_PATH) {
+  console.error(
+    `\n${C.r}refusing to run under a test without GATE_STATE_PATH.${C.x}\n` +
+      `This gate would write ${path.relative(REPO, STATE_PATH) || '.gate-state.json'}, which is the record\n` +
+      `\`npm run cc\` reads and which every other gate on this checkout also writes -- so a test that\n` +
+      `spawns a gate and then reads that file can get another run's record. Point this child at its own\n` +
+      `file:\n\n  env: { ...process.env, GATE_STATE_PATH: <a temp path> }\n`,
+  );
+  process.exit(2);
+}
+
+/**
+ * Persist the run for `npm run cc`.
  */
 function writeGateState(results, totalMs) {
   const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' });
@@ -365,11 +517,14 @@ function writeGateState(results, totalMs) {
     treeDirty: Boolean((dirty.stdout || '').trim()),
     totalMs,
     mode: { quick: QUICK, runAll: RUN_ALL, only: ONLY ? [...ONLY] : null },
-    passed: !results.some((r) => r.state === 'fail'),
+    passed: verdictFor(results) === 'pass',
+    // How many steps RAN. The board needs this to tell a run that checked nothing apart from a run
+    // that checked everything, which `passed: false` alone cannot say.
+    executed: results.filter((r) => EXECUTED.includes(r.state)).length,
     steps: results.map((r) => ({ id: r.s.id, state: r.state, ms: r.ms })),
   };
   try {
-    writeFileSync(path.join(REPO, '.gate-state.json'), JSON.stringify(state, null, 2) + '\n');
+    writeFileSync(STATE_PATH, JSON.stringify(state, null, 2) + '\n');
   } catch {
     // Never let bookkeeping fail the gate -- the verdict on the console is the real product.
   }
@@ -399,12 +554,32 @@ async function main() {
     }
   }
 
+  // The same principle as the forge preflight above -- "every contract step would be skipped and
+  // the gate would report a meaningless pass" -- applied to the case it missed. That guard protects
+  // against a missing TOOL; this one protects against an empty STEP LIST, which the two filters on
+  // the line above can produce from entirely valid input: every `--only` id is known, yet all of
+  // them are `quickSkip`, so `--quick --only snapshot` selected nothing.
+  //
+  // It mattered because `passed` is computed as `!results.some(r => r.state === 'fail')`, which is
+  // TRUE over an empty array. The run printed GATE PASSED, exited 0, and wrote
+  // `{"passed":true,"steps":[]}` to `.gate-state.json` -- the file `scripts/lib/project-status.mjs`
+  // reads and `npm run cc` surfaces as live state. A gate that checked nothing published a pass.
+  if (steps.length === 0) {
+    console.error(
+      `
+${C.r}no steps selected.${C.x} ${ONLY ? 'Every --only id was dropped by --quick. ' : ''}` +
+        `Refusing to report a pass over zero steps.
+${C.d}(see --list)${C.x}
+`,
+    );
+    process.exit(2);
+  }
+
   const mode = [QUICK && 'quick', RUN_ALL && 'run-all', ONLY && `only=${[...ONLY].join(',')}`].filter(Boolean).join(' ');
   console.log(`\n${C.b}pre-merge gate${C.x} ${C.d}(mirrors ci.yml)${C.x}${mode ? ` ${C.d}[${mode}]${C.x}` : ''}`);
   console.log(`${C.d}${steps.length} steps${QUICK ? ' -- gas snapshot dropped by --quick' : ''}${C.x}\n`);
 
   const results = [];
-  let failed = false;
 
   for (const [i, s] of steps.entries()) {
     const label = `[${i + 1}/${steps.length}] ${s.title}`;
@@ -435,7 +610,6 @@ async function main() {
     } else {
       console.log(`${C.r}FAIL${C.x} ${s.title}${note} ${C.d}${secs(ms)}${C.x}\n`);
       results.push({ s, state: 'fail', ms, code });
-      failed = true;
       if (!RUN_ALL) {
         results.push(...steps.slice(i + 1).map((rest) => ({ s: rest, state: 'notrun', ms: 0 })));
         break;
@@ -460,10 +634,19 @@ async function main() {
   const total = secs(Date.now() - t0);
   console.log(`${C.b}${'-'.repeat(64)}${C.x}`);
 
-  if (failed) {
+  // The SAME expression the state file was written from, so the console, the exit code and the
+  // board cannot tell three different stories about one run.
+  const verdict = verdictFor(results);
+
+  if (verdict === 'fail') {
     const first = results.find((r) => r.state === 'fail');
     console.log(`\n${C.r}${C.b}GATE FAILED${C.x} on ${C.b}${first?.s.id}${C.x} ${C.d}(${total})${C.x}`);
     console.log(`${C.d}Re-run just that step: npm run gate -- --only ${first?.s.id}${C.x}`);
+    // A red nobody captured cannot be attributed OR dismissed. On 2026-09-19 a backend failure was
+    // followed by six clean runs with no record of the failing test, which left the red
+    // untrustworthy in both directions. gate:log tees this whole stream to a file.
+    console.log(`${C.d}Capture the full output next time: npm run gate:log${ONLY ? ` -- --only ${[...ONLY].join(',')}` : ''}${C.x}`);
+    console.log(`${C.d}  (it writes outside the repo and prints the path; a log in the tree is read as prose by the claims guards)${C.x}`);
     if (first?.s.id === 'test' || first?.s.id === 'snapshot') {
       // Do not let a genuine finding get filed as "the gate is flaky".
       console.log(
@@ -473,6 +656,19 @@ async function main() {
     }
     console.log('');
     process.exit(1);
+  }
+
+  if (verdict === 'inconclusive') {
+    // NOT a pass and NOT a failure: nothing was checked, so there is no verdict to publish. Exit 2
+    // is the code this script already uses for "the gate could not run" -- the missing-forge
+    // preflight and #309's zero-step floor both use it -- so `exit 1` keeps meaning a real defect.
+    const skipped = results.filter((r) => r.state === 'skip').map((r) => r.s.id);
+    console.log(
+      `\n${C.y}${C.b}GATE INCONCLUSIVE${C.x} ${C.d}(${total})${C.x}\n` +
+        `${C.r}Zero steps executed${C.x}: every selected step was skipped (${skipped.join(', ') || 'none selected'}).\n` +
+        `${C.d}This is not a pass. Install the missing tool, or widen --only to a step that runs.${C.x}\n`,
+    );
+    process.exit(2);
   }
 
   const warned = results.filter((r) => r.state === 'warn').length;

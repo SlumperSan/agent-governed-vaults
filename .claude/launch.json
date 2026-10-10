@@ -8,12 +8,12 @@
       "port": 8791
     },
     {
-      "name": "site-next",
+      "name": "site",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
         "--yes",
         "http-server",
-        "apps/site-next/dist",
+        "apps/site/dist",
         "-p",
         "8792",
         "-c-1",

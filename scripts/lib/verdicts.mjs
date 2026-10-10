@@ -62,6 +62,7 @@
  * @property {string} [baseRefName]
  * @property {string} [headRefName]
  * @property {boolean} [isDraft]
+ * @property {string} [body]  PR description, for buy-borrow-build-declared (card 190)
  *
  * @typedef {object} Run
  * @property {string} headSha
@@ -79,8 +80,14 @@
  * @property {Blocker[]} blockers
  * @property {string[]} notes
  * @property {string[]|null} roster
+ * @property {boolean} rosterDefaulted  true when no REVIEW-ROSTER token was ever posted and
+ *   `roster` is `DEFAULT_ROSTER` rather than something the orchestrator declared (card 167)
  * @property {Record<string, {verdict: Verdict, at: string}>} latestVerdicts
  */
+
+// Card 190 / Chairman directive 13 -- see scripts/lib/pr-body-sections.mjs for the section
+// extraction and blank-detection logic, factored out so it can be unit-tested without a PR fixture.
+import { BBB_SECTIONS, extractSection, isBlankSection } from './pr-body-sections.mjs';
 
 /**
  * The `name:` of this gate's own workflow, `.github/workflows/merge-preflight.yml`.
@@ -101,11 +108,49 @@
  */
 export const SELF_WORKFLOW_NAME = 'merge-preflight';
 
-/** The orchestrator declares who is reviewing. Last declaration wins — reviewers can be added. */
-const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]+)\s*-->/g;
+/**
+ * The orchestrator declares who is reviewing. THE LATEST TOKEN IS ALWAYS AUTHORITATIVE — reviewers
+ * can be added, reassigned, or withdrawn to none. `[^\s>]*` (not `+`): `reviewers=` with nothing
+ * after it must still MATCH, because an empty roster is how a dead seat (a department whose
+ * session ended) gets withdrawn. See `parseRoster`'s own comment for why this cannot be used to
+ * clear a standing REJECT.
+ */
+const ROSTER_RE = /<!--\s*REVIEW-ROSTER\s+reviewers=([^\s>]*)\s*-->/g;
+
+/**
+ * Card 167. Eight `REVIEW-ROSTER` tokens were posted by hand in one evening, every one mechanical
+ * -- "whoever did not write it", and the author is always known -- and four PRs sat blocked
+ * 14-17 days on nothing but that missing comment. `roster-declared` used to block a PR with no
+ * token at all; now the absence of a token is not an unresolved question, it is a default. When
+ * `parseRoster` finds no token, `evaluate` treats the roster as `DEFAULT_ROSTER` rather than
+ * `null`, so review starts immediately instead of stalling on an orchestrator posting a comment.
+ *
+ * This does not weaken Mode B. `roster-resolved` still blocks in strict mode until every name in
+ * the roster IN FORCE -- default or explicit -- has posted a verdict, so "no roster" can no
+ * longer mean "nobody needs to review"; it means "Security needs to review, same as if someone
+ * had typed the token". An explicit `REVIEW-ROSTER` token, posted at any time, still overrides the
+ * default -- `parseRoster`'s "latest token wins" is unchanged, including an explicit empty
+ * `reviewers=` to withdraw a dead seat (card #352), which stays a real, distinct state from "no
+ * token was ever posted" and does NOT fall back to the default.
+ *
+ * Mirrored in `merge-policy.json`'s top-level `defaultRoster` field; keep the two in sync.
+ */
+export const DEFAULT_ROSTER = Object.freeze(['Security']);
 
 /** A reviewer's machine-readable verdict. The only thing that may clear a blocker. */
 const VERDICT_RE = /<!--\s*REVIEW-VERDICT\s+reviewer=([A-Za-z0-9_.\-]+)\s+verdict=(ACCEPT|REJECT)\s*-->/g;
+
+/**
+ * Same shape as `VERDICT_RE` but with `verdict=` left unconstrained, so it matches a token whose
+ * value the strict regex above rejects — `verdict=REQUEST_CHANGES` (GitHub's own review UI's word)
+ * being the case that motivated this. Used by `parseUnparseableVerdicts` to REPORT a token the gate
+ * saw but could not parse, and by `unreadableLatestVerdicts` to BLOCK when such a token is its
+ * reviewer's newest (card 216). A match here never clears anything and is never counted as a real
+ * verdict. Card #59 (PR 307): this exact shape, in a comment, held a REJECT that
+ * `roster-resolved` reported as "reviewer has not reported" — a blocking finding that never reached
+ * the gate, because the invalid value made the token invisible rather than merely rejected.
+ */
+const LOOSE_VERDICT_RE = /<!--\s*REVIEW-VERDICT\s+reviewer=([A-Za-z0-9_.\-]+)\s+verdict=([^\s>]*)\s*-->/g;
 
 /**
  * Legacy prose verdicts, for PRs written before the token existed. Block-only, by design.
@@ -153,6 +198,27 @@ function firstHeadingLine(body) {
 }
 
 /**
+ * THE LATEST ROSTER TOKEN WINS, INCLUDING AN EMPTY ONE. Card #352's dead-seat bug: this used to
+ * update `found` only when the new token was non-empty (`if (reviewers.length > 0) found = ...`),
+ * so a later `reviewers=` posted specifically to withdraw a department whose session ended was
+ * silently ignored and `found` stayed on the last non-empty roster forever. The only working
+ * remedy was reassigning to a DIFFERENT live reviewer — which may not exist, which is exactly the
+ * situation (Security/Product/Finance/Design all dark the same day) this fix exists for.
+ *
+ * `{ reviewers: [], at }` (an explicit empty roster) is a REAL, DISTINCT state from `null` (no
+ * roster ever declared) — `evaluate` only substitutes `DEFAULT_ROSTER` for `null` (card 167), never
+ * for an explicit empty array, so a roster withdrawn to nobody reads as "a roster was declared, and
+ * it currently requires no one," not as "no review was ever assigned" (which would wrongly default
+ * it back to `DEFAULT_ROSTER`). `roster-resolved` trivially passes an empty roster (nothing to be
+ * missing), which is the correct denominator when nobody is currently required.
+ *
+ * THIS DOES NOT WEAKEN no-standing-reject. That rule (Mode A, in `evaluate` below) blocks on
+ * `latestPerReviewer(verdicts)` — every REVIEW-VERDICT token ever posted, independent of who is
+ * currently on the roster — so a reviewer's standing REJECT still blocks a merge after that
+ * reviewer is dropped from the roster. Only `roster-resolved`'s DENOMINATOR moves with the latest
+ * roster (explicit, or defaulted); a verdict already cast keeps its force regardless of roster
+ * changes, per merge-policy.json's own invariant and the #98/#109 incidents behind it.
+ *
  * @param {Comment[]} comments
  * @returns {{reviewers: string[], at: string}|null}
  */
@@ -167,7 +233,10 @@ export function parseRoster(comments) {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-      if (reviewers.length > 0) found = { reviewers, at: c.createdAt };
+      // Every match updates `found` — no `reviewers.length > 0` gate. An empty match (reviewers=
+      // with nothing after it) is itself the latest declaration and must take effect, not be
+      // treated as noise.
+      found = { reviewers, at: c.createdAt };
     }
   }
   return found;
@@ -186,6 +255,88 @@ export function parseVerdicts(comments) {
     while ((m = VERDICT_RE.exec(c.body)) !== null) {
       out.push({ reviewer: m[1], verdict: /** @type {Verdict} */ (m[2]), at: c.createdAt });
     }
+  }
+  return out;
+}
+
+/**
+ * REVIEW-VERDICT tokens whose shape the gate recognizes but whose `verdict=` value `VERDICT_RE`
+ * does not match — seen, not parsed, and rendering identically to "reviewer has not reported" in
+ * `roster-resolved`. Report-only: a match here is NEVER counted as a real verdict by anything else
+ * in this file, so it can never clear or weaken a blocker.
+ * @param {Comment[]} comments
+ * @returns {{reviewer: string, value: string, at: string}[]}
+ */
+export function parseUnparseableVerdicts(comments) {
+  const out = [];
+  for (const c of comments) {
+    LOOSE_VERDICT_RE.lastIndex = 0;
+    let m;
+    while ((m = LOOSE_VERDICT_RE.exec(c.body)) !== null) {
+      if (!/^(?:ACCEPT|REJECT)$/.test(m[2])) out.push({ reviewer: m[1], value: m[2], at: c.createdAt });
+    }
+  }
+  return out;
+}
+
+/**
+ * Card 216: each reviewer's token that the gate SEES but cannot PARSE, when it is newer than that
+ * reviewer's latest parsed verdict (or the reviewer has no parsed verdict at all). Suppose a reviewer
+ * posts ACCEPT, then `verdict=Reject`: `latestPerReviewer` still returns the ACCEPT, so the gate
+ * merged on a note while the reviewer's last word was an objection it could not read. That token
+ * must block until the reviewer reposts a well-formed one.
+ *
+ * "Newer" is by comment time, then by position: comment order, then offset in the body. So a
+ * malformed token and a valid one in the SAME comment are ordered by which comes last, and a
+ * well-formed repost after the malformed token clears it.
+ * @param {Comment[]} comments
+ * @returns {{reviewer: string, value: string, at: string}[]}
+ */
+export function unreadableLatestVerdicts(comments) {
+  /** @type {Record<string, {key: [string, number, number], value: string | null, at: string}>} */
+  const last = {};
+  const later = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2]);
+  comments.forEach((c, ci) => {
+    LOOSE_VERDICT_RE.lastIndex = 0;
+    let m;
+    while ((m = LOOSE_VERDICT_RE.exec(c.body)) !== null) {
+      /** @type {[string, number, number]} */
+      const key = [c.createdAt, ci, m.index];
+      const prev = last[m[1]];
+      if (!prev || later(key, prev.key)) {
+        last[m[1]] = { key, value: /^(?:ACCEPT|REJECT)$/.test(m[2]) ? null : m[2], at: c.createdAt };
+      }
+    }
+  });
+  return Object.entries(last)
+    .filter(([, v]) => v.value !== null)
+    .map(([reviewer, v]) => ({ reviewer, value: /** @type {string} */ (v.value), at: v.at }));
+}
+
+/**
+ * @typedef {object} Review   a GitHub REVIEW OBJECT (`gh pr view --json reviews`), distinct from an
+ *   issue comment — `merge-preflight.mjs` never reads this array for rule evaluation and never
+ *   will (a token here cannot clear anything; see `merge-policy.json`'s
+ *   `enforcement.nativeReviewsUnavailable`). Passed to `evaluate` for REPORTING ONLY.
+ * @property {string} author
+ * @property {string} body
+ */
+
+/**
+ * Rostered reviewers who posted a well-formed verdict token inside a REVIEW OBJECT (`gh pr review`)
+ * but have no verdict in `comments` — the token renders correctly on the PR page and is invisible
+ * to the gate, which reads issue comments only. Report-only: never counted as a verdict.
+ * @param {Review[]} reviews
+ * @param {Record<string, {verdict: Verdict, at: string}>} latestFromComments
+ * @param {string[]} rosterReviewers
+ * @returns {string[]}
+ */
+export function reviewObjectVerdicts(reviews, latestFromComments, rosterReviewers) {
+  const out = [];
+  for (const r of reviews) {
+    if (!rosterReviewers.includes(r.author) || latestFromComments[r.author]) continue;
+    VERDICT_RE.lastIndex = 0;
+    if (VERDICT_RE.test(r.body ?? '') && !out.includes(r.author)) out.push(r.author);
   }
   return out;
 }
@@ -260,10 +411,12 @@ export function runsForHead(runs, headSha) {
  * @param {PullRequest} input.pr
  * @param {Comment[]} input.comments
  * @param {Run[]} input.runs
+ * @param {Review[]} [input.reviews]   REPORT-ONLY (see `reviewObjectVerdicts`); defaults to `[]` so
+ *   every existing caller and fixture that does not supply it is unaffected.
  * @param {'advisory'|'strict'} [input.mode]
  * @returns {Decision}
  */
-export function evaluate({ pr, comments, runs, mode = 'strict' }) {
+export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) {
   /** @type {Blocker[]} */
   const blockers = [];
   /** @type {string[]} */
@@ -283,8 +436,42 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
     blockers.push({ ruleId: 'pr-open', detail: 'PR is a draft.' });
   }
 
+  // --- buy-borrow-build-declared (Chairman directive 13, card 190) — both modes ---------------
+  // A feat/ PR must say what the repo already has and what exists elsewhere before it builds
+  // something new. "None found" is a real answer and must pass; a missing section, or one nobody
+  // filled in, reads identically to a real search in a diff — that is the failure this rule exists
+  // to stop. Both modes, like ci-matches-head and pr-open: this is a body-content requirement, not
+  // a review-workflow one, so it applies whether or not the roster rules are armed. See
+  // scripts/lib/pr-body-sections.mjs for the section extraction and blank-detection logic.
+  if (typeof pr.headRefName === 'string' && pr.headRefName.startsWith('feat/')) {
+    for (const { label, heading } of BBB_SECTIONS) {
+      const section = extractSection(pr.body ?? '', heading);
+      if (section === null) {
+        blockers.push({
+          ruleId: 'buy-borrow-build-declared',
+          detail:
+            `no "## ${label}" section in the PR body. Chairman directive 13: every feat/ PR states ` +
+            `what the repo already has and what exists elsewhere before building something new — ` +
+            `"None found" is a real answer and must be written, not omitted.`,
+        });
+      } else if (isBlankSection(section)) {
+        blockers.push({
+          ruleId: 'buy-borrow-build-declared',
+          detail:
+            `"## ${label}" section is present but blank (only whitespace, an HTML comment, or an ` +
+            `unfilled template placeholder). Fill it in, or write "None found" if that is the ` +
+            `honest answer — a blank section reads the same whether the search happened or not.`,
+        });
+      }
+    }
+  }
+
   // --- verdicts -------------------------------------------------------------------------------
-  const roster = parseRoster(comments);
+  // Card 167: an explicit token (including an explicit empty one, card #352) always wins; only a
+  // PR that has NEVER carried a REVIEW-ROSTER token falls back to DEFAULT_ROSTER.
+  const explicitRoster = parseRoster(comments);
+  const rosterDefaulted = explicitRoster === null;
+  const roster = explicitRoster ?? { reviewers: [...DEFAULT_ROSTER], at: null };
   const verdicts = parseVerdicts(comments);
   const latest = latestPerReviewer(verdicts);
   const legacy = parseLegacyRejects(comments);
@@ -298,6 +485,14 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
         detail: `${reviewer}'s latest verdict is REJECT (${v.at}). Address the findings; the fixer or the reviewer then posts a newer REVIEW-VERDICT token.`,
       });
     }
+  }
+  // Card 216: a reviewer whose NEWEST token is unreadable blocks, whatever their older parsed
+  // verdict says — the gate cannot tell an objection from a typo, so it must not merge on either.
+  for (const u of unreadableLatestVerdicts(comments)) {
+    blockers.push({
+      ruleId: 'no-standing-reject',
+      detail: `${u.reviewer}'s newest verdict token is unreadable (verdict=${u.value} at ${u.at}), and it is newer than any verdict of theirs the gate can parse. Repost it as a well-formed token: verdict=ACCEPT or verdict=REJECT.`,
+    });
   }
   for (const l of legacy) {
     // Block-only: a prose REJECT is cleared solely by a LATER structured token, never by more prose.
@@ -395,40 +590,53 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
     });
   }
 
-  // --- roster rules (Mode B) — strict only ----------------------------------------------------
+  // --- roster rule (Mode B) — strict only --------------------------------------------------
+  // Card 167: a roster is always IN FORCE — the orchestrator's explicit token, or DEFAULT_ROSTER
+  // — so there is only one question left: whether it is RESOLVED. (Pre-card-167 this was a second
+  // rule, roster-declared, which blocked when no roster existed at all; folded into roster-resolved
+  // below since a roster now always exists.) See DEFAULT_ROSTER's comment for why this does not
+  // weaken Mode B.
   if (mode === 'strict') {
-    if (!roster) {
+    const missing = roster.reviewers.filter((r) => !latest[r]);
+    if (missing.length > 0) {
       blockers.push({
-        ruleId: 'roster-declared',
+        ruleId: 'roster-resolved',
         detail:
-          'no REVIEW-ROSTER token on this PR. Without a declared roster there is no denominator, ' +
-          'so "nobody objected" and "nobody looked" are the same observation — which is exactly how ' +
-          '#109 merged 5.5 minutes before its review existed.',
+          `rostered reviewer(s) with no verdict yet: ${missing.join(', ')}` +
+          (rosterDefaulted ? ` (roster defaulted to ${DEFAULT_ROSTER.join(', ')} — no REVIEW-ROSTER token was posted, card 167)` : '') +
+          '. Review in flight — this is not "nobody objected".',
       });
-    } else {
-      const missing = roster.reviewers.filter((r) => !latest[r]);
-      if (missing.length > 0) {
-        blockers.push({
-          ruleId: 'roster-resolved',
-          detail: `rostered reviewer(s) with no verdict yet: ${missing.join(', ')}. Review in flight — this is not "nobody objected".`,
-        });
-      }
     }
-  } else if (!roster) {
-    notes.push('advisory mode: no REVIEW-ROSTER token, so Mode B (a review still in flight) is NOT checked.');
+  } else if (rosterDefaulted) {
+    notes.push('advisory mode: no REVIEW-ROSTER token, so Mode B (a review still in flight) is NOT checked — the roster default (card 167) only matters in strict mode.');
   }
 
   // --- notes ----------------------------------------------------------------------------------
-  if (roster) {
-    const offRoster = Object.keys(latest).filter((r) => !roster.reviewers.includes(r));
-    if (offRoster.length > 0) {
-      notes.push(`verdict(s) from reviewer(s) not on the roster, counted anyway: ${offRoster.join(', ')}.`);
-    }
-  } else if (verdicts.length > 0) {
-    notes.push(`${verdicts.length} verdict token(s) present but no roster declared — the complement is unknown.`);
+  if (rosterDefaulted) {
+    notes.push(`roster defaulted to ${DEFAULT_ROSTER.join(', ')}: no REVIEW-ROSTER token was ever posted, so merge-policy.json's defaultRoster applies (card 167) — an unposted roster no longer means "nobody needs to review".`);
+  }
+  const offRoster = Object.keys(latest).filter((r) => !roster.reviewers.includes(r));
+  if (offRoster.length > 0) {
+    notes.push(`verdict(s) from reviewer(s) not on the roster, counted anyway: ${offRoster.join(', ')}.`);
   }
   if (legacy.length > 0 && verdicts.length === 0) {
     notes.push('this PR predates the REVIEW-VERDICT token; verdicts read by the block-only prose heuristic.');
+  }
+
+  // --- card #59: verdict tokens that reach the gate silently unparsed ------------------------
+  // Both render on the PR page identically to "reviewer has not reported", which `roster-resolved`
+  // cannot tell apart from a review still in flight. These notes never clear anything. An
+  // unparsed token that is a reviewer's NEWEST also blocks, under no-standing-reject (card 216).
+  for (const u of parseUnparseableVerdicts(comments)) {
+    notes.push(
+      `verdict token found but not parsed: reviewer=${u.reviewer} verdict=${u.value} (at ${u.at}) — ` +
+      'accepted values are ACCEPT, REJECT.',
+    );
+  }
+  if (roster) {
+    for (const author of reviewObjectVerdicts(reviews, latest, roster.reviewers)) {
+      notes.push(`${author} posted a verdict as a review object; the gate reads issue comments. Re-post with \`gh pr comment\`.`);
+    }
   }
 
   return {
@@ -436,7 +644,8 @@ export function evaluate({ pr, comments, runs, mode = 'strict' }) {
     clear: blockers.length === 0,
     blockers,
     notes,
-    roster: roster ? roster.reviewers : null,
+    roster: roster.reviewers,
+    rosterDefaulted,
     latestVerdicts: latest,
   };
 }

@@ -2,11 +2,16 @@
 /**
  * x402 as a PER-CHAIN CAPABILITY, read from the chain configuration.
  *
- * Until now every runtime path assumed x402 metering was universally present and priced per call:
- * `apps/api/src/server.mjs` sent every non-free route through `gate()`, and its discovery document
- * advertised a price for them unconditionally. That was true while the only target chains were
- * Base Sepolia and Base mainnet. It is not true for Robinhood Chain (chain id 4663), where the
- * owner's decision of 2026-09-05 is that there will be no x402.
+ * Until this module, every runtime path assumed x402 metering was universally present and priced
+ * per call: `apps/api/src/server.mjs` sent every non-free route through `gate()`, and its discovery
+ * document advertised a price for them unconditionally. That held while the only target chains were
+ * Base Sepolia and Base mainnet, and stopped holding when the owner decided on 2026-09-05 that
+ * Robinhood Chain (chain id 4663) would carry no x402.
+ *
+ * THAT DECISION WAS REVERSED ON 2026-09-15 and `robinhood-mainnet.json` declares `enabled: true`
+ * again, so no chain configured in this repository switches metering off right now. The capability
+ * stays, because the reason for it does: a per-chain answer read from configuration is what let the
+ * switch flip twice without either flip touching the gate, and it is what the next chain will need.
  *
  * So the capability now comes from the same file that already carries every other per-chain fact —
  * `contracts/config/<chain>.json` — under a top-level `x402` block:
@@ -110,9 +115,11 @@ export function loadChainCapabilities({ dir = DEFAULT_CONFIG_DIR } = {}) {
     if (!json || typeof json !== 'object' || !Number.isInteger(json.chainId)) continue;
     // FIRST FILE WINS HERE TOO. The network loader below was given this rule on 2026-09-09 and this
     // one was left last-wins, which made the fail-open asymmetric: the path Solana uses was closed
-    // and the path chain 4663 uses -- the one where an explicit `enabled: false` is a live owner
-    // decision -- stayed open. A review demonstrated it with two configs for one chain id. Same rule,
-    // same reason, both directories.
+    // and the path the EVM chain configs use -- the one where an explicit `enabled: false` is a
+    // live owner decision -- stayed open. A review demonstrated it with two configs for one chain
+    // id. Same rule, same reason, both directories. (Chain 4663 was that decision's subject from
+    // 2026-09-05 until the owner reversed it on 2026-09-15; the asymmetry was in the loader either
+    // way, and would be there again the next time a config switches metering off.)
     const priorChain = byChainId.get(json.chainId);
     if (priorChain) {
       priorChain.shadowed = [...(priorChain.shadowed ?? []), file];

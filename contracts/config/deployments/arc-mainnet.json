@@ -1,0 +1,139 @@
+{
+  "chainName": "arc-mainnet",
+  "chainId": 5042,
+  "deployedAt": "2026-09-24T01:52:58Z",
+  "deployBlock": 22442411,
+  "startBlock": 22442239,
+  "deployedAtNote": "Unlike Base Sepolia and Robinhood Chain 4663, the eleven core transactions (six singleton deploys, three wire calls, plus the independent ChainlinkOracle and AggregationRouterAdapter deploys) landed in ELEVEN SEPARATE BLOCKS on Arc, one tx per block, rather than together in one or two. `startBlock` is the oracle's own block, 22,442,239 (own timestamp 1790214690 = 2026-09-24T01:51:30Z, read with `cast block --field timestamp` on both RPC endpoints, which agreed) — an indexer starting later would miss the oracle's own deploy. `deployBlock`/`deployedAt` is the LAST of those eleven, the AggregationRouterAdapter at block 22,442,411 (own timestamp 1790214778), the instant the full initial deploy (protocol + adapter) was on chain; the three wire calls had already landed by block 22,442,395, five blocks earlier. The 2026-09-23 date the sign queue was opened under is the session's local date; every timestamp in this record is the chain's own UTC block time, not a wall clock.",
+
+  "deployer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+  "sourceCommit": "c8f112be",
+  "bytecodeCurrency": {
+    "claim": "OperatorRegistry, Governance and VaultFactory as deployed on chain 5042 are byte-for-byte what sourceCommit c8f112be (`origin/protocol/main` tip at the time this record was written) builds, outside constructor-set immutables.",
+    "basis": "RUNTIME comparison only, the same method `robinhood-mainnet.json`'s `bytecodeCurrency` block used: `cast code <addr>` against `rpc.mainnet.arc.io` compared byte-for-byte with `contracts/out/<Contract>.sol/<Contract>.json`'s `deployedBytecode.object`, built at c8f112be. OperatorRegistry: 40 differing bytes, all inside `deployedBytecode.immutableReferences` windows (0 outside). Governance: 40 differing bytes, all inside immutable windows (0 outside). VaultFactory: 260 differing bytes, all inside immutable windows (0 outside). SubVaultRegistry, FeeEngine, VaultDeployer and AggregationRouterAdapter were not byte-compared, but their `eth_getCode` lengths on chain (1,605 / 2,902 / 938 / 1,981 B) each equal the c8f112be build's `deployedBytecode.object` length exactly — see `singletonsNote` and `execution.note` — which is corroboration, not proof, in the same sense `base-sepolia.json`'s `codesizeCorroboration` names.",
+    "reproduce": "git checkout c8f112be && cd contracts && forge build, then compare `out/<Contract>.sol/<Contract>.json` `deployedBytecode.object` with `cast code <addr> --rpc-url https://rpc.mainnet.arc.io`, masking the artifact's own `immutableReferences` windows.",
+    "notCompared": "VaultCore creation code (the SSTORE2 chunks VaultDeployer carries) was not read back and compared to the c8f112be build the way `robinhood-mainnet.json`'s `vaultCoreCreationCode` key does; `firstVault.runtimeCodesize` (20,886 B) is recorded as a measurement only, not claimed current against any commit."
+  },
+  "rpc": "https://rpc.mainnet.arc.io",
+  "crossCheckedOn": "https://arc.gateway.tenderly.co",
+  "explorer": "https://explorer.arc.io",
+
+  "note": "The Arc mainnet (chain 5042) deployment: eleven core transactions (ChainlinkOracle, OperatorRegistry, SubVaultRegistry, FeeEngine, Governance, VaultDeployer, VaultFactory, three wire calls, AggregationRouterAdapter), every receipt status 1, plus the first vault (see `firstVault`). EVERY ADDRESS, EVERY RECEIPT AND EVERY WIRING READ BELOW WAS RE-READ INDEPENDENTLY ON CHAIN 5042 FOR THIS RECORD — `eth_getTransactionReceipt` for each of the thirteen hashes, `eth_getCode` at each resulting address, and every `verifiedWiring`/`oracle`/`firstVault` value by `cast call` — rather than copied from `_sign-queue.json`, which was used only to learn which tx hashes to look up. Every read was run on BOTH `rpc.mainnet.arc.io` and `arc.gateway.tenderly.co` and the two agreed on every single value, receipt and code length recorded here — the two-provider rule this project applies to chain facts. `docs/evidence/arc-deploy-runbook.md` names this file as the one to write from what the chain returns, never from a broadcast log; this deploy was built and sent through `scripts/sign-queue/arc-deploy.mjs` and the dashboard Sign queue rather than a forge broadcast script, so there is no broadcast JSON to warn about here — the sign-queue record itself was the input naming which hashes to check, and every value below was re-derived from the chain rather than trusted from it.",
+
+  "intendedCreator": "0x99e805294F1f1465C96f68e36264E99991Ef9E82",
+  "intendedCreatorKind": "contract",
+  "intendedCreatorKindNote": "The Arc Safe HAS CODE on chain 5042 as of this record: `eth_getCode` returns 171 bytes on both `rpc.mainnet.arc.io` and `arc.gateway.tenderly.co` (2026-09-24), where it read `0x` on 2026-09-21 per `scripts/test/creator-code.test.mjs`'s header — the predicted-but-unactivated state that guard exists to catch. `VERSION()` reads \"1.4.1\", `getThreshold()` reads 1 and `getOwners()` reads [0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35] on both endpoints: a threshold-1 single-owner Safe, the same shape `robinhood-mainnet.json` recorded for its own creator Safe. `smoke-preflight.mjs`'s `creatorCodeRefusal` reads `intendedCreatorKind: 'contract'` against this code and does not refuse. The first vault (`firstVault` below) was in fact created through this Safe's `execTransaction`, and `firstVault.creator` reads back as this exact address on both endpoints, so the record and the chain agree in both directions.",
+
+  "singletons": {
+    "OperatorRegistry": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc",
+    "SubVaultRegistry": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c",
+    "FeeEngine": "0x2c70858BA8796398CC7638389155d1Cc0426533D",
+    "Governance": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB",
+    "VaultDeployer": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568",
+    "VaultFactory": "0x692385262C05df7515560886f167c4eDD0814025"
+  },
+  "singletonsNote": "Each address is the `contractAddress` `eth_getTransactionReceipt` returns for that singleton's own creation hash (see `transactions` below), independently re-read on both RPC endpoints; every one of the six also carries non-empty `eth_getCode` on both endpoints (code lengths: OperatorRegistry 2,219 B, SubVaultRegistry 1,605 B, FeeEngine 2,902 B, Governance 12,269 B, VaultDeployer 938 B, VaultFactory 3,572 B). OperatorRegistry, SubVaultRegistry, FeeEngine, VaultDeployer and VaultFactory match `base-sepolia.json`'s `codesizeCorroboration` figures exactly; Governance's 12,269 B is NOT byte-identical to that record's 12,155 B, which is expected — see `bytecodeCurrency` below for the byte-level comparison against this deployment's own `sourceCommit`.",
+
+  "transactions": {
+    "note": "hash, block and status from `eth_getTransactionReceipt` for each of the eleven core hashes, re-read on both RPC endpoints, which agreed on every field. Ordered by block. Unlike the Base Sepolia and Robinhood Chain records, `gasUsed`/`txIndex` are not tabulated here — every transaction here landed alone in its own block (see `deployedAtNote`), so there is no cross-tx ordering within a block for those fields to disambiguate.",
+    "deploys": [
+      {"contract": "ChainlinkOracle",       "address": "0x0C60b9a4C207dd622CcC0Ee3C51b5c274cb7B979", "hash": "0x6f1fe218d3738e6560014076354a202fb1cec717d1bee8b249ab824affb77a87", "block": 22442239, "status": 1},
+      {"contract": "OperatorRegistry",      "address": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc", "hash": "0x39e272398e35c7e1ad415f3c52e2ce003f917fb11d53a452c89f18d83d6c90cc", "block": 22442254, "status": 1},
+      {"contract": "SubVaultRegistry",      "address": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c", "hash": "0x28c519242d4284aafe2ef2b15c615c2f259407005d5f8e9bb4006b4241a02af3", "block": 22442268, "status": 1},
+      {"contract": "FeeEngine",             "address": "0x2c70858BA8796398CC7638389155d1Cc0426533D", "hash": "0x128fbbc61a3d5908930b8ef335f14448bc9202118872493876efb710df2a10b2", "block": 22442291, "status": 1},
+      {"contract": "Governance",            "address": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB", "hash": "0x39c818334bd9c9c1eac6c514b2007d7f6a9701abe1bf3f18f64e9b439df3fb15", "block": 22442310, "status": 1},
+      {"contract": "VaultDeployer",         "address": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568", "hash": "0x1388c61b9c1169117f37f8ce9cf81566f7f8c3889e232b1bc391e317c792b07d", "block": 22442325, "status": 1},
+      {"contract": "VaultFactory",          "address": "0x692385262C05df7515560886f167c4eDD0814025", "hash": "0x4d8a2eba7e6b130ff8ac5ebfaf1ad5f9f4cf4a32b46c11618782bd6b75a948e5", "block": 22442348, "status": 1},
+      {"contract": "AggregationRouterAdapter", "address": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1", "hash": "0x2b6753b3e223869103453c26d03243a8e05175e5273af864e94ac58383f962ad", "block": 22442411, "status": 1}
+    ],
+    "wiring": [
+      {"call": "OperatorRegistry.wire(VaultFactory, FeeEngine)",     "to": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc", "hash": "0xd3885829655b03f8293e26d3e3db6900ebd2dc444fa158682297741fcd36b6de", "block": 22442369, "status": 1},
+      {"call": "SubVaultRegistry.wire(VaultFactory)",                "to": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c", "hash": "0x76a3f3c2319caa1d5715a2226c2064d6dfc4e71b34b95d00c7dc6d05aaeb6bcd", "block": 22442384, "status": 1},
+      {"call": "Governance.wireSubVaultRegistry(SubVaultRegistry)",  "to": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB", "hash": "0x5a86665a13db6b28a43e699b2f4536c01596b64a63e36010185239a1cfa64599", "block": 22442395, "status": 1}
+    ]
+  },
+
+  "oracle": {
+    "ChainlinkOracle": "0x0C60b9a4C207dd622CcC0Ee3C51b5c274cb7B979",
+    "note": "C-6 launch model: ONE genuine Chainlink Data Feed for the sole basket asset, consumed directly, matching `contracts/config/arc-mainnet.json`'s `chainlinkOracle` block. `factory.oracleAllowlistEnforced()` reads true and `factory.isAllowedOracle(ChainlinkOracle)` reads true on both endpoints; `factory.isAllowedOracle()` on an unrelated address reads false on both, the negative control. `feedOf(cirBTC)` reads back the full struct on both endpoints: feed 0xa109B535C70C8Be9995be64Bb6751AcDB27e03De, heartbeat 90,000 s, scale 1e10, minPriceWad 4e21, maxPriceWad 4e24 — all four numeric fields identical to `contracts/config/arc-mainnet.json`'s `chainlinkOracle.assets[0]`.",
+    "usdc": "0x3600000000000000000000000000000000000000",
+    "usdcNote": "`oracle.usdc()` reads 0x3600…0000 on both endpoints — the same Arc USDC predeploy `contracts/config/arc-mainnet.json` names, which is also the chain's native gas asset.",
+    "maxStalenessSeconds": 90000,
+    "maxStalenessNote": "ChainlinkOracle exposes no `maxStalenessSeconds()` getter (same as the Base Sepolia and Robinhood Chain records); staleness is the per-asset heartbeat, and `feedOf(cirBTC).heartbeat` reads 90000 on chain on both endpoints, agreeing with the configured value in `contracts/config/arc-mainnet.json`.",
+    "sequencerUptimeFeed": "0x0000000000000000000000000000000000000000",
+    "sequencerUptimeFeedNote": "address(0), read back from `oracle.sequencerUptimeFeed()` on both endpoints — an owner-approved exemption, not an omission: Arc is an L1 and Chainlink publishes no L2 Sequencer Uptime Feed for it (see `contracts/config/arc-mainnet.json`'s `chainlinkOracle.sequencerUptimeFeed` block and `scripts/test/verify-chainlink-oracle.test.mjs`'s sequencer-exempt-set test). `_requireSequencerUp` returns early on address(0), so this oracle serves prices straight through whatever Arc's equivalent of an outage would be and never reverts on that account — the same fail-open property every other deployment in this repository with this exemption carries.",
+    "assets": {
+      "cirBTC": {
+        "token": "0x171a4217b86a807a64eb94757db6849fb4bdbaa0",
+        "feed": "0xa109B535C70C8Be9995be64Bb6751AcDB27e03De",
+        "underlyingFeed": "0xa109B535C70C8Be9995be64Bb6751AcDB27e03De"
+      }
+    }
+  },
+
+  "execution": {
+    "AggregationRouterAdapter": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1",
+    "router": "0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77",
+    "routerName": "Uniswap SwapRouter02 (Arc mainnet, chain 5042)",
+    "routerAllowedSignatures": [
+      "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+      "exactInput((bytes,address,uint256,uint256))"
+    ],
+    "note": "`adapter.router()` reads back 0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77 on both endpoints, matching `contracts/config/arc-mainnet.json`'s `router`. `adapter.allowedSelector(bytes4)` reads true on both endpoints for `0x04e45aaf` (`exactInputSingle`) and `0xb858183f` (`exactInput`), and false on both for an unlisted selector `0xdeadbeef` — the negative control. Its `eth_getCode` length (1,981 B) matches the `sourceCommit` build exactly, but no byte-level comparison was run for this contract; see `bytecodeCurrency`."
+  },
+
+  "infrastructure": {
+    "usdc": "0x3600000000000000000000000000000000000000"
+  },
+
+  "verifiedWiring": {
+    "note": "Every row re-read from chain 5042 with `cast call` on BOTH `rpc.mainnet.arc.io` and `arc.gateway.tenderly.co`, which agreed on every value. The three REVERSE-direction edges are listed first and deliberately, the same convention `base-sepolia.json` and `robinhood-mainnet.json` use: a forward read can agree with an address book that is itself wrong, and only the reverse edges catch that.",
+    "registry.factory()": "0x692385262C05df7515560886f167c4eDD0814025",
+    "registry.feeEngine()": "0x2c70858BA8796398CC7638389155d1Cc0426533D",
+    "subReg.factory()": "0x692385262C05df7515560886f167c4eDD0814025",
+    "gov.subVaultRegistry()": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c",
+    "routerAdapter.router()": "0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77",
+    "factory.registry()": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc",
+    "factory.governance()": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB",
+    "factory.feeEngine()": "0x2c70858BA8796398CC7638389155d1Cc0426533D",
+    "factory.subVaultRegistry()": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c",
+    "factory.vaultDeployer()": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568",
+    "factory.oracleAllowlistEnforced()": true,
+    "factory.isAllowedOracle(ChainlinkOracle)": true,
+    "factory.allowSubVaults()": false,
+    "factory.vaultCount()": 1,
+    "factory.allVaults(0)": "0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6"
+  },
+
+  "wiringImmutabilityNote": "The one-shot wiring lock was re-confirmed rather than assumed: an `eth_call` of `OperatorRegistry.wire(VaultFactory, FeeEngine)`, `SubVaultRegistry.wire(VaultFactory)` and `Governance.wireSubVaultRegistry(SubVaultRegistry)` — the same re-call `scripts/smoke-preflight.mjs`'s `wiringImmutabilityFailure` performs — each reverted with selector `0x618bbdd5` (`AlreadyWired()`) on both RPC endpoints. This is the CONFIRMED-revert state that function treats as the lock holding.",
+
+  "allowSubVaultsNote": "`factory.allowSubVaults()` reads FALSE on both endpoints — root-vaults-only, matching `robinhood-mainnet.json`'s mainnet launch parameter and closing C-1 (docs/LAUNCH-READINESS.md gate 0). The factory constructor takes this flag once and the factory is immutable, so it cannot be changed on this deployment.",
+
+  "firstVault": {
+    "address": "0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6",
+    "createTxHash": "0x8fde7ba2b269a047eff61246aa24c00ebc9806a4fc311df6071c5364e0679109",
+    "registerTxHash": "0x84373bca97b90769d71ba097699e634108af300edd9f0fde5995108e00f26509",
+    "createdInBlock": 22443745,
+    "registeredInBlock": 22443766,
+    "createdAt": "2026-09-24T02:04:14Z",
+    "registeredAt": "2026-09-24T02:04:25Z",
+    "note": "NOT a smoke vault — this is the real, owner-created first vault on Arc mainnet, created and registered through the intended creator Safe's own `execTransaction` (both hashes' `to` is the Safe, `0x99e805294F1f1465C96f68e36264E99991Ef9E82`), matching `intendedCreator` above. `factory.allVaults(0)` reads this exact address on both endpoints, and `factory.vaultCount()` reads 1 on both. Basket asset cirBTC (`0x171a4217b86a807a64eb94757db6849fb4bdbaa0`), oracle the ChainlinkOracle above — the same pairing named in the sign queue's `arc-first-vault-create` item.",
+    "creator": "0x99e805294F1f1465C96f68e36264E99991Ef9E82",
+    "creatorNote": "`vault.creator()` reads back 0x99e805294F1f1465C96f68e36264E99991Ef9E82 on both endpoints — the Safe, exactly as `intendedCreator` declared, and the opposite of the chain-4663 divergence `intendedCreatorKindNote` and `smoke-preflight.mjs`'s `requireIntendedCreator` exist to prevent.",
+    "vaultRegistered": true,
+    "vaultRegisteredNote": "`governance.vaultRegistered(vault)` reads true on both endpoints.",
+    "runtimeCodesize": 20886,
+    "runtimeCodesizeNote": "`eth_getCode` length on both endpoints. Not asserted to be byte-identical to `base-sepolia.json`'s 20,650 B smoke vault or `robinhood-mainnet.json`'s 20,650 B vaults — see `bytecodeCurrency.notCompared`.",
+    "configOf": {
+      "commitDuration": 86400,
+      "revealDuration": 86400,
+      "timelockDuration": 0,
+      "executionWindow": 86400,
+      "quorumBps": 2500,
+      "proposalThresholdBps": 500,
+      "concentrationCapBps": 4000,
+      "proposalCooldown": 3600
+    },
+    "configOfNote": "`governance.configOf(vault)` reads back this exact 8-tuple on both endpoints, and every field is identical to `contracts/config/arc-mainnet.json`'s `smoke.gov` block — the ten launch parameters the owner and Engineering set for Arc on 2026-09-19 and 2026-09-22 (see that file's `smokeOpenNote`)."
+  }
+}

@@ -12,6 +12,7 @@
  * runner seeds the known-vault set from the resumed snapshot (see index-runner.mjs).
  */
 
+import { assertChainBinding } from '../../chain-config/src/chain-binding.mjs';
 import { CONTRACT_ABIS, SINGLETON_LABELS } from './abis.mjs';
 import { normalizeLog, sortEvents } from './chain.mjs';
 import { MAX_TRACKED_ADAPTERS } from './projections.mjs';
@@ -186,9 +187,33 @@ export function createChainSource({
     return sortEvents(out);
   }
 
+  /**
+   * Refuse unless the RPC actually answers for `chainId` (#204). Call before the first poll —
+   * `buildIndexer` does.
+   *
+   * ONLY the `rpcUrl` path is bound, and that is the precise shape of the defect: the client above
+   * is built as `createPublicClient({chain: {id: chainId}}, transport: http(rpcUrl))`, which
+   * asserts the declared id ONTO an arbitrary URL rather than checking it against the chain that
+   * URL answers for. An INJECTED client came from code in this same process; there is no
+   * declared-versus-actual gap for this module to close, and there is nothing to read it from.
+   *
+   * Throws `ChainBindingError`, which is deliberately not the plain `Error` that `fetchEvents`'
+   * callers tolerate.
+   */
+  async function assertBoundToDeclaredChain() {
+    if (client) return { ok: true, message: 'client injected — no RPC was resolved by this module' };
+    return assertChainBinding({
+      client: await getClient(),
+      declaredChainId: chainId,
+      rpc: rpcUrl ?? '(no rpcUrl)',
+      declaredBy: 'the indexer CHAIN_ID',
+    });
+  }
+
   return {
     headBlock,
     fetchEvents,
+    assertBoundToDeclaredChain,
     /** The live known-vault set (grows as VaultCreated logs are seen). */
     get knownVaults() { return new Set(vaults); },
     /** Every adapter polled: the configured ones plus the discovered ones. */

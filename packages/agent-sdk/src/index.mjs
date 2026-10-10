@@ -19,6 +19,7 @@
  */
 
 import { authorizeFromChallenge } from './eip3009.mjs';
+import { decodeHeaderJson } from './header-codec.mjs';
 
 const b64 = (obj) => {
   const s = JSON.stringify(obj);
@@ -77,7 +78,10 @@ export function createProtocolClient({ baseUrl, wallet, domain, fetchImpl = fetc
     const url = `${baseUrl}${path}`;
     let res = await fetchImpl(url);
     if (res.status === 402) {
-      const challenge = JSON.parse(res.headers.get('payment-required') ?? 'null');
+      // Base64 per `specs/transports-v2/http.md:161-167`, or the raw JSON this API emitted before
+      // 2026-09-13 — `decodeHeaderJson` takes either, so this client works against both. See
+      // `./header-codec.mjs` for why the two cannot be confused.
+      const challenge = decodeHeaderJson(res.headers.get('payment-required'));
       if (!challenge) throw new ProtocolError('402 without a challenge', 402);
       // The SERVER's challenge picks the scheme; the client only decides whether it can speak it.
       // A challenge naming a scheme this client has no payer for is an error rather than an
@@ -106,8 +110,10 @@ export function createProtocolClient({ baseUrl, wallet, domain, fetchImpl = fetc
     }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new ProtocolError(body.error ?? `HTTP ${res.status}`, res.status, body);
-    const receipt = res.headers.get('payment-response');
-    return { data: body, receipt: receipt ? JSON.parse(receipt) : null };
+    // Same dual-accept as the challenge above. Since 2026-09-13 this is a spec §5.3.2
+    // `SettlementResponse` — `{success, transaction, network, payer?}` — carrying `receiptId` and
+    // `nonce` alongside, so callers reading either set of names keep working.
+    return { data: body, receipt: decodeHeaderJson(res.headers.get('payment-response')) };
   }
 
   return {

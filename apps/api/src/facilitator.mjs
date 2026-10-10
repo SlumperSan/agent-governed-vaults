@@ -3,23 +3,37 @@
  * x402 facilitators for the metered API — the component behind x402.mjs's injected
  * `verifyAndSettle(challenge, envelope)` seam.
  *
- * FOUR implementations, one interface. This list said THREE until the Solana facilitator shipped,
- * which is the failure mode a file whose job is enumeration can least afford:
- *   - createStubFacilitator     accept/deny with no chain — tests and local dev.
- *   - createHttpFacilitator     delegate verify+settle to a REMOTE facilitator over HTTP. This is
- *                               the API server's production default, and under `FACILITATOR=http`
- *                               the server stays non-custodial — holds no key, moves no funds —
- *                               because a separate facilitator settles.
- *   - createSettlingFacilitator run-your-own settler: recover the EIP-712 payer, then settle via
- *                               USDC.transferWithAuthorization with an OPERATOR-SUPPLIED account.
- *                               It needs viem + a funded key the operator injects at runtime; this
- *                               module never embeds, reads, or logs a key.
- *   - createSvmFacilitator      x402 `exact` on SOLANA, and the one that breaks the pattern above:
- *                               the client builds and partially signs the whole SPL transaction and
- *                               this process co-signs as FEE PAYER, so there is nothing to delegate
- *                               over HTTP. The key lives in the API process and pays lamports.
- *                               Opt-in via FACILITATOR=svm, off by default. It lives in its own
- *                               module (`facilitator-svm.mjs`) because it pulls the Solana SDKs.
+ * FIVE implementations, one interface. This list said FOUR until a real, revenue-capable remote
+ * facilitator was wired up, which is the failure mode a file whose job is enumeration can least
+ * afford:
+ *   - createStubFacilitator        accept/deny with no chain — tests and local dev.
+ *   - createHttpFacilitator        delegate verify+settle to a facilitator over HTTP using this
+ *                                  REPO'S OWN bespoke wire contract (single POST, `{x402Version,
+ *                                  challenge, envelope}` in, `{ok, receiptId, reason}` out). Talks
+ *                                  only to `facilitator-server.mjs` (below, same repo) — no public
+ *                                  facilitator speaks this shape. Under `FACILITATOR=http` the API
+ *                                  server stays non-custodial: holds no key, moves no funds,
+ *                                  because a separate process settles.
+ *   - createStandardHttpFacilitator delegate verify+settle to ANY facilitator that speaks the
+ *                                  actual x402 wire protocol (specs/x402-specification-v2.md §7):
+ *                                  two endpoints, `POST {base}/verify` then `POST {base}/settle`,
+ *                                  spec-shaped `{x402Version, paymentPayload, paymentRequirements}`
+ *                                  request bodies. This is what makes a real, third-party,
+ *                                  publicly-reachable facilitator (e.g. facilitator.payai.network)
+ *                                  usable — `createHttpFacilitator` above cannot talk to one.
+ *                                  Non-custodial in exactly the same sense as `createHttpFacilitator`:
+ *                                  this process holds no key.
+ *   - createSettlingFacilitator    run-your-own settler: recover the EIP-712 payer, then settle via
+ *                                  USDC.transferWithAuthorization with an OPERATOR-SUPPLIED account.
+ *                                  It needs viem + a funded key the operator injects at runtime;
+ *                                  this module never embeds, reads, or logs a key.
+ *   - createSvmFacilitator         x402 `exact` on SOLANA, and the one that breaks the pattern
+ *                                  above: the client builds and partially signs the whole SPL
+ *                                  transaction and this process co-signs as FEE PAYER, so there is
+ *                                  nothing to delegate over HTTP. The key lives in the API process
+ *                                  and pays lamports. Opt-in via FACILITATOR=svm, off by default.
+ *                                  It lives in its own module (`facilitator-svm.mjs`) because it
+ *                                  pulls the Solana SDKs.
  *
  * Design contract (per x402.mjs): verifyAndSettle's first arg is `{ price }`, NOT the full
  * challenge — it carries no chainId. So chainId and the USDC name/version/address come from
@@ -164,6 +178,150 @@ export function createHttpFacilitator({ url, fetchImpl = fetch, timeoutMs = 10_0
       } finally {
         clearTimeout(t);
       }
+    },
+  };
+}
+
+/**
+ * Issue one `POST` leg of the standard facilitator wire contract (`/verify` or `/settle`) and
+ * classify the result into exactly one of three buckets, so the caller never has to guess:
+ *   - `{failed:true, reason}`   a TRANSPORT problem — network error, timeout, a response body
+ *                                that is not JSON, or a non-2xx that carries none of the spec's
+ *                                verdict fields. This is NEVER a payment verdict, however it
+ *                                happened; `reason` always names the step (`verify`/`settle`) so a
+ *                                log line never reads as if the payer's money moved.
+ *   - `{failed:false, body}`    a response the server actually answered the question with —
+ *                                *including* a non-2xx that still carries `isValid`/`success`,
+ *                                because PayAI's live facilitator answers a request it can parse
+ *                                but rejects with HTTP 400 AND a body shaped like the spec's error
+ *                                response (measured 2026-09-13; see the PR description for the
+ *                                verbatim bytes). The caller inspects `body` for the real verdict.
+ * @param {string} url
+ * @param {object} body
+ * @param {{fetchImpl:typeof fetch, timeoutMs:number, step:'verify'|'settle', verdictField:'isValid'|'success'}} opts
+ */
+async function postStandardFacilitatorRequest(url, body, { fetchImpl, timeoutMs, step, verdictField }) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    const json = await res.json().catch(() => null);
+    if (json === null || typeof json !== 'object') return { failed: true, reason: `${step}-malformed-response` };
+    if (!res.ok && json[verdictField] === undefined)
+      return { failed: true, reason: `${step}-http-${res.status}: ${json.invalidMessage ?? json.errorMessage ?? json.reason ?? 'no-detail'}` };
+    return { failed: false, body: json };
+  } catch (err) {
+    return { failed: true, reason: `${step}-unreachable: ${err?.message ?? err}` };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Delegate verify+settle to a facilitator that speaks the ACTUAL x402 wire protocol — two
+ * endpoints, `POST {base}/verify` then `POST {base}/settle`, request bodies shaped
+ * `{x402Version, paymentPayload, paymentRequirements}` per specs/x402-specification-v2.md §5/§7.
+ * This is the sibling `createHttpFacilitator` cannot be, because that one speaks a single-POST
+ * bespoke shape this repo invented (see the module docblock) that no public facilitator accepts —
+ * without this, a payment could be verified locally but could NEVER SETTLE, because settling needs
+ * a facilitator with a funded key and this process holds none and can reach no real one.
+ *
+ * Non-custodial in the same sense as `createHttpFacilitator`: this factory never holds a key,
+ * never signs, and never broadcasts — it only relays the client's already-signed authorization to
+ * whichever facilitator `cfg.url` names and relays that facilitator's verdict back.
+ *
+ * `cfg.network` MUST be the facilitator's own network identifier (CAIP-2 for EVM, e.g.
+ * `eip155:8453` for Base — verified live against facilitator.payai.network's `/supported`, which
+ * lists `{x402Version:2, scheme:"exact", network:"eip155:8453"}` for Base mainnet). It is never
+ * derived from `challenge.price.network` (a plain label like `"base"`, this repo's own internal
+ * spelling — see PRICE_NETWORK in serve.mjs) because there is no general, safe way to infer one
+ * CAIP-2 id from the other without a hardcoded table this module would then own and could get
+ * wrong for a chain nobody tested. The operator states it once, at construction, the same way
+ * `createSettlingFacilitator` is handed `usdcName`/`usdcVersion` instead of guessing them.
+ *
+ * Settlement is called ONLY after `/verify` answers `isValid:true` — never speculatively, and
+ * never on a transport failure from `/verify` (a timeout is not a "yes"). See the module docblock
+ * and the PR description for the live request/response bytes this shape was checked against.
+ *
+ * @param {Object} cfg
+ * @param {string} cfg.url                the facilitator's BASE url, e.g.
+ *                                         `https://facilitator.payai.network` — NOT an endpoint;
+ *                                         this factory appends `/verify` and `/settle` itself.
+ * @param {string} cfg.network             CAIP-2 network id, e.g. `eip155:8453`
+ * @param {string} [cfg.usdcName]           EIP-712 domain name for `extra` (default `USD Coin`)
+ * @param {string} [cfg.usdcVersion]        EIP-712 domain version for `extra` (default `2`)
+ * @param {number} [cfg.maxTimeoutSeconds]  echoed in `paymentRequirements` (default 60)
+ * @param {typeof fetch} [cfg.fetchImpl]
+ * @param {number} [cfg.timeoutMs]          per-request abort timeout (default 10s)
+ */
+export function createStandardHttpFacilitator({
+  url, network, usdcName = 'USD Coin', usdcVersion = '2', maxTimeoutSeconds = 60,
+  fetchImpl = fetch, timeoutMs = 10_000,
+}) {
+  if (!network) throw new Error('createStandardHttpFacilitator: cfg.network is required (a CAIP-2 id, e.g. "eip155:8453")');
+  const base = String(url ?? '').replace(/\/+$/, '');
+
+  return {
+    async verifyAndSettle(challenge, envelope) {
+      // The server's OWN price spec (asset/amount/payTo/network), never attacker-controlled at
+      // this layer — x402.mjs builds it from PRICE_* config and echoes it here unchanged. Fail
+      // fast with no network call if it is missing: an unpriced request cannot be turned into a
+      // valid PaymentRequirements object, and a facilitator refusing something we never actually
+      // posted would be the wrong story in a log line.
+      const price = challenge?.price ?? challenge;
+      if (!price || price.asset == null || price.amount == null || price.payTo == null)
+        return { ok: false, reason: 'no-challenge-price' };
+
+      // Defense in depth on the CLIENT-supplied envelope, same shape check the settling
+      // facilitator runs, before this ever leaves the process.
+      const shape = verifyEnvelopeShape(envelope, Date.now());
+      if (!shape.ok) return { ok: false, reason: shape.reason };
+
+      const paymentRequirements = {
+        scheme: 'exact',
+        network,
+        amount: String(price.amount),
+        asset: price.asset,
+        payTo: price.payTo,
+        maxTimeoutSeconds,
+        extra: { name: usdcName, version: usdcVersion },
+      };
+      const paymentPayload = {
+        x402Version: 2,
+        accepted: paymentRequirements,
+        payload: { signature: envelope.signature, authorization: envelope.authorization },
+      };
+      const wireBody = { x402Version: 2, paymentPayload, paymentRequirements };
+
+      const v = await postStandardFacilitatorRequest(`${base}/verify`, wireBody, {
+        fetchImpl, timeoutMs, step: 'verify', verdictField: 'isValid',
+      });
+      if (v.failed) return { ok: false, reason: v.reason };
+      if (typeof v.body.isValid !== 'boolean') return { ok: false, reason: 'verify-malformed-response' };
+      if (!v.body.isValid) return { ok: false, reason: v.body.invalidReason ?? 'invalid' };
+
+      const s = await postStandardFacilitatorRequest(`${base}/settle`, wireBody, {
+        fetchImpl, timeoutMs, step: 'settle', verdictField: 'success',
+      });
+      if (s.failed) return { ok: false, reason: s.reason };
+      // Mirrors the verify-leg check at :305. An unreadable 200 (`success` missing or not a
+      // boolean — {}, [], {weird:'shape'}) is NOT a settlement verdict: `settle-failed-no-transaction`
+      // below asserts "the facilitator said no and gave no transaction", which is a claim about
+      // what the facilitator ANSWERED, not about what it FAILED TO ANSWER. Collapsing the two
+      // is the exact misdiagnosis class this PR exists to close (#266): a transport-shaped
+      // problem must never read as a payment verdict, and "unreadable" is a transport shape.
+      if (typeof s.body.success !== 'boolean') return { ok: false, reason: 'settle-malformed-response' };
+      // Positive evidence required: `success === true` AND a non-empty transaction hash. A
+      // missing `transaction` or an empty string are `ok:false` — settlement is never reported
+      // without something to point at.
+      if (s.body.success === true && typeof s.body.transaction === 'string' && s.body.transaction.length > 0)
+        return { ok: true, receiptId: s.body.transaction };
+      return { ok: false, reason: s.body?.errorReason ?? 'settle-failed-no-transaction' };
     },
   };
 }

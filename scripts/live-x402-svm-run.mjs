@@ -40,6 +40,7 @@ import {
 import { createMint, getAccount, getOrCreateAssociatedTokenAccount, mintTo } from '@solana/spl-token';
 import { resolveApiConfig, buildApiServer } from '../apps/api/src/serve.mjs';
 import { createProtocolClient, createSvmPayer } from '../packages/agent-sdk/src/index.mjs';
+import { decodeHeaderJson } from '../packages/agent-sdk/src/header-codec.mjs';
 
 const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const RPC = process.env.SVM_RPC_URL || 'https://api.devnet.solana.com';
@@ -134,7 +135,9 @@ let challenge = null;
 const plainFetch = globalThis.fetch;
 const observing = async (u, i) => {
   const r = await plainFetch(u, i);
-  if (r.status === 402) challenge = JSON.parse(r.headers.get('payment-required'));
+  // Base64 per `specs/transports-v2/http.md:161-167`, or the raw JSON this API emitted before
+  // 2026-09-13; `decodeHeaderJson` takes either (see packages/agent-sdk/src/header-codec.mjs).
+  if (r.status === 402) challenge = decodeHeaderJson(r.headers.get('payment-required'));
   return r;
 };
 

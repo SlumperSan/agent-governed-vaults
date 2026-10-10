@@ -17,7 +17,7 @@ It was **five distinct failure modes, and a defence against one is useless again
 | mode | what happened | the PRs | the rule that answers it |
 |---|---|---|---|
 | **A: policy** | merged over a REJECT already standing, in writing, on the PR | #107 by 8 min, #92 by 29 min | `no-standing-reject` |
-| **B: race** | the review lost a race it could not see it was in | #98's REJECT posted **25 s** after the merge; #109's 5.5 min after, so the PR merged before its verdict existed | `roster-declared` + `roster-resolved` |
+| **B: race** | the review lost a race it could not see it was in | #98's REJECT posted **25 s** after the merge; #109's 5.5 min after, so the PR merged before its verdict existed | `roster-resolved` (roster defaults when unposted, card 167) |
 | **C: orientation** | pushed to a branch whose PR had already merged | #107's fixer pass, rescued by hand as [#120] | `pr-open` |
 | **D: invisibility** | the reviewed content was replaced *after* a correct verdict | a keep-ours resolution on #117 would have re-introduced the list #121 exists to abolish | `verdict-covers-head` |
 | **E: staleness** | the *base* moved under a verdict whose head never did | #119's valid ACCEPT was falsified by #121 merging, with its own branch untouched | `base-current` |
@@ -164,6 +164,19 @@ observation, which is exactly how #109 merged 5.5 minutes before its review exis
 PRs on 2026-09-01 got one review, and a check demanding two would make most PRs unmergeable, which is
 how a check gets routed around. A weaker rule that is followed beats a stronger one that is not.
 
+**Card 167 — the roster now defaults instead of stalling.** Eight `REVIEW-ROSTER` tokens were posted
+by hand in one evening, every one mechanical — "whoever did not write it," and the author is always
+known — and four PRs sat blocked 14-17 days on nothing but that missing comment. What used to be two
+rules (`roster-declared`, blocking on an absent token; `roster-resolved`, blocking on an unresolved
+name) is now one — `roster-resolved` alone: when no token was ever posted, the roster defaults to
+`defaultRoster.reviewers` (`Security`), so review starts immediately instead of waiting on an
+orchestrator to type a comment. An explicit `REVIEW-ROSTER` token, posted at any time, still
+overrides the default — the roster's "latest token wins" rule is unchanged, and an explicit *empty*
+roster (withdrawing a dead seat, card #352) is still a distinct, real state that does **not** fall
+back to the default. `roster-resolved` still blocks in strict mode until the roster in force —
+default or explicit — is fully resolved, so an absent roster can no longer mean "nobody needs to
+review."
+
 ## The one decision that stops this being theatre
 
 A check satisfiable by writing the word ACCEPT is theatre. So:
@@ -196,7 +209,7 @@ node scripts/merge-preflight.mjs 119
 Exit 0 = clear, 1 = blocked, **2 = could not determine** (no `gh`, no auth, no such PR). Exit 2 is
 not a pass: a preflight that could not see is not a preflight that saw nothing wrong.
 
-`--advisory` drops the two roster rules, and so drops all of Mode B. It keeps everything else,
+`--advisory` drops `roster-resolved`, and so drops all of Mode B. It keeps everything else,
 including Mode D; that rule needs only a verdict token, which is a reviewer's own act rather than an
 orchestrator convention. It is what the rollout workflow
 runs while adoption is partial, and it is honestly weaker: `scripts/test/merge-preflight.test.mjs`
@@ -209,6 +222,20 @@ Run it in two places, not one:
 - **Before pushing to a PR branch you did not just create**: the `pr-open` rule is Mode C, and it
   is one call. Divergence is not liveness: `git rev-list --left-right --count` reports "0 behind /
   N ahead" for a freshly-merged branch exactly as it does for a live one.
+
+## Buy / borrow / build (`buy-borrow-build-declared`, card 190)
+
+Chairman directive 13, 2026-09-19: the global buy-borrow-build rule existed in prose and nobody ran
+it — 3 `WebSearch` and 11 `WebFetch` calls across 18,000 messages. `/dept-engineering` and
+`/dept-security` now post a `## Buy / borrow / build` / `## Standards` skeleton into every `feat/`
+PR body; this rule makes leaving it unfilled mechanically visible rather than trusting it got read.
+
+**"None found" is a real, checkable answer and must pass.** A blank section reads identically to a
+search that never happened, in a diff nobody re-reads — the exact failure the skeleton's own text
+warns against. Blank means only whitespace, an HTML comment, or one bare unfilled placeholder token
+(`<what you grepped ...>`, `TBD`, `TODO`, ...) — deliberately narrow, on the same "do not cry wolf"
+reasoning as every other content check here, and scoped to `feat/` head branches only: `fix/`,
+`test/`, `docs/` and `chore/` branches are not adding a new capability.
 
 ## What this cannot catch
 
@@ -296,8 +323,8 @@ Everything below is `scripts/lib/merge-policy.json`, verbatim. It is the single 
 `scripts/merge-preflight.mjs` reads it, and `scripts/test/merge-preflight.test.mjs` asserts that this
 block is byte-identical to that file, that the regex published here is the one the code runs, and
 that every rule the evaluator can emit is declared here and vice versa. A rule cannot drift from its
-documentation without a red test, which is the general form of what went wrong: the tracked
-`docs/vault/auto-merge.md` still said merges land "once CI is green", unqualified, while every
+documentation without a red test, which is the general form of what went wrong: the
+tracked auto-merge note still said merges land "once CI is green", unqualified, while every
 correction lived in a machine-local memory file that no fresh clone, no other machine and no CI
 check could ever read. **A gate nobody can read from a fresh clone is not an interlock.**
 
@@ -305,10 +332,15 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
 {
   "version": 1,
   "why": "Four PRs (#92 #98 #107 #109) merged on 2026-09-01 across review verdicts that were never addressed, and a fifth (#121/#117) showed that a conflict resolution can introduce a defect no review ever sees. This file is the single machine-readable source of truth for when a PR may merge. scripts/merge-preflight.mjs reads it; docs/reviews/MERGE-POLICY.md embeds it verbatim and a test asserts the two are byte-identical, so the prose humans read cannot drift from the rules the program enforces.",
+  "defaultRoster": {
+    "reviewers": ["Security"],
+    "appliesWhen": "no REVIEW-ROSTER token has ever been posted on the PR (parseRoster returns null, not an explicit empty roster)",
+    "why": "Card 167. Eight REVIEW-ROSTER tokens were posted by hand in one evening, every one mechanical -- 'whoever did not write it', and the author is always known -- and four PRs sat blocked 14-17 days on nothing but that missing comment. Rather than wait on the orchestrator to type a token, the roster defaults to this list so review starts immediately; an explicit token posted at any time still overrides it, per the roster's own 'latest token wins' rule. Mirrored in scripts/lib/verdicts.mjs's DEFAULT_ROSTER -- keep the two in sync. Does NOT weaken roster-resolved: the default still has to be resolved by an actual REVIEW-VERDICT token before a strict-mode PR clears."
+  },
   "tokens": {
     "roster": {
       "form": "<!-- REVIEW-ROSTER reviewers=Name1,Name2 -->",
-      "postedBy": "the orchestrator, when it spawns reviewers",
+      "postedBy": "the orchestrator, when it spawns reviewers, or -- since card 167 -- nobody at all, in which case defaultRoster applies",
       "purpose": "makes 'assigned but not yet posted' a computable state. The roster is the denominator; verdicts are the numerator."
     },
     "verdict": {
@@ -343,7 +375,7 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
         "strict"
       ],
       "title": "no reviewer's latest verdict may be REJECT",
-      "blocksWhen": "any reviewer's latest REVIEW-VERDICT token is REJECT, or a legacy prose REJECT heading is not followed by a later ACCEPT token",
+      "blocksWhen": "any reviewer's latest REVIEW-VERDICT token is REJECT, or a reviewer's newest REVIEW-VERDICT-shaped token has a verdict= value the gate cannot parse (card 216), or a legacy prose REJECT heading is not followed by a later ACCEPT token",
       "why": "Mode A. #107 merged 8 minutes after a REJECT was standing in writing on the PR; #92 merged 29 minutes after one. This is a policy failure, not a visibility one: the standing self-merge rule had no clause about an open REJECT, so an agent following it as written merges correctly and lands a HIGH."
     },
     {
@@ -367,22 +399,13 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
       "why": "'gh pr checks' reports the runs attached to a PR without surfacing which SHA they belong to, and returned green for #107 from a run belonging to the previous head. Match headSha yourself: gh run list --branch <b> --json headSha,status,conclusion,workflowName. The gate's own runs are then excluded by workflowName, because merge-preflight.mjs lists runs by branch with no --workflow filter and a pull_request-triggered preflight run carries the PR head's SHA: it blocked on its own in_progress run, and -- the permissive half -- counted its own COMPLETED run as a green, because a run that succeeds at posting a red commit status still concludes 'success'. That one miscount defeated this rule's catch-all, so a head with NO CI would have passed the rule named for matching CI to the head. Latent while ci.yml had a bare pull_request: trigger and no paths: filter; armed by any routine 'skip CI for docs-only changes'. After the exclusion this rule no longer depends on ci.yml's trigger config at all."
     },
     {
-      "id": "roster-declared",
-      "modes": [
-        "strict"
-      ],
-      "title": "a review roster must have been declared",
-      "blocksWhen": "no REVIEW-ROSTER token appears on the PR",
-      "why": "Mode B, half one. Without a declared roster there is no denominator, so 'nobody has objected' and 'nobody has looked' are the same observation. #109 merged 5.5 minutes before its review existed."
-    },
-    {
       "id": "roster-resolved",
       "modes": [
         "strict"
       ],
-      "title": "every rostered reviewer must have posted a verdict",
-      "blocksWhen": "any name in the roster has no REVIEW-VERDICT token",
-      "why": "Mode B, half two. #98 merged at 22:30:54Z holding exactly one verdict -- an ACCEPT from reviewer 1 of 2 -- and its reviewer-2 REJECT posted 25 seconds later. A rule of 'at least one verdict and it is not REJECT' passes #98 and lands its finding. The property is not 'a review exists'; it is 'the declared complement has reported and every report is resolved'."
+      "title": "every reviewer on the roster IN FORCE must have posted a verdict",
+      "blocksWhen": "any name in the roster -- explicit, or defaultRoster when no REVIEW-ROSTER token was ever posted -- has no REVIEW-VERDICT token",
+      "why": "Mode B. Before card 167 this was two rules: roster-declared (blocked when no REVIEW-ROSTER token existed at all -- without a declared roster there is no denominator, so 'nobody objected' and 'nobody looked' were the same observation, and #109 merged 5.5 minutes before its review existed) and roster-resolved (blocked when a declared roster had an unresolved name -- #98 merged at 22:30:54Z holding exactly one verdict, an ACCEPT from reviewer 1 of 2, with its reviewer-2 REJECT posted 25 seconds later; 'at least one verdict and it is not REJECT' passes #98 and lands its finding). Card 167 folded them into this one rule: eight REVIEW-ROSTER tokens were posted by hand in one evening, all mechanical -- 'whoever did not write it', and the author is always known -- and four PRs sat blocked 14-17 days on nothing but that missing comment. The roster IN FORCE is now the orchestrator's explicit REVIEW-ROSTER token if one was ever posted, or defaultRoster (below) if not, so the denominator is never absent by omission; this rule is what still blocks until every name on whichever roster is in force has reported. The property is not 'a review exists'; it is 'the declared-or-defaulted complement has reported and every report is resolved'."
     },
     {
       "id": "base-current",
@@ -393,6 +416,16 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
       "title": "a verdict is only valid against the base it was computed on",
       "blocksWhen": "the branch is behind its base branch and the PR has been reviewed at all (a verdict token, or a prose verdict heading of either kind)",
       "why": "Mode E, and Mode D's mirror: D is 'the content changed under the verdict', E is 'the world the content describes changed under it'. Seen live on 2026-09-01: #119 held a valid ACCEPT against d9293c23, then #121 merged and inverted the canary tier semantics in sinks.mjs, making two sentences #119 ADDS false against merged main -- while merge-tree stayed clean (they touch different files), CI stayed green on the reviewed head, and the verdict stayed untouched. The branch head never moved, so verdict-covers-head cannot see it and no rule keyed to the PR alone can. Read from the compare API's behind_by, because gh pr view's mergeStateStatus only reports BEHIND once the repository already requires up-to-date branches -- the very setting this argues for. It detects that a verdict was computed against a base that no longer exists; it cannot tell you WHETHER the moved base falsifies anything, which is a re-read. The enforcement half was GitHub's 'Require branches to be up to date before merging' (strict=true on required_status_checks), which makes every base advance force a re-integration and therefore a re-verdict. The owner set strict_required_status_checks_policy to false on the protocol-main ruleset on 2026-09-10, so a behind branch no longer blocks a merge and this rule is the only thing that reports the drift."
+    },
+    {
+      "id": "buy-borrow-build-declared",
+      "modes": [
+        "advisory",
+        "strict"
+      ],
+      "title": "a feat/ PR must declare Buy / borrow / build and Standards",
+      "blocksWhen": "the head branch name starts with feat/ and the PR body is missing a '## Buy / borrow / build' or '## Standards' section, or either section is present but blank (only whitespace, an HTML comment, or an unfilled template placeholder)",
+      "why": "Chairman directive 13, 2026-09-19: the global buy-borrow-build rule existed in prose and nobody ran it -- 3 WebSearch and 11 WebFetch calls across 18,000 messages. '/dept-engineering' and '/dept-security' post a '## Buy / borrow / build' / '## Standards' skeleton into every feat/ PR body; this rule makes leaving it unfilled mechanically visible rather than trusting it got read. 'None found' is a real, checkable answer and must pass -- a blank section reads identically to a search that never happened, in a diff nobody re-reads, which is the exact failure the skeleton's own text warns against. Scoped to feat/ head branches only: fix/, test/, docs/ and chore/ branches are not adding a new capability, and gating those too would make the rule routed around like a hardcoded two-reviewer count would. Blank detection is deliberately narrow (whitespace, an HTML comment, or one bare placeholder token such as '<what you grepped ...>', 'TBD', 'TODO') rather than attempting to detect a partially-filled skeleton -- the same 'do not cry wolf' scoping merge-preflight.mjs's other content checks already use, and it is enough to catch the two real failure modes: the section left out entirely, and the section heading pasted with nothing under it."
     }
   ],
   "legacyProseHeuristic": {

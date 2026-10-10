@@ -14,6 +14,8 @@
  * signed by the payer, and this client would not be the right tool.
  */
 
+import { decodeHeaderJson } from '../../packages/agent-sdk/src/header-codec.mjs';
+
 const BASE = process.env.SOAK_API ?? 'http://localhost:8402';
 
 /**
@@ -42,7 +44,7 @@ export function envelopeFor(challenge) {
 /**
  * GET a (possibly metered) API path, paying the 402 challenge if one is issued.
  * @param {string} path e.g. '/operators/leaderboard'
- * @returns {Promise<{status:number, body:any, paid:boolean, receipt:string|null}>}
+ * @returns {Promise<{status:number, body:any, paid:boolean, receipt:any|null}>}
  */
 export async function apiGet(path) {
   const url = `${BASE}${path}`;
@@ -50,14 +52,19 @@ export async function apiGet(path) {
   if (first.status !== 402) {
     return { status: first.status, body: await first.json().catch(() => null), paid: false, receipt: null };
   }
-  const challenge = JSON.parse(first.headers.get('payment-required') ?? (await first.clone().json()).challenge ?? '{}');
-  const ch = challenge.scheme ? challenge : (await first.json()).challenge;
+  // The 402 challenge arrives base64 per `specs/transports-v2/http.md:161-167`, or as the raw JSON
+  // this API emitted before 2026-09-13; `decodeHeaderJson` takes either. The body fallback below is
+  // older still and stays: `gate()` also nests the challenge under `body.challenge`.
+  const fromHeader = decodeHeaderJson(first.headers.get('payment-required'));
+  const ch = fromHeader?.scheme ? fromHeader : (await first.json()).challenge;
   const header = Buffer.from(JSON.stringify(envelopeFor(ch)), 'utf8').toString('base64');
   const paid = await fetch(url, { headers: { 'payment-signature': header } });
   return {
     status: paid.status,
     body: await paid.json().catch(() => null),
     paid: true,
-    receipt: paid.headers.get('payment-response'),
+    // Decoded rather than passed through as the header string: since 2026-09-13 that string is
+    // base64, so handing it on verbatim would record an opaque blob where a receipt used to be.
+    receipt: decodeHeaderJson(paid.headers.get('payment-response')),
   };
 }

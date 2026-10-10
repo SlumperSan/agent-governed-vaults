@@ -1,0 +1,30 @@
+/**
+ * EMBER POSITIONS, IN CSS RATHER THAN ON THE ELEMENTS.
+ *
+ * These were inline style attributes until they met the Content-Security-Policy. public/_headers
+ * sets style-src 'self' with NO 'unsafe-inline', and it says in as many words that an inline
+ * style attribute in the markup would be refused and that there are none. Prerendered markup
+ * carries its style attributes into the HTML, so eighteen inline-positioned embers would have been
+ * eighteen refused declarations — every one stacked at the same place, silently, in production
+ * only. Nothing would have reported it.
+ *
+ * Generated from the same arithmetic the component used, so the field looks identical.
+ */
+.ember:nth-child(1) { left: 0.00%; width: 3px; height: 3px; animation-delay: 0.00s; animation-duration: 11.00s; }
+.ember:nth-child(2) { left: 37.70%; width: 2px; height: 2px; animation-delay: 1.31s; animation-duration: 13.70s; }
+.ember:nth-child(3) { left: 75.40%; width: 2px; height: 2px; animation-delay: 2.62s; animation-duration: 16.40s; }
+.ember:nth-child(4) { left: 11.00%; width: 2px; height: 2px; animation-delay: 3.93s; animation-duration: 19.10s; }
+.ember:nth-child(5) { left: 48.70%; width: 2px; height: 2px; animation-delay: 5.24s; animation-duration: 12.80s; }
+.ember:nth-child(6) { left: 86.40%; width: 3px; height: 3px; animation-delay: 6.55s; animation-duration: 15.50s; }
+.ember:nth-child(7) { left: 22.00%; width: 2px; height: 2px; animation-delay: 7.86s; animation-duration: 18.20s; }
+.ember:nth-child(8) { left: 59.70%; width: 2px; height: 2px; animation-delay: 9.17s; animation-duration: 11.90s; }
+.ember:nth-child(9) { left: 97.40%; width: 2px; height: 2px; animation-delay: 10.48s; animation-duration: 14.60s; }
+.ember:nth-child(10) { left: 33.00%; width: 2px; height: 2px; animation-delay: 11.79s; animation-duration: 17.30s; }
+.ember:nth-child(11) { left: 70.70%; width: 3px; height: 3px; animation-delay: 0.10s; animation-duration: 11.00s; }
+.ember:nth-child(12) { left: 8.40%; width: 2px; height: 2px; animation-delay: 1.41s; animation-duration: 13.70s; }
+.ember:nth-child(13) { left: 44.00%; width: 2px; height: 2px; animation-delay: 2.72s; animation-duration: 16.40s; }
+.ember:nth-child(14) { left: 81.70%; width: 2px; height: 2px; animation-delay: 4.03s; animation-duration: 19.10s; }
+.ember:nth-child(15) { left: 19.40%; width: 2px; height: 2px; animation-delay: 5.34s; animation-duration: 12.80s; }
+.ember:nth-child(16) { left: 55.00%; width: 3px; height: 3px; animation-delay: 6.65s; animation-duration: 15.50s; }
+.ember:nth-child(17) { left: 92.70%; width: 2px; height: 2px; animation-delay: 7.96s; animation-duration: 18.20s; }
+.ember:nth-child(18) { left: 30.40%; width: 2px; height: 2px; animation-delay: 9.27s; animation-duration: 11.90s; }

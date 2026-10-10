@@ -166,25 +166,32 @@ export function resolveExitMode(proposal, nowSec) {
  *     `revealedWeight == snapshotTotal && forWeight >= snapshotTotal`. Reporting a 25% floor
  *     against a proposal that needs 100% is not a rounding error, it is the wrong answer.
  *  2. `memberCount < SIGNER_REGIME_BELOW` — `headMajorityWithStake || forStakeMajority`, where
- *     `headMajorityWithStake` is a strict majority of members-at-creation revealed AND
- *     `forWeight * BPS >= quorumBps * snapshotTotal`, and `forStakeMajority` is
- *     `forWeight * 2 > snapshotTotal`. Both branches count FOR weight, never revealed weight,
- *     and it is not a bare signer count.
+ *     both stake terms are measured on SELF-DIRECTED FOR weight, `forWeight -
+ *     delegatedForWeight[pid]` (VO-2b): `headMajorityWithStake` is a strict majority of
+ *     members-at-creation revealed AND `selfDirectedFor * BPS >= quorumBps * snapshotTotal`, and
+ *     `forStakeMajority` is `selfDirectedFor * 2 > snapshotTotal`. Both branches count FOR weight,
+ *     never revealed weight, and it is not a bare signer count.
+ *
+ *     `delegatedForWeight` is a SEPARATE mapping on Governance, not a `Proposal` field, so a caller
+ *     that reads only `proposals(pid)` does not have it. Absent ⇒ `met` is null, never 0n: guessing
+ *     zero would report a proposal as clearing a FOR majority the contract refuses, which is the
+ *     exact direction this readout must not be wrong in.
  *  3. Otherwise — `revealedWeight * BPS >= quorumBps * snapshotTotal`, measured against the
  *     VAULT's configured `quorumBps` (`configOf[vault].quorumBps`), which is bounded only as
  *     `>= 2500 && <= 10000`. The 2500 protocol FLOOR is not the operative threshold: a vault
  *     configured at 60% is not at quorum because it cleared 26%.
  *
- * In regime 3 the numerator is REVEALED weight only — standing defaults count toward the tally
- * but never toward quorum (ARCHITECTURE §6, K-3), which is why a proposal can read as passing
- * while still short of quorum.
+ * In regime 3 the numerator is SELF-REVEALED weight only — neither standing defaults (ARCHITECTURE
+ * §6, K-3) nor cranked delegations (VO-2b) count toward quorum, which is why a proposal can read as
+ * passing while still short of quorum.
  *
  * @param {{ptype?:string, revealedWeight?:any, forWeight?:any, snapshotTotal?:any,
- *          memberCount?:any, quorumBps?:any, revealedVoterCount?:any}} p
+ *          memberCount?:any, quorumBps?:any, revealedVoterCount?:any,
+ *          delegatedForWeight?:any}} p
  *        `quorumBps` is the vault's configured quorum. Absent ⇒ the threshold is unknown and
  *        `met` is null; it is never defaulted to the floor.
  */
-export function quorumReadout({ ptype, revealedWeight, forWeight, snapshotTotal, memberCount, quorumBps, revealedVoterCount }) {
+export function quorumReadout({ ptype, revealedWeight, forWeight, snapshotTotal, memberCount, quorumBps, revealedVoterCount, delegatedForWeight }) {
   const total = big(snapshotTotal);
   const revealed = big(revealedWeight);
   const forW = big(forWeight);
@@ -218,22 +225,36 @@ export function quorumReadout({ ptype, revealedWeight, forWeight, snapshotTotal,
         text: `Under ${SIGNER_REGIME_BELOW} members, so quorum is a member majority carrying quorum stake, OR an outright FOR stake majority. The stake snapshot is not exposed, so neither can be measured.`,
       };
     }
+    const delegatedFor = big(delegatedForWeight);
+    if (delegatedFor === null) {
+      return {
+        regime: /** @type {const} */ ('signers'),
+        met: null,
+        forBps: Number((forW * 10_000n) / total),
+        quorumBps: hasQuorum ? q : null,
+        text:
+          `Under ${SIGNER_REGIME_BELOW} members both stake tests are measured on FOR weight MINUS cranked ` +
+          `delegated weight (VO-2b), and that figure is not exposed here, so whether either clears is unknown. ` +
+          `${revealedVoterCount ?? '—'} of ${members} members revealed; ${pct(forW, total)} of eligible stake is FOR in the tally.`,
+      };
+    }
+    const selfDirectedFor = forW > delegatedFor ? forW - delegatedFor : 0n;
     const headMajority = Number(revealedVoterCount) * 2 > members;
-    const forStakeMajority = forW * 2n > total;
+    const forStakeMajority = selfDirectedFor * 2n > total;
     // Branch 2 passes on its own. Branch 1 needs the head majority AND the vault's quorum stake,
     // so without a head majority it is settled false, and with one but no configured quorum the
     // answer is genuinely unknown rather than false.
     const met = forStakeMajority ? true
       : !headMajority ? false
-        : hasQuorum ? forW * 10_000n >= BigInt(q) * total
+        : hasQuorum ? selfDirectedFor * 10_000n >= BigInt(q) * total
           : null;
     return {
       regime: /** @type {const} */ ('signers'),
       met,
-      forBps: Number((forW * 10_000n) / total),
+      forBps: Number((selfDirectedFor * 10_000n) / total),
       quorumBps: hasQuorum ? q : null,
       text:
-        `${revealedVoterCount ?? '—'} of ${members} members revealed, ${pct(forW, total)} of eligible stake voting FOR. ` +
+        `${revealedVoterCount ?? '—'} of ${members} members revealed, ${pct(selfDirectedFor, total)} of eligible stake voting FOR on its own behalf. ` +
         `Under ${SIGNER_REGIME_BELOW} members this passes on a member majority carrying ` +
         `${hasQuorum ? `${(q / 100).toFixed(0)}% ` : 'the vault’s '}quorum stake, or on a FOR stake majority alone.`,
     };

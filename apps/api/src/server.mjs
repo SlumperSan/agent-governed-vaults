@@ -19,8 +19,9 @@
  *
  * X402 IS A PER-CHAIN CAPABILITY (`deps.x402`, resolved from the chain config by
  * `packages/chain-config/src/x402.mjs`). Omitted, or `{enabled:true}`, is the behaviour above and
- * the default. `{enabled:false}` — chain 4663, where the owner's decision of 2026-09-05 is that
- * there is no x402 — changes exactly two things and nothing else:
+ * the default. `{enabled:false}` — which no chain config in this repository declares today, chain
+ * 4663 having done so from 2026-09-05 until the owner reversed that on 2026-09-15 — changes exactly
+ * two things and nothing else:
  *
  *   - the routes marked "paid" above are served straight through, same body, same status, with no
  *     402, no challenge and no payment headers. A caller needs no wallet and signs nothing.
@@ -159,7 +160,10 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
     if (metering) {
       const lc = {};
       for (const [k, v] of Object.entries(headers)) lc[k.toLowerCase()] = v;
-      const verdict = await gate({ headers: lc, price, facilitator, nowMs: now(), seenNonces });
+      // `resource.url` (x402 v2 spec §5.1.1's ResourceInfo) is the one field of the 402 body that
+      // x402.mjs cannot fill in on its own — it has no request path — so this is the one call
+      // site in the whole conformance change that reaches outside apps/api/src/x402.mjs.
+      const verdict = await gate({ headers: lc, price, facilitator, nowMs: now(), seenNonces, resource: { url: path } });
       if (verdict.status === 402) {
         metrics.inc('vault_api_payment_required_total');
         return { status: 402, headers: verdict.headers, body: jsonStringify(verdict.body) };

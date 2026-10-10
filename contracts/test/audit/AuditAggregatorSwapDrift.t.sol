@@ -44,13 +44,22 @@ import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
 ///    BTC/USD and LINK/USD are each at phaseId 7 and report 8 at every phase that implements
 ///    AggregatorV3). Pinned by the `test_residual_*` cases, which assert the mispricing is silent —
 ///    they are the boundary of the accepted risk, not a claim that it is safe.
-/// 4. **The harm is bounded to MINTING, not to redemption.** `_settleExit` pays a member their
-///    pro-rata slice of `assetBalance` and `idleUsdc` — the oracle is consulted only to value the
-///    payout for reporting and fees, never to size it. So under drift a member still exits whole,
-///    while a re-check that fail-closed on a routine swap would freeze `navWad`, `deposit` AND
+/// 4. **Drift harms MINTING without bound, and harms an EXIT by at most a fee haircut.**
+///    Minting: a deposit is priced against `navWad`, so a −1-decimal drift (underpricing the basket)
+///    mints the new depositor excess shares and dilutes every existing member, well past 10%; that
+///    harm has no bound here. Exit: `_settleExit` pays a member their pro-rata slice of
+///    `assetBalance` and `idleUsdc`, and the oracle only values the payout, never sizes it, so drift
+///    does not change the pre-fee pro-rata slice. But that valuation sets the performance fee, and the fee IS
+///    withheld from the member's actual tokens: a +1-decimal drift overstates the gain and charges
+///    a fee of at most 10% of the payout (the fee clamp), while a −1-decimal drift charges none. A
+///    re-check that fail-closed on a routine swap would instead freeze `navWad`, `deposit` AND
 ///    `requestExit` forever, with no rotation lever to undo it (the vault's oracle is `immutable`
-///    and `Governance` has no oracle surface — see `AuditOracleRotation.t.sol`). That asymmetry is
-///    the argument. Pinned by `test_harmModel_driftDoesNotRobAnExitingMember`.
+///    and `Governance` has no oracle surface — see `AuditOracleRotation.t.sol`). That asymmetry —
+///    a bounded haircut vs. a permanent freeze — is the argument, not an absence of cost. Sizing
+///    pinned by `test_harmModel_driftDoesNotRobAnExitingMember`, whose name overstates what it
+///    proves: it runs against `StubFeeEngine`'s default zero fee, so it pins the SIZING claim only
+///    and asserts nothing about the fee haircut above (see PR discussion for the mutation-tested
+///    non-zero-fee case).
 ///
 /// ## What would invalidate the acceptance
 ///

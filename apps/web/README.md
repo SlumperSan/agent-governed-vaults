@@ -24,9 +24,14 @@ browser. Run them with `npm run test:backend` from the repo root.
 | `api-client.mjs` | The x402 402 → authorize → retry loop (unchanged). |
 | `live-adapter.mjs` | API JSON → UI shapes. `mapVaults` unchanged; `mapVaultRecords` added. |
 | `fixtures.mjs` | The labelled demo dataset. Nothing in it has ever been on-chain. |
+| `vote-custody.mjs` | Commit-reveal salt custody: re-derives a member's reveal salt from a wallet signature (never localStorage) and reconstructs commit/reveal state from chain reads alone, with an explicit `mismatch` state for a commit a derived salt cannot reproduce. |
 
-**This interface never connects a wallet, holds a key, or signs anything.** Confirming an action
-shows the transaction that would be requested; nothing is broadcast.
+**`index.html`'s four flows never connect a wallet, hold a key, or sign anything.** Confirming an
+action shows the transaction that would be requested; nothing is broadcast. `vote-custody.mjs` is
+the one exception in shape, not in wiring: it is a pure function that RE-DERIVES a commit-reveal
+salt from a wallet signature it is *handed* by its caller — it holds no key and connects no wallet
+itself, and nothing in `index.html` calls it yet. It exists for the wallet-connected surface that
+will call `signMessage` and broadcast `commitVote`/`revealVote`, which is not this file.
 
 ## Where the mirrored logic diverges from the prose specs
 

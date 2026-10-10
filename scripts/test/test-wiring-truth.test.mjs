@@ -217,7 +217,7 @@ const executableText = () => ({
  * Root scripts are matched on their COMMAND (`node --test`), not on their name, so a new
  * `test:whatever` is picked up the day it is written rather than the day someone remembers this
  * file. Workspace scripts are the `test` script of any workspace package.json -- that is how
- * `apps/site-next` runs, as its own CI and gate step.
+ * `apps/site` runs, as its own CI and gate step.
  *
  * THE CONTRACT THAT SELECTOR CREATES, stated rather than left as a trap: a root script that runs
  * `node --test` MUST be a step of both pipelines. There is no third category here, no "manual
@@ -395,7 +395,7 @@ test('the enumeration and the globs are non-empty, so neither check above is vac
       'SKIP_DIRS grew an entry that swallows most of the repository.',
   );
 
-  assert.ok(scripts.length >= 3, `Found ${scripts.length} wired script(s), expected at least 3 (test:app, test:backend, apps/site-next#test).`);
+  assert.ok(scripts.length >= 3, `Found ${scripts.length} wired script(s), expected at least 3 (test:app, test:backend, apps/site#test).`);
 
   const dead = [];
   for (const s of scripts) {

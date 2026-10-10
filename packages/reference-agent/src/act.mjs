@@ -23,13 +23,18 @@ import { commitmentFor, recoverVote, buildVote, assertDeterministicSigner } from
 import { hexPreview } from './log.mjs';
 import { fromBaseUnits } from './config.mjs';
 
-/** Write fragments for the four state-changing calls the agent may make. */
+/** Write fragments for the state-changing calls this app's writers (the agent, and
+ * apps/vaults-ui/src/lib/chain-actions.ts, which BORROWS this table — see that file's header)
+ * make. `claimEscrowed` (card 211, B2) is a MEMBER action, not an agent one — the agent never
+ * calls it — but it lives here for the same reason `deposit`/`requestExit` already do: this is
+ * the one place a VaultCore write fragment is declared, not redefined per caller. */
 export const VAULT_WRITE_ABI = Object.freeze([
   { type: 'function', name: 'deposit', inputs: [{ name: 'amountUsdc', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'activate', inputs: [{ name: 'member', type: 'address' }], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'requestExit', inputs: [{ name: 'shares', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'settleQueuedExit', inputs: [{ name: 'member', type: 'address' }], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'skipWindow', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'claimEscrowed', inputs: [{ name: 'asset', type: 'address' }], outputs: [], stateMutability: 'nonpayable' },
 ]);
 
 /**

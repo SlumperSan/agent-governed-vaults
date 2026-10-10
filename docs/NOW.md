@@ -18,30 +18,33 @@ work it describes.
 
 ## Right now
 
-- **The BASE mainnet launch is NO-GO, but no longer for security reasons.** Every security gate is
-  cleared. What remains is operational (the soak and canary re-runs; the restore drill is done and
-  gate 7 is **GO** as of 2026-09-02), legal, and calendar-bound.
-- **The protocol is DEPLOYED on Robinhood Chain mainnet (chain 4663) as of 2026-09-05,**
-  on the owner's decision of 2026-09-04, and that deployment did not clear the board above: it was
-  not put to it. Record:
-  [`contracts/config/deployments/robinhood-mainnet.json`](../contracts/config/deployments/robinhood-mainnet.json)
-  `VaultFactory` `0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1`, settlement token USDG (6 dp).
-  **Two vaults exist there and both hold real funds:** `verifiedWiring["factory.vaultCount()"]`
-  reads 2 at block 61,513,974. `0x9b0229FF0613EaD59e41Eec556e03b5ED228e2b4` (2026-09-10; `idleUsdc` 20000000 at block 61,646,791)
-  and `0x03E121e18c68B48B84a60D8F93BcD7D5be31ee38` (2026-09-12, now 0.001980484 WETH (`assetBalance` 1980483895862031 wei, read at block 61,646,791), a priced position rather than cash
-  after proposal 3 traded its USDG), both capped at 50,000
-  USDG. **Both were created by the deployer EOA, not by the creator Safe, which the record's
-  `intendedCreator` said must not happen** and which `createVault` makes permanent. See
-  `creatorDeviationNote` in the address book; the remedy is a new vault created by the Safe, not a
-  correction to these two. Gates 3 (soak) and 6
-  (canary) have not been run on that chain, and have no current evidence on any chain. The 5/5
-  soak and the canary observation alongside it predate the current bytecode and have not been
-  re-run; gate 5's oracle verification covers Base feeds and not that chain's. Two chain facts that belong with every claim about it: Chainlink
-  publishes no L2 sequencer uptime feed for 4663 and has said it will not add one, so the sequencer
-  check does not execute there; and its feeds publish on an 86,400 s heartbeat, exactly
-  `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:98`), so a price up to a day old is
-  accepted. Both bear on what a vault there would be worth; neither is exercised while there is no
-  vault. See [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §0.
+- **The protocol is DEPLOYED on Arc mainnet (chain 5042), 2026-09-24, and the first vault exists.**
+  Every address was re-read from the chain and cross-checked on two RPC endpoints; see
+  [`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
+  for the full record, including the first vault (`0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`,
+  created and registered through the intended creator Safe). Settlement is USDC on Arc, where USDC
+  is also the native gas asset.
+- **The Uniswap v3 router and the basket's one eligible asset are RESOLVED on Arc, by direct read.**
+  `SwapRouter02` is `0x53bf…6f77` (`factory()` confirms it, both allow-listed selectors present in
+  the router runtime), cross-checked byte-identical on four RPC endpoints. The canonical
+  cross-chain Uniswap addresses are NOT Uniswap on this chain — squatted, verified rather than
+  assumed. `eth_getLogs` works and is CAPPED, not refused (10k blocks public RPC, 100k on
+  Tenderly); a filtered, bounded scan returns real results. **The basket SHAPE was decided and is
+  deployed**: single-asset cirBTC, no ETH leg — the deployed VaultFactory's `BLESSED_ORACLES` allows
+  only the cirBTC ChainlinkOracle and the first vault's basket is cirBTC alone. The measurements
+  behind that decision are in
+  [`docs/evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md) and
+  [`docs/evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json).
+- **Arc TESTNET is not a dry run, and that is measured.** Chain 5042002 carries the USDC predeploy,
+  Permit2 and Multicall3 and nothing else this protocol needs: Uniswap, Pyth and CCTP all read zero
+  bytes, and Chainlink publishes no feeds for it at all. `ChainlinkOracle` needs a genuine feed per
+  asset and fails closed without one, so a deploy there could only stand up against mocks. Base
+  Sepolia remains the functional testbed.
+- **The prior deployment on another chain was wound down on 2026-09-18.** Both vaults were fully
+  exited by their sole holder and read `totalShares() == 0`, `navWad() == 0`, `holderCount() == 0`;
+  nothing of anyone's remains in them. Its configuration and deployment records have been removed
+  from this repository, and the guard that required the copy to describe that deployment
+  is retired with them, its premise having gone.
 - **The smoke lifecycle is DONE on Base Sepolia and its evidence is committed** (2026-09-03).
   The stack was redeployed 2026-09-02 at `sourceCommit 8a0e1155` and the full ten-phase lifecycle
   ran against it and passed: vault `0xb940d71b…3c98`, exact 5,000,000-unit USDC round trip,
@@ -92,11 +95,10 @@ re-checked it. Re-check this list before repeating it.
    **What it does NOT prove**, stated so the row is not over-read: the sequencer guard still has
    never executed: Base Sepolia leaves `sequencerUptimeFeed` at `address(0)` by design, and this
    was one vault, one member, one no-op rebalance. No Mode-F queue, no sub-vaults, no adversarial
-   adapter. Those are the soak's job, below. **Corrected 2026-09-04, in the direction that makes
-   this worse rather than better:** this sentence used to end "so its first real run is still
-   mainnet". A mainnet deployment now exists and the guard STILL has not run, because Robinhood
-   Chain has no Chainlink sequencer uptime feed to wire: a first real execution waits for a chain
-   that publishes one.
+   adapter. Those are the soak's job, below. The sequencer guard has still never had a real
+   first run, and Arc will not give it one: Arc is an L1, Chainlink publishes no sequencer uptime
+   feed for it, and there is nothing to wire. A first real execution waits for a chain that
+   publishes one.
 2. ~~**Soak + canary re-run** (needs a funded testnet key)~~ **NOT BLOCKED.** The deployer holds
    **0.5897 ETH** on Base Sepolia and both password files exist (`.soak.pw`, `.soak-agent.pw`).
    `run-soak.ps1`'s own header says so: *"Nothing needs a human once the password files are in
@@ -149,14 +151,20 @@ re-checked it. Re-check this list before repeating it.
 - **`OperatorRegistry` attestation has no rebind**, so the operator payout address is permanent.
   It should be a Safe, not an EOA.
 - **The oracle is single-provider Chainlink.** Heartbeat + sane-price band + sequencer gate are the
-  only defences against a bad answer on Base. On chain 4663 there are two of the three; the
-  heartbeat there sits at the contract's `MAX_HEARTBEAT` ceiling of 86,400 s. Assets are limited
-  to WETH + cbBTC; Base has no cbETH/USD feed. A feed deprecation fails that asset *closed*, which
-  is safe but has no fallback.
+  only defences against a bad answer on Base. On Arc there are two of the three, and the heartbeat
+  is 90,000 s — set after `MAX_HEARTBEAT` was raised from 86,400 s on 2026-09-18, because measured
+  Arc round gaps reach **86,423 s (24.01 h)** on BTC/USD over a 449-hour walk and the old ceiling
+  therefore sat 23 s BELOW the worst gap. The figure is stable rather than still climbing: a 169 h
+  walk and a 449 h walk return the same 86,423 s, and the bound is one heartbeat period plus
+  publish jitter. Assets are limited to WETH + cbBTC on Base, which has no cbETH/USD feed; on Arc
+  the basket is cirBTC alone: of the 26,187 tokens that appear in a Uniswap v3 pool on Arc, 52
+  carry an ETH- or BTC-family symbol, and every one of the 51 that is not cirBTC holds under $452
+  of depth. A feed deprecation
+  fails that asset *closed*, which is safe but has no fallback.
 - **The sequencer guard has never run against a real uptime feed.** Base Sepolia leaves it
-  `address(0)` by design; Robinhood Chain leaves it `address(0)` because Chainlink publishes no
-  uptime feed for chain 4663 and has said it will not add one. Being deployed to a mainnet did not
-  discharge this. A first real execution waits for a chain that has a feed to wire.
+  `address(0)` by design, and Arc would too: Arc is an L1 rather than a rollup and Chainlink
+  publishes no uptime feed for it. A first real execution waits for a chain that has a feed to
+  wire.
 
 ## The loop
 

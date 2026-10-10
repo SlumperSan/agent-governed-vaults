@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {ChainlinkOracle} from "../../src/oracle/ChainlinkOracle.sol";
 import {MockAggregatorV3} from "../mocks/OracleSourceMocks.sol";
+import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 
 /// @notice AUDIT ARTIFACT — the pre-mainnet completeness-critic finding that {ChainlinkOracle}'s
 /// `heartbeatSeconds` and sane-price band were bounded ONLY off-chain, by
@@ -41,7 +42,7 @@ contract AuditOracleParamBoundsTest is Test {
 
     // The bounds under test, mirrored from ChainlinkOracle's private constants.
     uint32 constant MIN_HEARTBEAT = 600;
-    uint32 constant MAX_HEARTBEAT = 86_400;
+    uint32 constant MAX_HEARTBEAT = 90_000;
     uint256 constant MAX_BAND_RATIO = 1000;
 
     function setUp() public {
@@ -94,11 +95,101 @@ contract AuditOracleParamBoundsTest is Test {
         _build(feed, MAX_HEARTBEAT + 1, 0, 0);
     }
 
-    /// @notice The ceiling is INCLUSIVE, because Base Sepolia's documented 24h bound sits exactly
-    /// on it. A ceiling below 86_400 would break testnet deploys, which is not an acceptable price.
+    /// @notice The ceiling is INCLUSIVE. Base Sepolia's documented 24h bound (86_400) is inside it
+    /// rather than on it since the ceiling rose to 90_000, and a ceiling below 86_400 would break
+    /// testnet deploys, which is not an acceptable price.
     function test_heartbeatAtTheCeilingIsAccepted() public {
         ChainlinkOracle oracle = _build(_feed(), MAX_HEARTBEAT, 0, 0);
-        assertEq(oracle.priceWad(ASSET), 2500e18, "the testnet bound still deploys and prices");
+        assertEq(oracle.priceWad(ASSET), 2500e18, "the ceiling bound still deploys and prices");
+    }
+
+    // --- the ceiling still TRIPS, which is the property the ceiling exists for ----------------
+
+    /// @notice THE TEST THAT MATTERS MOST FOR THE 2026-09-18 CEILING RAISE, and it is here because
+    /// the raise shipped without an external re-audit — this is the primary defence rather than a
+    /// supplement to one.
+    ///
+    /// Raising `MAX_HEARTBEAT` fixes a measured false-trip: the old 86_400 sat BELOW the real
+    /// maximum inter-update gap on Arc (86_423s on BTC/USD over a 449-hour walk), so a config at
+    /// the ceiling froze against a healthy feed. The failure mode of the FIX is the mirror image,
+    /// and it is worse: a ceiling raised far enough that the staleness guard can never fire leaves
+    /// that guard **present, configured and inert**. Nothing goes red. Every test above still
+    /// passes. It is the four self-disarming guards of 2026-09-18 one level up — a check that looks
+    /// like it covers something it does not — and it passes a careless review precisely because
+    /// everything looks green.
+    ///
+    /// So the bound is asserted in BOTH directions against the same oracle, which is the only
+    /// arrangement that can distinguish "the guard fires at the bound" from "the guard is gone":
+    /// one second past the bound must revert, one second inside it must price.
+    function test_theRaisedCeilingStillTripsOnStalenessInBothDirections() public {
+        MockAggregatorV3 feed = new MockAggregatorV3(8, 2500e8, block.timestamp);
+        ChainlinkOracle oracle = _build(address(feed), MAX_HEARTBEAT, 0, 0);
+
+        // Exactly AT the bound: the freshest reading the guard must still accept. `_requireFresh`
+        // compares against `>` the heartbeat, so age == heartbeat is inside.
+        feed.set(2500e8, block.timestamp - MAX_HEARTBEAT);
+        assertEq(oracle.priceWad(ASSET), 2500e18, "age == heartbeat must price: the bound is inclusive");
+
+        // One second INSIDE the bound. Stated separately from the case above because an
+        // off-by-one in the comparison would keep one of them passing.
+        feed.set(2500e8, block.timestamp - (MAX_HEARTBEAT - 1));
+        assertEq(oracle.priceWad(ASSET), 2500e18, "one second inside the bound must NOT freeze");
+
+        // One second PAST it. If this ever stops reverting, the ceiling has been raised past the
+        // point where the guard can fire and the staleness defence is decorative.
+        feed.set(2500e8, block.timestamp - (uint256(MAX_HEARTBEAT) + 1));
+        vm.expectRevert(abi.encodeWithSelector(IOracleAggregator.StaleOracle.selector, ASSET));
+        oracle.priceWad(ASSET);
+    }
+
+    /// @notice The raise must not have moved the bound so far that the ACTUAL Arc measurement
+    /// stops mattering. 86_423s is the worst inter-update gap measured on Arc's BTC/USD feed over
+    /// 449 hours; a vault configured at the new ceiling must price straight through it, which is
+    /// the entire reason the ceiling moved.
+    ///
+    /// Pinned as a number rather than described in prose because the prose is what was wrong
+    /// before: the old NatSpec argued 24h from Chainlink's published heartbeat TIER, and the tier
+    /// is not the gap — the gap is the tier plus publish jitter, which is strictly positive.
+    function test_theArcWorstObservedGapPricesUnderTheNewCeiling() public {
+        uint256 arcWorstObservedGap = 86_423;
+        assertGt(MAX_HEARTBEAT, arcWorstObservedGap, "the ceiling must clear the measured worst gap");
+
+        // THE CEILING IS BOUNDED FROM ABOVE TOO, and this line is the one that makes the raise
+        // reviewable rather than merely asserted. Everything else in this file passes at ANY
+        // ceiling: `test_heartbeatCenturyIsRejected` only rules out 100 years, and the
+        // both-directions test above trips at whatever the ceiling happens to be, so a ceiling of
+        // thirty days would satisfy both while leaving a dead feed undetected for a month. The
+        // ceiling is only defensible as measured-worst-gap plus a jitter allowance, so the
+        // allowance itself is pinned: at most one heartbeat period of headroom over the worst gap.
+        //
+        // 90_000 uses 3_577s of that budget — one hour over 86_400, which is ~54x the largest
+        // jitter observed in 56 days on USDC/USD, the best-sampled feed on the chain (it publishes
+        // on nothing but its heartbeat, so all 56 of its samples are heartbeat samples, and its
+        // tail reaches +67s). Raising the ceiling further needs a new measurement, not a new
+        // opinion, and this assertion is what forces that.
+        assertLe(
+            MAX_HEARTBEAT,
+            arcWorstObservedGap + 86_400,
+            "ceiling raised more than one heartbeat period past the measured worst gap -- "
+            "re-measure and argue it, do not widen until something stops failing"
+        );
+
+        MockAggregatorV3 feed = new MockAggregatorV3(8, 2500e8, block.timestamp);
+        ChainlinkOracle oracle = _build(address(feed), MAX_HEARTBEAT, 0, 0);
+
+        feed.set(2500e8, block.timestamp - arcWorstObservedGap);
+        assertEq(
+            oracle.priceWad(ASSET),
+            2500e18,
+            "the worst gap measured on Arc must not freeze a vault at the ceiling"
+        );
+
+        // And the old ceiling is shown to fail it, so this test records WHY the constant moved
+        // rather than merely asserting where it landed.
+        ChainlinkOracle old = _build(address(new MockAggregatorV3(8, 2500e8, block.timestamp)), 86_400, 0, 0);
+        vm.warp(block.timestamp + arcWorstObservedGap);
+        vm.expectRevert(abi.encodeWithSelector(IOracleAggregator.StaleOracle.selector, ASSET));
+        old.priceWad(ASSET);
     }
 
     // --- heartbeat: too tight ---------------------------------------------

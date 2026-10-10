@@ -504,6 +504,30 @@ contract UniswapV3TwapSourceTest is Test {
     /// The full read path never reverts, whatever the pool reports — it either prices or
     /// withholds. This is the property the aggregator's `try/catch` relies on and the reason
     /// the computation is wrapped in a self-call.
+    ///
+    /// Issue #219: this assertion used to read `assertEq(ts, block.timestamp, ...)`, which is
+    /// the PRE-H-2 convention (see the `latestPrice` notice above and line 124's fixture, both
+    /// of which document the change). `latestPrice` now stamps `_newestObservationTs()`, not
+    /// `block.timestamp` — deliberately, so the aggregator's staleness bound has something to
+    /// measure.
+    ///
+    /// Reaching the priced branch needs BOTH freshness guards at once: guard 3 (below) needs
+    /// the newest observation no older than `MAX_OBS_AGE` (90s here); guard 2 independently
+    /// needs the OLDEST observation at least `window` (1800s) old. `age` and the oldest
+    /// observation's age below are each `bound(ageSeed, 0, N)` over a DIFFERENT `N` (20 days vs.
+    /// 30 days) applied to the SAME raw `ageSeed`. For any `ageSeed <= 20 days`, both bounds
+    /// return `ageSeed` unchanged, so the two observations end up equally old — and since
+    /// `MAX_OBS_AGE` (90) is far below `window` (1800), no single shared value can satisfy both
+    /// guards at once. So no `ageSeed` in `[0, 20 days]` can EVER price; `ageSeed == 51`
+    /// (age-shaped as the counterexample looks) withholds, it does not reproduce the issue.
+    ///
+    /// The priced branch is reached only through SEED ALIASING between the two ranges: an
+    /// `ageSeed` just past 20 days wraps under the 20-day bound (measured: `1728052 -> 51`)
+    /// while staying unchanged under the 30-day bound (`1728052 -> 1728052`), so the newest
+    /// observation reads 51s old (guard 3 passes) while the oldest reads far older than the
+    /// window (guard 2 passes too) — reproducing issue #219's exact `ts == 1699999949`.
+    /// Bounding `ageSeed` away from the aliasing region would exclude exactly the pool states
+    /// this source exists to price, so the fix is the assertion, not the input domain.
     function testFuzz_latestPriceNeverReverts(int256 rawTick, int64 rawCum, uint16 card, uint32 ageSeed)
         public
     {
@@ -522,8 +546,42 @@ contract UniswapV3TwapSourceTest is Test {
 
         (uint256 p, uint256 ts) = src.latestPrice();
         // Either a real price stamped now, or the not-fresh signal. Never anything else.
-        if (p == 0) assertEq(ts, 0, "withholding must zero updatedAt");
-        else assertEq(ts, block.timestamp, "a price must be stamped now");
+        if (p == 0) {
+            assertEq(ts, 0, "withholding must zero updatedAt");
+        } else {
+            // H-2's actual invariant: a priced quote is stamped with the age of the DATA
+            // backing it, not the time of the read. `_meanTick`'s guard 3 (age > MAX_OBS_AGE
+            // reverts to TwapPoolNotUsable, caught by `latestPrice` as (0,0)) is what bounds
+            // how old that stamp may be. Guard 2 (oldest observation must be >= window old) is
+            // the OTHER precondition for reaching this branch at all -- see the seed-aliasing
+            // note above the function signature for why a small `age` alone is not sufficient.
+            assertLe(ts, block.timestamp, "updatedAt is never in the future");
+            assertGe(
+                ts,
+                block.timestamp - MAX_OBS_AGE,
+                "a priced quote must be within the freshness bound, not stamped now"
+            );
+        }
+    }
+
+    /// The exact counterexample from issue #219, pinned as a deterministic regression test
+    /// rather than left to a fuzzer to rediscover. Sets the newest observation's age directly
+    /// to 51 (NOT via `ageSeed` -- the fuzz test above only reaches this outcome through seed
+    /// aliasing, since `ageSeed == 51` alone withholds; see the note above its signature), with
+    /// the oldest observation safely `2 * WINDOW` old so guard 2 is not in question here. `age
+    /// = 51` reproduces `1699999949 != 1700000000` against the pre-fix assertion; against the
+    /// fixed assertion it passes because 51 <= MAX_OBS_AGE (90).
+    function test_fuzzCounterexample_age51StampsDataAgeNotReadTime() public {
+        MockV3Pool pool = _healthyPool(address(weth), address(usdc), int24(0));
+        UniswapV3TwapSource src = _oneHop(address(weth), pool);
+
+        uint32 age = 51;
+        pool.setRing(MIN_CARD, 7, uint32(block.timestamp - 2 * WINDOW), uint32(block.timestamp - age));
+        pool.setRawCumulatives(0, 0);
+
+        (uint256 p, uint256 ts) = src.latestPrice();
+        assertGt(p, 0, "age 51 is within MAX_OBS_AGE (90) and must price");
+        assertEq(ts, block.timestamp - age, "updatedAt must be the age of the data, 1699999949");
     }
 
     // --------------------------------------------------------------------------------------

@@ -143,7 +143,14 @@ assigned in `applyStandingDefault`):
 - **Stake quorum (`memberCount ≥ 5`):** needs `revealedWeight*BPS ≥ quorumBps*snapshotTotal`;
   `quorumBps ≥ 2500` and defaults contribute 0 to `revealedWeight` → 0 ≥ (positive) is false → fails.
 
-So zero live participation ⇒ defeated in every regime. The intended liveness floor holds. (The
+So zero live participation ⇒ defeated in every regime **as `finalize` stood at the date of this review**.
+It no longer does, and the record is corrected rather than left standing: the H-8/CM-7 remediation LATER added a
+second sub-five branch, `forStakeMajority = selfDirectedFor * 2 > snapshotTotal`, which reads FOR-stake and not
+`revealedVoterCount` — so a >50% standing-default FOR majority now passes a Rebalance with zero live reveals. That
+is intended (the Audit Council note in `finalize` argues it: a pre-declared majority is a real mandate) and is
+demonstrated by `test_defaultsStillCarrySubFiveWithZeroLiveReveals` in
+`contracts/test/audit/AuditDelegatedQuorum.t.sol`. The three-branch walk above enumerated branch 1 only.
+The intended liveness floor holds for the two branches it did enumerate. (The
 *documented* VO-2 behaviour that defaults can dominate *direction* once ≥25% real stake clears quorum is
 intact and is the accepted routine-rebalance semantics, not a defect.)
 

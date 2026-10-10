@@ -61,6 +61,23 @@ Any FULL-HISTORY Base Sepolia RPC works — the scripts assert `chainId == 84532
 anything, and `scripts/soak/lib.mjs`'s `assertLogsServed()` refuses to run a drill against an
 endpoint that cannot produce a log it can prove exists.
 
+**`sepolia.base.org` also RATE-LIMITS UNDER CONCURRENCY, and that is a different failure from the
+pruning one above, not the same one again.** Measured on a live soak: `over rate limit` on
+`eth_getLogs`, once the indexer, the canary, the oracle sampler and two drill tracks were all
+polling this endpoint at once — `poll.failed` on the indexer, `DETECTOR BROKEN` on five canary
+signals across two vaults. In a log the two failures look alike (an `eth_getLogs` call that should
+have worked came back wrong) and they have **opposite remedies**: pruning means stop using that
+endpoint; throttling means this one is fine alone, so reduce concurrency or get a dedicated
+endpoint — switching to publicnode to dodge throttling walks straight into pruning instead.
+`assertLogsServed()`'s single sequential positive-control read cannot see a concurrency-only
+failure by construction; `scripts/soak/preflight-rpc-concurrency.mjs` is the guard that fires a
+short concurrent burst at soak startup instead (see its own header for why a bounded burst, not a
+single request or an unbounded hammer). **Read its result as a startup tripwire, not a sustained-load
+guarantee**: a clean pass is a ~1-2s burst ruling out an endpoint already struggling at t=0, and says
+nothing about throttling that only appears after hours of continuous concurrent polling — which is
+exactly the failure shape measured above. It cannot be made to prove the latter without itself
+becoming the sustained concurrent load it is trying to detect.
+
 ## 3. Deploy (one command)
 
 ```bash

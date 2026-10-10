@@ -4,8 +4,8 @@
  * `contracts/config/base-mainnet.json` is the reference configuration. The launch docs argue its
  * values, and twice now the two have drifted apart without anything turning red:
  *
- *   - LAUNCH-READINESS §2 and go-to-market-plan said the exit fee decays over 302,400 s while the
- *     config carries 604,800 s (Finance: "Member Cost and the HWM", "Fee Model Sensitivities").
+ *   - LAUNCH-READINESS §2 and a second launch document said the exit fee decays over 302,400 s
+ *     while the config carries 604,800 s (Finance: "Member Cost and the HWM", "Fee Model Sensitivities").
  *   - `govDefencesNote` claimed Governance enforces a 100 bps proposal-threshold floor; that floor
  *     was implemented, measured and reverted (`test/audit/AuditProposalThresholdFloor.t.sol`).
  *     A config note that misstates a security check is how the next vault gets configured wrong
@@ -23,14 +23,14 @@
  * false claim through. A *negative* guard ("no doc may state a different decay period") must NOT
  * name its files, because the drift it exists to catch arrives in the file nobody added to the
  * list. This file's first version got that wrong: a hand-kept two-file list plus one literal
- * phrasing per claim, so appending `**Exit fee:** decay 302,400 s (3.5 days).` to
- * `docs/vault/fees-and-carry.md` left the suite green — the exact drift the file exists to stop.
+ * phrasing per claim, so appending `**Exit fee:** decay 302,400 s (3.5 days).` to a markdown file
+ * outside that list left the suite green — the exact drift the file exists to stop.
  * So: `LAUNCH_DOCS` below is used only for positive assertions, and every negative guard
  * enumerates markdown from the filesystem and matches the claim by *shape*, not by one phrasing.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,18 +54,44 @@ const sepolia = JSON.parse(read('contracts', 'config', 'base-sepolia.json'));
  * it is added, without an edit here. `base-sepolia.json` is still named, because it is the ONLY
  * testnet config and a glob for it would be a glob of one.
  */
-const mainnetConfigs = () =>
-  readdirSync(path.join(REPO, 'contracts', 'config'))
+const mainnetConfigs = () => {
+  const found = readdirSync(path.join(REPO, 'contracts', 'config'))
     .filter((f) => f.endsWith('-mainnet.json'))
-    .sort()
-    .map((f) => [f, JSON.parse(read('contracts', 'config', f))]);
+    .sort();
+  // THE FLOOR IS ON THE FILTERED SET, NOT ON THE DIRECTORY. `contracts/config/` holds plenty of
+  // files that are not mainnet configs, so a count of the directory stays healthy while this
+  // filter yields nothing -- which is the state that makes every loop below pass over zero
+  // configs. Measured, not argued: with this function returning `[]`, all 20 tests in this file
+  // stayed green, including the one asserting every mainnet `chainlinkOracle.assets` satisfies the
+  // ChainlinkOracle constructor bounds. That guard is what stands between a bad `heartbeatSeconds`
+  // and a broadcast, and it is not hypothetical that this directory changes: 4663's config was
+  // removed from the repository on 2026-09-18.
+  //
+  // TWO, not the exact names: arc-mainnet and base-mainnet are the shipped pair today, and naming
+  // them would turn a deliberate chain retirement into an unrelated red in whatever PR does it.
+  // This is a collapse detector, and that is ALL it is -- it cannot tell you that a THIRD mainnet
+  // config stopped being enumerated.
+  assert.ok(
+    found.length >= 2,
+    `only ${found.length} *-mainnet.json in contracts/config; every per-config assertion in this ` +
+      'file iterates this set, so an empty or collapsed filter makes them all pass over nothing.',
+  );
+  return found.map((f) => [f, JSON.parse(read('contracts', 'config', f))]);
+};
 
 /** Mainnet configs plus the one testnet config: the full set the shared assertions apply to. */
-const allConfigs = () => [...mainnetConfigs(), ['base-sepolia.json', sepolia]];
+const allConfigs = () => {
+  const all = [...mainnetConfigs(), ['base-sepolia.json', sepolia]];
+  // Inherits the floor above, and re-asserts it rather than relying on that: the coupling is a
+  // call, and a future edit that stops building this set from `mainnetConfigs()` would silently
+  // take the floor with it.
+  assert.ok(all.length >= 3, `only ${all.length} configs in the shared set`);
+  return all;
+};
 
 // Positive-requirement list ONLY (see the header): the launch-parameter docs that must state the
 // values. Never used to scope a negative guard.
-const LAUNCH_DOCS = ['docs/LAUNCH-READINESS.md', 'docs/vault/go-to-market-plan.md'];
+const LAUNCH_DOCS = ['docs/LAUNCH-READINESS.md'];
 
 // Directories that are dated records rather than live claims: an execution review quoting
 // `exitFeeMaxBps = 0` as a hypothetical is describing the state it reviewed, not asserting the
@@ -87,6 +113,11 @@ const SKIP_DIRS = new Set([
   'cache',
   'broadcast',
   'coverage',
+  // Build output. apps/vaults-ui's ui-smoke writes and deletes dist-ssr/ui-smoke-<port>/ WHILE this
+  // suite runs, so walking it raced a concurrent test: ENOENT on a 404.html that existed at readdir
+  // time (CI flake on #399). The source prose is what is guarded; its built copy is not.
+  'dist',
+  'dist-ssr',
 ]);
 
 const withCommas = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -152,12 +183,12 @@ test('no markdown file in the repo states a decay period other than the one the 
   // The negative guard. Enumerated from the filesystem so a NEW doc making a wrong claim is caught,
   // which a named-file list cannot do. Prior values may survive only as flagged history stated
   // outside the decay-period slot ("this line previously said 302,400 s"), which is how
-  // LAUNCH-READINESS §2 and go-to-market-plan currently record theirs.
+  // LAUNCH-READINESS §2 records its own.
   const seconds = mainnet.smoke.exitFeeDecayPeriod;
   const days = seconds / 86_400;
   const files = markdownFiles();
   assert.ok(files.length > 50, `only ${files.length} markdown files found; the walk is not reaching docs/`);
-  assert.ok(files.includes('docs/vault/fees-and-carry.md'), 'the walk no longer reaches docs/vault/, where the fee prose lives');
+  assert.ok(files.includes('docs/audit/walkthroughs/VaultCore.md'), 'the walk no longer reaches a NESTED docs/ subtree');
 
   let claims = 0;
   for (const file of files) {
@@ -194,10 +225,9 @@ test('no markdown file in the repo states a decay period other than the one the 
  *   - `base-mainnet.json`'s OWN `govNote`, twelve lines below the value, still read "this sets a
  *     non-zero timelockDuration ... mainnet capital wants a day to react" — the config annotating
  *     itself with the opposite of its own value;
- *   - `docs/vault/go-to-market-plan.md` still carried "Zero timelock is defensible *because* Mode-F
- *     exits exist", the exact claim LAUNCH-READINESS.md had just withdrawn as false.
- * Both are in LAUNCH_DOCS or the config itself, so binding the tuple would have caught the second
- * and the self-consistency check catches the first.
+ *   - a second launch document still carried "Zero timelock is defensible *because* Mode-F exits
+ *     exist", the exact claim LAUNCH-READINESS.md had just withdrawn as false.
+ * Binding the tuple would have caught the second and the self-consistency check catches the first.
  */
 test('every launch doc states the governance tuple the mainnet config carries', () => {
   const g = mainnet.smoke.gov;
@@ -300,12 +330,20 @@ test('no live markdown file states an exit-fee maximum other than the one the co
   assert.ok(claims >= LAUNCH_DOCS.length, `only ${claims} exit-fee-maximum claims matched; the patterns have stopped recognising the form the docs use`);
 });
 
-test('the exit-fee decay period in the mainnet config matches the site reference table by test, not by hand', () => {
-  // apps/site/test/site.test.mjs already pins how-it-works.html to the config. This cross-check
-  // only makes the dependency explicit so a future edit of that test cannot silently drop it.
-  const siteTest = read('apps', 'site', 'test', 'site.test.mjs');
-  assert.match(siteTest, /config\.smoke\.exitFeeDecayPeriod/, 'site.test.mjs no longer pins the exit-fee decay row to the reference mainnet configuration it reads (CONFIG_PATH)');
-});
+// THE EXIT-FEE DECAY CROSS-CHECK WAS REMOVED ON 2026-09-18, and this note is its headstone.
+//
+// It asserted that `apps/site/test/site.test.mjs` pinned the exit-fee decay row on
+// how-it-works.html to `config.smoke.exitFeeDecayPeriod`, so the published figure could not drift
+// from the configuration. Both the page and the whole `apps/site` tree of that era were deleted
+// when that site was retired, so there is no longer a published exit-fee decay figure anywhere to
+// keep fresh. `apps/site-next` was in turn deleted in #304; the current `apps/site` (the rebuild)
+// ships six static pages and pins no `smoke.*` field in its tests at all.
+//
+// It is DELETED rather than re-pointed because re-pointing it at the live site would have asserted
+// a pin that does not exist, and softening it to "some config field is pinned" would have been a
+// check that passes without checking. WHEN THE NEW SITE PUBLISHES AN EXIT-FEE FIGURE, restore a
+// test here that pins it — that is the moment the coverage is worth having again, and this comment
+// is what should stop it being forgotten.
 
 test("Governance.sol has no proposalThresholdBps floor, and every config's govDefencesNote says so", () => {
   const gov = read('contracts', 'src', 'Governance.sol');
@@ -406,7 +444,22 @@ function proseFiles() {
       }
     }
   })(REPO);
-  return found.map((f) => path.relative(REPO, f).split(path.sep).join('/'));
+  // Both consumers of this walk are NEGATIVE guards -- "no live prose says X" -- and a negative
+  // guard over an empty corpus is the purest form of a pass that checked nothing. With this
+  // function returning `[]`, the sequencer-fails-closed guard ran in 0.18 ms against a 64 ms
+  // baseline and the allowSubVaults-universal guard in 0.12 ms against 59 ms, both green.
+  //
+  // 151 files today. The floor is loose for the same reason `test-wiring-truth`'s is: tightening it
+  // makes every legitimate deletion an unrelated red, and buys nothing this comment does not
+  // already disclaim. It detects a COLLAPSE -- a SKIP_DIRS entry that swallows the repository, a
+  // walk rooted at the wrong directory -- and it does not detect one directory going missing.
+  const files = found.map((f) => path.relative(REPO, f).split(path.sep).join('/'));
+  assert.ok(
+    files.length >= 50,
+    `the prose walk found only ${files.length} file(s); the negative guards that iterate it would ` +
+      'report "no offending prose" without having read any.',
+  );
+  return files;
 }
 
 /**
@@ -631,8 +684,8 @@ test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.
   assert.equal(
     sepoliaDeployment.verifiedWiring?.['factory.allowSubVaults()'],
     true,
-    'base-sepolia.json no longer records factory.allowSubVaults() === true. docs/vault/subvaultregistry.md '
-      + 'cites that read by name as the evidence the flag is per-deployment.'
+    'base-sepolia.json no longer records factory.allowSubVaults() === true. docs/LAUNCH-READINESS.md '
+      + 'cites that read by name (verifiedWiring["factory.allowSubVaults()"]) as the evidence the flag is per-deployment.'
   );
 });
 
@@ -642,12 +695,12 @@ test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.
  * The test above pins the two SCRIPTS and the recorded on-chain read. It pins no prose, so nothing
  * stopped a doc re-asserting the universal — and that is exactly how the first version of this
  * change was rejected: it scoped bullet 2 of a two-bullet list and left bullet 1, and left the
- * canonical decision note (`root-vaults-only.md`) saying "the protocol ships with sub-vaults
- * disabled … every vault is wired root-only".
+ * canonical decision note of the day saying "the protocol ships with sub-vaults disabled … every
+ * vault is wired root-only".
  *
  * WHAT IS BANNED, and why these shapes rather than a scoping heuristic. "At launch" reads like
- * scoping but is not: `root-vaults-only.md` said "At launch the protocol ships with…" and was
- * still false, because the flag binds a FACTORY, not a date. So this guard does not try to judge
+ * scoping but is not: that same note said "At launch the protocol ships with…" and was still
+ * false, because the flag binds a FACTORY, not a date. So this guard does not try to judge
  * whether a sentence is sufficiently qualified. It bans the two CONSTRUCTIONS that erase the
  * per-factory binding no matter how they are qualified:
  *
@@ -695,10 +748,10 @@ const SUBVAULT_SCOPED = /\bit deploys\b|\bon (?:that|such a|this) factory\b|\bwh
 
 /**
  * SENTENCES, not lines. Markdown wraps at ~100 columns, so a claim and the clause that scopes it
- * routinely sit on different lines: `c1-empty-electorate.md` says "…so on that factory
- * `createChildVault` reverts and every vault it deploys is wired `subVaultRegistry = address(0)`
- * — no vault can be funded as a child there…", where the scoping is two lines above the claim. A
- * line-based guard reads that as an unscoped universal and false-positives on correct prose,
+ * routinely sit on different lines. The worked example this guard was written against read "…so on
+ * that factory `createChildVault` reverts and every vault it deploys is wired
+ * `subVaultRegistry = address(0)` — no vault can be funded as a child there…", where the scoping
+ * is two lines above the claim. A line-based guard reads that as an unscoped universal and false-positives on correct prose,
  * which is how a guard gets weakened or deleted. Paragraph-joined, then split on sentence ends.
  */
 function sentencesOf(text) {
@@ -939,24 +992,38 @@ test("every mainnet config's chainlinkOracle assets satisfy the ChainlinkOracle 
  *      `_requireSequencerUp` is ever changed to fail CLOSED, that note becomes false — and it is the
  *      note a reader consults to understand what the exemption costs them.
  */
-test('robinhood-mainnet.json leaves the sequencer uptime feed empty, on the record and for the stated reason', () => {
-  const rh = JSON.parse(read('contracts', 'config', 'robinhood-mainnet.json'));
-  assert.equal(rh.chainId, 4663, 'robinhood-mainnet.json is not chain 4663');
-
-  const seq = rh.chainlinkOracle.sequencerUptimeFeed;
-  assert.equal(seq, '', 'robinhood-mainnet.json now names a sequencer uptime feed; rewrite sequencerUptimeFeedNote to match it');
-
-  // The note, matched by SHAPE rather than by one phrasing: an owner approval, and its date.
-  const note = String(rh.chainlinkOracle.sequencerUptimeFeedNote ?? '');
-  assert.match(note, /owner[- ]approved/i, 'sequencerUptimeFeedNote must record that the exemption is owner-approved');
-  assert.match(note, /\b2026-09-04\b/, 'sequencerUptimeFeedNote must carry the date of that approval');
-
-  // Claim 2: the runtime behaviour the note describes.
+test('ChainlinkOracle still fails OPEN on a zero sequencer feed, which is what an exemption costs', () => {
+  // SPLIT FROM A CONFIG-ANCHORED TEST ON 2026-09-18. The original asserted two things at once: that
+  // a particular mainnet config left `sequencerUptimeFeed` empty with a dated owner approval, and
+  // that the CONTRACT skips the gate on `address(0)`. The first half died with that config when the
+  // chain was abandoned; the second half is a live property of shipped Solidity and had no business
+  // being coupled to a config file's existence.
+  //
+  // It matters on Arc for the same reason it mattered before: Chainlink publishes no L2 Sequencer
+  // Uptime Feed for Arc -- it is an L1, not a rollup -- so any Arc deployment runs with a zero feed
+  // and therefore with two of the three oracle defences, not three.
+  //
+  // The config half is NOT silently dropped: when `contracts/config/arc-mainnet.json` exists, add a
+  // test beside this one asserting its empty feed carries a dated owner approval. Until then there
+  // is no config to anchor it to, and a test that skips itself is how the previous one went quiet.
   const oracle = read('contracts', 'src', 'oracle', 'ChainlinkOracle.sol');
   assert.ok(
     oracle.includes('if (address(seq) == address(0)) return;'),
-    'ChainlinkOracle no longer skips _requireSequencerUp on address(0). robinhood-mainnet.json\'s '
-      + 'sequencerUptimeFeedNote tells the reader that an oracle with a zero feed serves prices '
-      + 'through an outage and never reverts on that account; rewrite it before this changes.'
+    'ChainlinkOracle no longer skips _requireSequencerUp on address(0). Every document stating that '
+      + 'an oracle with a zero feed serves prices through an outage and never reverts on that '
+      + 'account is now false; rewrite them before this change lands.'
   );
+});
+
+test('proseFiles() never walks build output (dist, dist-ssr), which a concurrent test creates and deletes mid-run', () => {
+  const probeDir = path.join(REPO, 'apps', 'vaults-ui', 'dist-ssr', '__config_doc_truth_probe__');
+  mkdirSync(probeDir, { recursive: true });
+  writeFileSync(path.join(probeDir, 'probe.md'), 'probe');
+  try {
+    const walked = proseFiles();
+    assert.ok(!walked.includes('apps/vaults-ui/dist-ssr/__config_doc_truth_probe__/probe.md'), 'proseFiles() walked into dist-ssr');
+    assert.ok(!walked.some((p) => p.split("/").some((seg) => seg === "dist" || seg === "dist-ssr")), "proseFiles() returned a path under a build-output directory");
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
 });

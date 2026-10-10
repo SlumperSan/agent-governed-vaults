@@ -28,7 +28,7 @@ browser automation layer.
 
 ## The loop
 
-1. **Build** the static output (`npm run build` in `apps/site-next`). If it does not build, stop.
+1. **Build** the static output (`npm run build --workspace apps/site`). If it does not build, stop.
 2. **Serve** `dist/` (not the dev server) for sign-off — CSP and asset paths differ.
 3. **Screenshot** the change at 375 / 768 / 1440 wide, light and dark where the design has both,
    `prefers-reduced-motion` on and off for anything animated.
@@ -38,9 +38,11 @@ browser automation layer.
    hit is a rejection.
 6. **Console**: no errors, no CSP violations.
 7. **Measure** motion: DevTools trace over the scroll path. Report frame time, not "smooth".
-8. **Guards**: `node --test apps/site/test/site.test.mjs` (it reads the seven `apps/site/*.html` pages,
-   not `dist/`; until a prerender step exists, step 4 is the wording check for `apps/site-next`), plus
-   `claims-lede-truth` and `config-doc-truth`.
+8. **Guards**: `node --test apps/site/test/site.test.mjs`, plus `claims-lede-truth` and
+   `config-doc-truth`. THE PRERENDER STEP NOW EXISTS (`apps/site/scripts/prerender.mjs`), so the
+   guards read `apps/site/dist/`, not the source `.html` files — an earlier version of this line
+   said the opposite and told you step 4 was the only wording check. It is not: `claims-lede-truth`
+   asserts the built pages are inside its walk and throws if they are missing.
 9. **Report** with the screenshots attached (`SendUserFile`), the network summary, the trace
    numbers, and the guard counts. A report without artifacts is a claim.
 

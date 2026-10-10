@@ -24,7 +24,7 @@ import {MockERC20, MockOracle, StubFeeEngine, StubRegistry} from "../mocks/Mocks
 /// REJECTED: re-anchoring the TTL to `p.createdAt`. That would let a default be applied up to
 /// `DEFAULT_TTL + cfg.commitDuration` after being set, and VO-3's accepted disposition is exactly
 /// the upper bound on that staleness (`docs/THREAT-MODEL.md` row VO-3;
-/// `docs/reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md` Area 2). See `docs/vault/mediums-and-lows.md`.
+/// `docs/reviews/SPRINT6-GOVERNANCE-ACCEPTED-ROWS.md` Area 2).
 contract AuditStandingDefaultTtlVsCommitTest is Test {
     uint256 constant USDC_1 = 1e6;
 

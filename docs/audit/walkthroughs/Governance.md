@@ -43,12 +43,14 @@ governance review, Coverage).
 ## Quorum regimes (finalize)
 
 1. **RuleChange:** every unit of snapshot-eligible stake revealed FOR (CM-8/K-2).
-2. **Signer regime** (`memberCount < 5` at creation): `revealedVoterCount * 2 > memberCount`
-   — absolute head-count majority (CM-7). The regime is **fixed per proposal at creation**
-   from `pastHolderCount(createdAt − 1)`; membership changes never flip an in-flight proposal.
+2. **Sub-five regime** (`memberCount < 5` at creation): `headMajorityWithStake || forStakeMajority`.
+   It is NOT the absolute head count it was before H-8/CM-7 — both branches carry a stake term, and
+   both measure SELF-DIRECTED FOR weight, `forWeight - delegatedForWeight[pid]` (VO-2b). The regime is
+   **fixed per proposal at creation** from `pastHolderCount(createdAt − 1)`; membership changes never
+   flip an in-flight proposal.
 3. **Stake quorum** (≥5 members): `revealedWeight * BPS >= quorumBps * snapshotTotal`, with
-   `quorumBps >= 2500` (25% protocol floor). **Only revealed (live) weight counts** — standing
-   defaults never touch the quorum numerator (VO-2/K-3).
+   `quorumBps >= 2500` (25% protocol floor). **Only SELF-revealed weight counts** — neither standing
+   defaults (VO-2/K-3) nor cranked delegations (VO-2b) touch the quorum numerator.
 
 Pass additionally requires `forWeight > againstWeight` in every regime.
 
@@ -57,7 +59,7 @@ Pass additionally requires `forWeight > againstWeight` in every regime.
 | Path | Who | Counts in quorum? | Notes |
 | --- | --- | --- | --- |
 | `commitVote` → `revealVote` | member with weight at snapshot | Yes | Commitment binds `(pid, voter, support, salt)` — no cross-proposal replay, no direction change at reveal. **Own weight is never concentration-capped** (G1 fix) |
-| `revealDelegated(pid, delegator)` | anyone (crank) | Yes | Requires the delegate to have revealed; routes the delegator's weight onto the delegate's direction; `_accrueDelegate` enforces the concentration cap on **received** weight; self-commit takes precedence |
+| `revealDelegated(pid, delegator)` | anyone (crank) | **Never** (VO-2b) | Requires the delegate to have revealed; routes the delegator's weight onto the delegate's direction and emits it as `DelegatedRevealed(..., support, weight)`; `_accrueDelegate` enforces the concentration cap on **received** weight; self-commit takes precedence. Tally direction only — it touches neither `revealedWeight` nor `revealedVoterCount`, and its FOR share is tracked in `delegatedForWeight[pid]` so `finalize` can subtract it sub-five |
 | `applyStandingDefault(pid, member)` | anyone (crank) | **Never** | Rebalance-only (on-chain type check); default must **predate the proposal** (`setAt < createdAt`, G4 fix) and be within its 72h TTL; tally direction only |
 
 Mutual exclusion: `revealVote` needs a commit; the two cranks require `commitOf == 0` and
@@ -102,8 +104,18 @@ degrades vaults to Mode-I-only exits — never a lockup (H-1 design).
 ## Invariants
 
 - One live (Active/Passed-unexpired) proposal per vault (`invariant_atMostOneLiveProposal`).
-- `revealedWeight ≤ snapshotTotal`; `forWeight + againstWeight` consistent with reveals +
-  cranked defaults/delegations (`invariant_roundAccountingConsistent`).
+- `revealedWeight ≤ snapshotTotal` (`invariant_revealedNeverExceedsSnapshot`) — and strictly below it
+  whenever any weight arrived by crank or default rather than a self-reveal (VO-2/VO-2b).
+- `roundsPassed + roundsDefeated ≤ roundsRun` (`invariant_roundAccountingConsistent`). **That is a
+  count of rounds, not weight accounting** — an earlier revision of this line cited it for
+  "`forWeight + againstWeight` consistent with reveals + cranked defaults/delegations", which it does
+  not check. Nothing in the invariant suite does: `GovHandler` never calls `setDelegate` or
+  `revealDelegated`, so `delegatedForWeight` is 0 throughout it and an invariant over that quantity
+  would be vacuous. The for/against/quorum accounting is covered by unit tests instead —
+  `contracts/test/audit/AuditDelegatedQuorum.t.sol` and `contracts/test/Governance.t.sol`.
+- `delegatedForWeight[pid] ≤ forWeight` holds by construction rather than by assertion: both are
+  written in the same branch of `revealDelegated`, which is why `finalize`'s subtraction cannot
+  underflow.
 - `snapshotTotal` immutable per proposal.
 - Standing defaults contribute to tally only — a vault of pure defaults is defeated in every
   regime (accepted-rows review, Area 2).

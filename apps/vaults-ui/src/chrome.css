@@ -1,0 +1,110 @@
+/* ===========================================================================
+   THE CHROME: masthead, nav, buttons, footer.
+
+   PORTED FROM apps/site/src/sections.css AND base.css, RULE FOR RULE, and every
+   value below is either a custom property from the shared tokens file or a
+   geometry figure carried across unchanged. There is no colour literal in this
+   file. If you are about to add one, the token is missing and the fix is to add
+   it to apps/site/src/tokens.css, where both surfaces read it.
+
+   WHY THE RULES ARE RE-STATED HERE RATHER THAN IMPORTED. The site's base.css is
+   not separable: the nav rules sit in a file that also sets a 72px h1, a fixed
+   radial glow behind the fold and 120px section padding, all correct for a
+   landing page and all wrong for a dense application surface. THE TOKENS ARE
+   SHARED AND THE CHROME IS NOT, which is the split that matters -- a palette
+   that drifts produces two products, whereas a nav that drifts by 2px does not.
+
+   NO INLINE STYLE ATTRIBUTE MAY REPLACE ANY OF THIS. public/_headers ships
+   style-src 'self' with no 'unsafe-inline'; a style="..." attribute in served
+   markup is refused by the browser, silently, at runtime, where no build step
+   sees it.
+   =========================================================================== */
+
+/* ── Nav ──────────────────────────────────────────────────────────────── */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--gutter);
+  /* The site's own translucent bar. The literal is --bg's channels at 0.78, and
+     it is written out because CSS cannot take an alpha of a hex custom property
+     without color-mix(), which this file does not need a baseline for. */
+  background: rgba(7, 11, 24, 0.78);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line-soft);
+}
+.nav-inner { width: 100%; max-width: 1160px; margin: 0 auto; display: flex; align-items: center; gap: 24px; }
+
+.brand { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; color: var(--ink); }
+/* The Threshold mark, rendered inline by `Shell.tsx`'s `BrandMark` — sized to its own cropped
+   viewBox (54:39) rather than forced into the old 19px square, which would squeeze the opening the
+   mark exists to keep visible. `aspect-ratio` keeps it undistorted as `height` scales. */
+.brand-mark { display: block; height: 20px; width: auto; aspect-ratio: 54 / 39; flex-shrink: 0; }
+.brand-name { font-weight: 650; letter-spacing: -0.015em; font-size: 16px; }
+
+.nav-links { display: flex; gap: 22px; margin-left: 12px; flex: 1; }
+.nav-links a { text-decoration: none; font-size: 14.5px; color: var(--ink-dim); transition: color 0.15s ease; }
+.nav-links a:hover { color: var(--ink); }
+.nav-links a[aria-current="page"] { color: var(--ink); }
+.nav-site { flex-shrink: 0; }
+
+@media (max-width: 720px) {
+  .nav-links { display: none; }
+  .nav-inner { justify-content: space-between; }
+}
+
+/* ── The right-hand affordance ─────────────────────────────────────────── */
+/* THE SITE'S .btn RULES ARE NOT PORTED, and this is the entry for why.
+
+   HISTORY, PAST TENSE. When the masthead landed, all three of those rules
+   measured below WCAG 2.2 against this palette: #ffffff on --blue at 4.4988:1,
+   the same on --blue-bright at 3.1626:1 on hover, and .btn-ghost's identifying
+   --line border at 1.3321:1. Porting them would have put a fourth surface under
+   the same failure, so they were left behind and filed. They are now FIXED on
+   apps/site — --blue-control, --blue-control-hover and --line-control, measured
+   against every ground the stylesheet paints and guarded by
+   apps/site/test/contrast.test.mjs. See
+   Findings/2026-09-19-site-button-rules-fail-wcag-aa.
+
+   THE REASON THEY STAY UNPORTED IS NOW THE ORDINARY ONE, not a defect: this
+   surface renders no filled button and no bordered ghost control, and a rule
+   carried across for something that does not exist here is the same standing
+   permission public/_headers spends its length refusing. WHEN THIS WORKSPACE
+   GROWS A BUTTON, take those three control tokens — they come through the same
+   tokens.css this file already reads — rather than re-deriving values.
+
+   The affordance below is a link, and it clears AA on its own: full-strength
+   ink against the dim nav links beside it, plus an underline, so it is
+   distinguished by two signals rather than by a boundary alone. */
+.nav-site {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 0.15s ease;
+}
+.nav-site:hover { text-decoration-thickness: 2px; }
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+footer { border-top: 1px solid var(--line-soft); padding: 40px var(--gutter) 56px; }
+.foot-grid {
+  max-width: 1160px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+}
+.foot-links { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13.5px; }
+.foot-links a { color: var(--ink-dim); text-decoration: none; }
+.foot-links a:hover { color: var(--ink); text-decoration: underline; }

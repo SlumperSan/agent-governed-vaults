@@ -30,7 +30,7 @@ contract DeployChainlinkOracleTest is Test {
     address constant USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
 
     string constant SEQUENCER_REQUIRED_REVERT =
-        "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532 and Robinhood Chain 4663";
+        "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532, Robinhood Chain 4663 and Arc 5042";
 
     DeployChainlinkOracle script;
 
@@ -155,6 +155,26 @@ contract DeployChainlinkOracleTest is Test {
         ChainlinkOracle oracle = script.runWithSequencer(address(0));
         assertEq(address(oracle.sequencerUptimeFeed()), address(0), "no uptime feed on Robinhood Chain");
         assertEq(oracle.priceWad(WETH), 1917e18, "prices with no sequencer gate at all");
+    }
+
+    /// @notice Arc deploys with no uptime feed, which is the point of the owner's 2026-09-19
+    /// exemption: Arc is an L1, so there is no sequencer whose uptime could be reported and Chainlink
+    /// publishes no feed to supply. Before this entry `forge script DeployChainlinkOracle` reverted on
+    /// 5042 and the Arc deploy could not run at all.
+    function test_arcDeploysWithoutSequencerFeed() public {
+        vm.chainId(5042);
+        _mockFeed(ETH_USD_FEED, 1917e8);
+        ChainlinkOracle oracle = script.runWithSequencer(address(0));
+        assertEq(address(oracle.sequencerUptimeFeed()), address(0), "no uptime feed on Arc");
+        assertEq(oracle.priceWad(WETH), 1917e18, "prices with no sequencer gate at all");
+    }
+
+    /// @notice Scoped to the one id, same as Robinhood's: 5043 still fails closed. A range, an
+    /// off-by-one or a `>=` would pass both allowlist assertions and fail here.
+    function test_chainAdjacentToArcStillRequiresSequencerFeed() public {
+        vm.chainId(5043);
+        vm.expectRevert(bytes(SEQUENCER_REQUIRED_REVERT));
+        script.runWithSequencer(address(0));
     }
 
     /// @notice The exemption is scoped to the one id: an ADJACENT id still fails closed. A range or

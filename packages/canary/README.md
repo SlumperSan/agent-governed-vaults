@@ -47,8 +47,8 @@ its own `CANARY_STATE_PATH`.
 | `src/signals/oracle-health.mjs` | signal (a) against the LIVE `ChainlinkOracle`, plus the flavor probe that dispatches to it or to the retired `oracle-freshness.mjs` |
 | `src/signals/feed-identity.mjs` | signal (g): the feed's live `decimals()` against the oracle's CACHED `scale`, its `description()` against the constructor's own USD predicate, and the aggregator behind the proxy. The one signal that owns persistent state (`feedIdentity` in the canary state file) |
 | `src/signals/governance-watch.mjs` | signal (h): the active proposal's phase from `Governance` state against chain time, one transition key per phase, with the reveal deadline and earliest `execute` in `detail`; lifecycle events scanned for tx attribution only (Monitoring Gap Analysis G8) |
-| `src/signals/operator-power.mjs` | signal (i): the operator's own stake against Governance's `proposalThresholdBps` AND VaultCore's `CREATOR_MIN_STAKE_BPS` — two independent 5%-at-launch gates, monitored separately and each against the share book its own gate reads (voting-eligible for `propose()`, raw for the exit gate) (G1) |
-| `src/signals/depeg-reference.mjs` | signal (j): a Chainlink USDC/USD reference feed read every sweep, purely informational — the vault's own oracle pins USDC at $1.00 regardless (G4) |
+| `src/signals/operator-power.mjs` | signal (i): the operator's own stake against Governance's `proposalThresholdBps` AND VaultCore's `CREATOR_MIN_STAKE_BPS`, two independent 5%-at-launch gates, monitored separately and each against the share book its own gate reads (voting-eligible for `propose()`, raw for the exit gate) (G1) |
+| `src/signals/depeg-reference.mjs` | signal (j): a Chainlink USDC/USD reference feed read every sweep, purely informational, the vault's own oracle pins USDC at $1.00 regardless (G4) |
 
 ## Design notes
 
@@ -81,7 +81,7 @@ every transition, same channel, no severity. Full env reference is in
 [docs/CANARY.md](../../docs/CANARY.md); the shape of it:
 
 - **Tiered webhooks.** `PAGE_WEBHOOK_URL` gets only ALERT transitions on `nav-backing`,
-  `share-conservation`, `fee-routing`, `exit-liveness`, `oracle-freshness`, `depeg-reference` — the
+  `share-conservation`, `fee-routing`, `exit-liveness`, `oracle-freshness`, `depeg-reference`, the
   signals Operations' Severity Ladder puts at SEV-1/2 and worth waking for. `LOG_WEBHOOK_URL` gets
   everything else: recoveries, every DEGRADED/DETECTOR BROKEN line, the self-clearing half of
   `feed-identity`, and `operator-power`'s early-warning bar.
@@ -100,7 +100,7 @@ every transition, same channel, no severity. Full env reference is in
   nothing, so on the ordinary dilution path the "decision needed now" line would never be delivered.
   Bounded at one page per vault per crossing of the 1.1x bar.
 - **`depeg-reference` pages.** The vault prices member capital at a par that no longer holds, and the
-  only remedy is a time-ordered human de-list decision — "informational" describes the contract's
+  only remedy is a time-ordered human de-list decision, "informational" describes the contract's
   response, not the responder's. Its two blind branches (dead feed, non-positive answer) are
   `detectorBroken` and stay LOG.
 - **Off-host dead-man's switch.** `DEADMAN_PING_URL` is pinged once per successful sweep **that

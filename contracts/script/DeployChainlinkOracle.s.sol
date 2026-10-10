@@ -58,6 +58,23 @@ contract DeployChainlinkOracle is Script {
     /// those terms; see docs/DEPLOYMENT.md "Robinhood Chain 4663".
     uint256 constant ROBINHOOD_CHAIN_ID = 4663;
 
+    /// @notice Arc mainnet, and the second id added under the allowlist rule above.
+    /// @dev WHY IT IS EXEMPT, AND IT IS NOT THE SAME REASON AS 4663. Arc is an L1, not a rollup, so
+    /// there is no sequencer to report uptime for and no feed to supply — Chainlink publishes none
+    /// for arc-mainnet, which was established by enumerating all 32 feeds it does publish for the
+    /// chain rather than by failing to find one. An L2 uptime guard on an L1 has nothing to guard.
+    /// 4663's entry weakened a guard that was applicable; this entry records that the guard does not
+    /// apply.
+    /// OWNER DECISION, 2026-09-19, in these terms: "Exempt 5042 — Arc is an L1 and no uptime feed
+    /// exists." Routed to him because docs/SWARM.md §10 puts widening this allowlist out of bounds
+    /// for exactly the reason this comment exists: the change that makes a deploy stop refusing looks
+    /// identical to the change that makes a guard stop working.
+    /// WHAT REMAINS BETWEEN A STALLED ARC AND A PRICED VAULT: the per-asset staleness bound and the
+    /// sane-price band, both still armed. The heartbeat is 90,000 s on Arc, one hour above the worst
+    /// gap measured across 199 rounds — so a stalled feed is caught, a stalled CHAIN is not
+    /// distinguishable from a quiet one, and that is the residual this entry accepts.
+    uint256 constant ARC_CHAIN_ID = 5042;
+
     /// @notice Does a deploy on `chainId` have to supply ORACLE_SEQUENCER?
     /// @dev L2-GENERIC and FAIL-CLOSED: an ALLOWLIST of the ids known to have no uptime feed, with
     /// "yes, required" as the default for every other id — including one this script has never seen.
@@ -74,7 +91,8 @@ contract DeployChainlinkOracle is Script {
     /// no vendor feed exists to supply, so the entry buys a deploy at the price of the guard. The
     /// doc comment on ROBINHOOD_CHAIN_ID above states what that costs at price time.
     function requiresSequencerUptimeFeed(uint256 chainId) public pure returns (bool) {
-        return chainId != LOCAL_CHAIN_ID && chainId != BASE_SEPOLIA_CHAIN_ID && chainId != ROBINHOOD_CHAIN_ID;
+        return chainId != LOCAL_CHAIN_ID && chainId != BASE_SEPOLIA_CHAIN_ID && chainId != ROBINHOOD_CHAIN_ID
+            && chainId != ARC_CHAIN_ID;
     }
 
     /// @notice Env entrypoint: `forge script script/DeployChainlinkOracle.s.sol:DeployChainlinkOracle`.
@@ -93,7 +111,7 @@ contract DeployChainlinkOracle is Script {
         // uptime guard never gets as far as deploying an oracle without one.
         require(
             sequencer != address(0) || !requiresSequencerUptimeFeed(block.chainid),
-            "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532 and Robinhood Chain 4663"
+            "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532, Robinhood Chain 4663 and Arc 5042"
         );
 
         address[] memory assets = vm.envAddress("ORACLE_ASSETS", ",");

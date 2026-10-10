@@ -37,7 +37,8 @@ const REQUIRED_SINGLETONS = [
 /**
  * Parse + validate a deployments address book.
  * @param {unknown} raw parsed JSON
- * @param {{expectChainId?: number}} [opts]
+ * @param {{expectChainId?: number, source?: string}} [opts] `source` is the path this record was
+ *   read from, used only to name the file in an error message — pass it when the caller has one.
  * @returns {{
  *   chainId: number, chainName: string, rpc: string, explorer: string,
  *   startBlock: number, deployer: string,
@@ -50,6 +51,7 @@ const REQUIRED_SINGLETONS = [
 export function parseDeployment(raw, opts = {}) {
   if (!raw || typeof raw !== 'object') throw new Error('deployment: not a JSON object');
   const d = /** @type {any} */ (raw);
+  const source = opts.source ?? '(unnamed address book)';
 
   const chainId = Number(d.chainId);
   if (!Number.isInteger(chainId) || chainId <= 0) throw new Error(`deployment: bad chainId ${d.chainId}`);
@@ -88,12 +90,30 @@ export function parseDeployment(raw, opts = {}) {
   });
   if (assets.length === 0) throw new Error('deployment: oracle lists no assets');
 
+  // NEVER fall back to 0. `startBlock` (or the older `deployBlock` key) is the block the indexer
+  // must resume from; a silent 0 here — the shape `?? 0` produces — is indistinguishable from a
+  // deliberate "index the entire chain from genesis" and is exactly what turned an unset
+  // START_BLOCK into a ~2-hour catch-up against a 5-minute soak deadline. Refuse instead, and name
+  // the file, so a missing or malformed field fails at load rather than at the chain-catch-up wait.
+  const rawStartBlock = d.startBlock ?? d.deployBlock;
+  if (rawStartBlock == null) {
+    throw new Error(
+      `deployment: ${source} has no startBlock or deployBlock — an indexer built from this record `
+      + 'would default to START_BLOCK=0 and index the entire chain from genesis. Set startBlock '
+      + '(or deployBlock) to the factory deploy block.',
+    );
+  }
+  const startBlock = Number(rawStartBlock);
+  if (!Number.isInteger(startBlock) || startBlock <= 0) {
+    throw new Error(`deployment: ${source} startBlock/deployBlock must be a positive integer, got ${rawStartBlock}`);
+  }
+
   return {
     chainId,
     chainName: String(d.chainName ?? ''),
     rpc: String(d.rpc ?? ''),
     explorer: String(d.explorer ?? ''),
-    startBlock: Number(d.startBlock ?? d.deployBlock ?? 0),
+    startBlock,
     deployer: need('deployer', d.deployer),
     registry: need('OperatorRegistry', s.OperatorRegistry),
     subRegistry: need('SubVaultRegistry', s.SubVaultRegistry),
@@ -139,7 +159,13 @@ export function wiringExpectations(dep) {
  */
 export function loadDeployment(pathname, opts = {}) {
   if (!fs.existsSync(pathname)) throw new Error(`deployment: address book not found at ${pathname}`);
-  return parseDeployment(JSON.parse(fs.readFileSync(pathname, 'utf8')), opts);
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(pathname, 'utf8'));
+  } catch (e) {
+    throw new Error(`deployment: ${pathname} is not valid JSON: ${/** @type {Error} */ (e).message}`);
+  }
+  return parseDeployment(raw, { ...opts, source: pathname });
 }
 
 /** Repo-relative location of the address book a soak run loads when nothing overrides it. */

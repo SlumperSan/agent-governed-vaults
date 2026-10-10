@@ -65,6 +65,10 @@ contract VaultCore {
     /// suggested. The creator is untrusted by explicit design, and a creator-set
     /// `maxSlippageBps = 10000` would be a silent no-op — reproducing M-6, where every named
     /// defence turned out to be optional and the only worked config disabled all three.
+    /// @notice CEILING for a rebalance's oracle slippage bound, in bps. A proposal carries its own
+    /// bound and may only make it TIGHTER — see `executeRebalance`. It was formerly the bound
+    /// itself, which meant the tolerance a rebalance executed under was a compile-time constant
+    /// that no voter had approved.
     uint256 public constant MAX_REBALANCE_SLIPPAGE_BPS = 200; // 2%
 
     // ─────────────────────────────── immutables ───────────────────────────────
@@ -205,6 +209,7 @@ contract VaultCore {
     error InsufficientAssetBalance();
     error SwapSlippage();
     error MinOutTooLow();
+    error BadSlippageBound();
     error NotRegisteredChild();
     error TooManyChildren();
     error ChildSettlementPending();
@@ -887,12 +892,21 @@ contract VaultCore {
     /// test/audit/AuditLookThroughReadOnlyReentrancy.t.sol.
     /// @param adapter allowlisted execution adapter to route every leg through
     /// @param orders swap legs; tokenIn/tokenOut restricted to USDC + basket assets
-    function executeRebalance(address adapter, IExecutionAdapter.SwapOrder[] calldata orders)
-        external
-        nonReentrant
-    {
+    function executeRebalance(
+        address adapter,
+        uint256 maxSlippageBps,
+        IExecutionAdapter.SwapOrder[] calldata orders
+    ) external nonReentrant {
         require(msg.sender == address(governance), OnlyGovernance());
         require(isAllowedAdapter[adapter], AdapterNotAllowed());
+
+        // The bound is CARRIED BY THE PROPOSAL and is therefore fixed at commit time: it is part
+        // of the payload `Governance.execute` hashes against `actionHash`, so the tolerance below
+        // is one the voters actually approved rather than a constant nobody voted on. It may only
+        // TIGHTEN: the ceiling still holds, so a passing vote cannot widen the tolerance beyond
+        // what the contract has always allowed, and 0 is rejected because a bound of zero would
+        // demand exact oracle parity and make every real swap unexecutable.
+        require(maxSlippageBps > 0 && maxSlippageBps <= MAX_REBALANCE_SLIPPAGE_BPS, BadSlippageBound());
 
         for (uint256 i; i < orders.length; ++i) {
             IExecutionAdapter.SwapOrder calldata o = orders[i];
@@ -907,7 +921,7 @@ contract VaultCore {
             // stated rather than assumed.
             require(
                 _valueWad(o.tokenOut, o.minAmountOut) * BPS
-                    >= _valueWad(o.tokenIn, o.amountIn) * (BPS - MAX_REBALANCE_SLIPPAGE_BPS),
+                    >= _valueWad(o.tokenIn, o.amountIn) * (BPS - maxSlippageBps),
                 MinOutTooLow()
             );
 

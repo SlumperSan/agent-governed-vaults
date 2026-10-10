@@ -6,8 +6,11 @@ exit) is here or one link away. The contracts are the whole integration surface;
 to request and no gateway between an agent and a vault.
 
 - **On-chain ABIs:** `contracts/out/*/*.json` after `forge build`
-- **Chain configuration:** [`contracts/config/robinhood-mainnet.json`](../contracts/config/robinhood-mainnet.json);
-  assets, feeds, sane-price bands and the settlement token
+- **Chain configuration:** the protocol is built for Arc but has no live chain configuration yet —
+  [`docs/evidence/arc-mainnet-survey.json`](../docs/evidence/arc-mainnet-survey.json) is a read-only
+  survey of Arc (assets, feeds, sane-price bands and the settlement token), not a deployable config;
+  see [`docs/evidence/arc-deploy-runbook.md`](../docs/evidence/arc-deploy-runbook.md) for what remains
+  before one exists
 - **Machine index:** [`/llms.txt`](../llms.txt)
 
 ## 1. Act on-chain
@@ -20,8 +23,32 @@ The agent-relevant entrypoints:
 | Join a vault | `VaultCore.deposit(amountUsdc)` | First deposit enters a **4-hour observation window** (no shares/votes yet). Call `activate(self)` after the window, or `skipWindow()` to opt in immediately (irreversible, once per vault). |
 | Propose | `Governance.propose(vault, ptype, actionHash)` | Needs ≥ `proposalThresholdBps` of eligible stake. `ptype`: 0 Rebalance, 1 RuleChange, 2 ChildAllocation. |
 | Vote | `Governance.commitVote(pid, hash)` then `revealVote(pid, support, salt)` | **Commit-reveal**: two txns. `hash = keccak256(abi.encode(pid, voter, support, salt))`. Missing the reveal window forfeits your vote. |
-| Delegate | `Governance.setDelegate(vault, delegate)` | Concentration-capped on the delegate's *received* weight. |
+| Delegate | `Governance.setDelegate(vault, delegate)` | Concentration-capped on the delegate's *received* weight. **Delegated weight moves the TALLY and never the QUORUM** (VO-2b) — see the note below. |
 | Exit | `VaultCore.requestExit(shares)` | Instant pro-rata **in-kind** (Mode I). While `Governance.hasPendingExecution(vault)` is true (from the moment a live proposal reaches its **reveal phase**, not from the moment one passes, and on through a passed proposal's execution window), it queues and settles at **post-rebalance NAV** (Mode F). Call `settleQueuedExit(self)` once the proposal executes, is defeated, or its window lapses. |
+
+### What delegating does, and the one thing it cannot do
+
+**Appointing a delegate changes which way your weight counts. It cannot make your weight count
+toward whether the vote is decidable at all.** Once your delegate reveals, anyone may crank your
+weight onto their direction — that moves `forWeight`/`againstWeight`. It is deliberately excluded
+from `revealedWeight`, the quorum numerator, exactly as a standing default has always been.
+
+**Three consequences a member should know BEFORE joining, not when they first try to vote:**
+
+1. **A vault where most members delegate can stall.** Quorum is `quorumBps` of stake that
+   SELF-revealed. If the members who actually show up hold less than that, a Rebalance is Defeated
+   however many delegations were cranked onto it.
+2. **A `RuleChange` now needs EVERY member to reveal in person.** Full consensus is
+   `revealedWeight == snapshotTotal`, and delegation no longer contributes to it. A vault with one
+   permanently absent member can still pass Rebalance and ChildAllocation proposals; it can never
+   change its own rules. **If that is unacceptable to you, it is a reason not to join that vault.**
+3. **It does not freeze the vault.** A Defeated `RuleChange` settles like any other proposal, so the
+   next one is not blocked.
+
+**Why the rule is this way:** while cranked weight counted toward quorum, ONE member revealing plus a
+stranger cranking offline delegators reached quorum, passed and executed — at the shipped
+`quorumBps` 2500 / `concentrationCapBps` 4000, at membership as small as three. The demonstration is
+`contracts/test/audit/AuditDelegatedQuorum.t.sol`.
 
 **Read NAV/eligibility before acting:** `VaultCore.navPerShareWad()`,
 `pastVotingEligibleShares(member, ts)`, `exitFeeBpsOf(member)`.
@@ -44,12 +71,14 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   asset** (`ChainlinkOracle`; WETH via ETH/USD, cbBTC via BTC/USD, USDC pinned). If that feed
   breaches its heartbeat or the sane-price band, or (**on Base only**) the sequencer is down or
   inside its post-recovery grace period, `priceWad` reverts and **everything freezes, including
-  exits**, by design, and with **no fallback source**. Predicting a freeze on chain 4663 uses a
-  shorter list: no Chainlink L2 sequencer uptime feed exists for it, so `sequencerUptimeFeed` is
-  `address(0)`, `_requireSequencerUp` returns early and that trigger cannot fire there; and its
-  feeds publish on an 86,400 s heartbeat, exactly `MAX_HEARTBEAT`
-  (`contracts/src/oracle/ChainlinkOracle.sol:98`), so the staleness trigger fires only after a feed
-  has been stopped for more than a day. The oracle is immutable per vault, so check
+  exits**, by design, and with **no fallback source**. Predicting a freeze depends on the chain: a
+  chain with no Chainlink L2 sequencer uptime feed configured has `sequencerUptimeFeed` at
+  `address(0)`, so `_requireSequencerUp` returns early and that trigger cannot fire there — but only
+  once a deploy explicitly exempts that chain id; the deploy script fails closed for any id it has
+  not been told about. Independent of that, every feed has a per-asset heartbeat capped by
+  `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:132`), and the staleness trigger fires
+  only after a feed has gone stale past whichever heartbeat the deploy actually configures. The
+  oracle is immutable per vault, so check
   `VaultCore.oracle()` against the blessed set before you deposit and don't strand funds in a vault
   whose feeds you don't trust. Un-activated (observation-window) deposits stay reclaimable during a
   freeze via `cancelPending`, which reads no oracle.

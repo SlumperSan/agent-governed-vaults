@@ -5,8 +5,10 @@
  * implements, in its "cheapest possible form".
  *
  * IT CLOSES G4 ONLY WHERE A FEED ADDRESS IS CONFIGURED. There is no default unless CHAIN_ID is
- * explicitly 8453, so on every other chain — including Robinhood Chain 4663, where the protocol
- * is deployed — this returns `skipped` and the gap stays open until USDC_USD_FEED_ADDRESS is set.
+ * explicitly 8453, so on every other chain, including Arc mainnet 5042 where the protocol is
+ * deployed, this returns `skipped` and the gap stays open until USDC_USD_FEED_ADDRESS is set. A
+ * Chainlink USDC/USD feed exists on Arc at 0x84EA90AC252Dc437031461836DB5164219147905
+ * (`contracts/config/arc-mainnet.json` chainlinkOracle.usdcPinNote); it is not defaulted here.
  *
  * WHAT THIS EXISTS FOR. `ChainlinkOracle` and `OracleAggregator` both PIN USDC at $1.00 rather than
  * measuring it — deposits and exits price USDC at par through the whole vault, unconditionally, by

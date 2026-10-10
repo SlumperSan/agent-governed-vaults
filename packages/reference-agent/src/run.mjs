@@ -142,6 +142,18 @@ async function main() {
       governance: config.chain.governance,
       onEvent: (e) => (e.level === 'warn' ? log.warn(e.msg, e.detail) : log.info(e.msg, e.detail)),
     });
+    // BEFORE the first read: prove --rpc answers for --chain-id, or refuse (#204). The
+    // TESTNET_CHAIN_IDS check above tests the DECLARED id, so on its own it cannot tell a testnet
+    // run from a mainnet RPC handed a default --chain-id. This is the half that reads the
+    // connection. Fatal rather than a warning: every address read below is chain-specific.
+    try {
+      const bound = await chainReader.assertBoundToDeclaredChain();
+      log.info(`chain binding: ${bound.message}`);
+    } catch (err) {
+      log.error(String(err?.message ?? err));
+      process.exitCode = 2;
+      return;
+    }
   } else {
     log.warn('no --rpc given: chain reads come from a STUB fixture. Every value it produces is marked [stub-chain] and none of it is live data.');
     const nowSec = Math.floor(Date.now() / 1000);
