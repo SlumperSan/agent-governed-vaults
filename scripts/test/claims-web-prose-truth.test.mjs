@@ -92,6 +92,7 @@ import {
   ENUMERATION_FOLLOWS,
   RWLY_ATTRIBUTION,
   RWLY_BACKED_BY_VAULT,
+  FEE_BYPASSES_OPERATOR,
 } from '../lib/claims-shapes.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -321,6 +322,35 @@ test('no rendered string in apps/web/src attributes protocol fees, governance or
       'governance/entitlement subject (see claims-lede-truth.test.mjs guard 7).\n' +
       `Offending text:\n${report(hits)}`,
   );
+});
+
+test('no rendered string in apps/web/src says a fee never reaches the operator, who is a member', () => {
+  const hits = [];
+  for (const { file, text } of modulesWithExtractedText()) {
+    const hay = flat(text);
+    for (const re of FEE_BYPASSES_OPERATOR) {
+      for (const m of hay.matchAll(re)) hits.push({ file, quote: m[0] });
+    }
+  }
+  assert.deepEqual(
+    hits.map((h) => h.file),
+    [],
+    'The operator is a member (the creator holds a >=5% stake lock, THREAT-MODEL CM-1), so the\n' +
+      'exit fee reaches it pro rata through its own shares (EE-9); see claims-lede-truth.test.mjs\n' +
+      'guard 9. Say the mechanism instead: "it stays in the vault, adding to the value of every\n' +
+      'remaining share". The routing form ("never routed to the operator") is true and is spared.\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
+test('probe: apps/web/src fee-bypass guard reds a planted string and spares the routing form', () => {
+  const caught = (s) =>
+    FEE_BYPASSES_OPERATOR.some((re) => {
+      re.lastIndex = 0;
+      return re.test(flat(s));
+    });
+  assert.equal(caught('Paid to the members who stay, never to the operator.'), true);
+  assert.equal(caught('Exit fees never route to the operator at all.'), false);
 });
 
 test('probe: the extractor reads rendered strings, not the comments that describe banned shapes', () => {
