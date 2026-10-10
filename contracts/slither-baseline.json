@@ -1,0 +1,429 @@
+{
+  "$schema": "card 134 -- see contracts/scripts/slither_baseline_check.py",
+  "entries": {
+    "assembly::BoundedCall.boundedCall": {
+      "count": 1,
+      "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
+    },
+    "assembly::BoundedCall.boundedStaticCall": {
+      "count": 1,
+      "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
+    },
+    "assembly::SafeTransferLib._call2": {
+      "count": 1,
+      "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
+    },
+    "assembly::SafeTransferLib._call3": {
+      "count": 1,
+      "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
+    },
+    "assembly::SafeTransferLib.tryTransfer": {
+      "count": 1,
+      "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
+    },
+    "assembly::VaultDeployer._readChunk": {
+      "count": 1,
+      "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
+    },
+    "assembly::VaultDeployer._writeChunk": {
+      "count": 1,
+      "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
+    },
+    "assembly::VaultDeployer.deploy": {
+      "count": 1,
+      "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
+    },
+    "cache-array-length::VaultCore._settleExit": {
+      "count": 1,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10) and the child-vault loop (MAX_CHILDREN=8). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
+    },
+    "cache-array-length::VaultCore.navWad": {
+      "count": 1,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10) and the child-vault loop (MAX_CHILDREN=8). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
+    },
+    "calls-loop::ChainlinkOracle._requireUsdQuote": {
+      "count": 1,
+      "reason": "Called FROM the constructor's per-asset loop above (not a loop itself) -- same constructor-only, deploy-time-only reasoning; not the basket-loop class. Reconciled 2026-09-24."
+    },
+    "calls-loop::ChainlinkOracle.constructor": {
+      "count": 2,
+      "reason": "Not the basket-loop class this check's default reason describes -- read 2026-09-24: contracts/src/oracle/ChainlinkOracle.sol, this loop is over the DEPLOYER-SUPPLIED per-asset feed config array (assets_), runs exactly ONCE at construction (not a hot path), and each iteration's external calls are the per-feed config validation (_requireUsdQuote, decimals()) a bad deploy needs to fail on while it is still fixable. Bounded by deploy gas, not MAX_CHILDREN. Reconciled 2026-09-24."
+    },
+    "calls-loop::SubVaultRegistry.registerChild": {
+      "count": 1,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::SubVaultRegistry.stackedExitFeeCapBps": {
+      "count": 1,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore._assetValueWad": {
+      "count": 12,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore._bal": {
+      "count": 3,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore._childPendingExecution": {
+      "count": 2,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore._fullNavWad": {
+      "count": 77,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore._holdingValueWad": {
+      "count": 22,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore._redeemChildMeasured": {
+      "count": 4,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore._settleExit": {
+      "count": 2,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore.constructor": {
+      "count": 1,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultCore.executeRebalance": {
+      "count": 1,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultFactory._requireOracleCoversBasket": {
+      "count": 2,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "calls-loop::VaultFactory.createChildVault": {
+      "count": 1,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:135) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:133) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+    },
+    "costly-loop::VaultCore.executeRebalance": {
+      "count": 3,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10) and the child-vault loop (MAX_CHILDREN=8). SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
+    },
+    "cyclomatic-complexity::VaultCore._settleExit": {
+      "count": 1,
+      "reason": "Accepted -- VaultCore._settleExit's branching is the exit-settlement state machine (queued/immediate/child-backed), covered by the audit test suite rather than simplified for the detector. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity'."
+    },
+    "divide-before-multiply::VaultCore._settleExit": {
+      "count": 4,
+      "reason": "By design for the payout legs -- rounds DOWN on purpose, favouring the vault/remaining members (SPRINT1 4.6 NAVps-non-decreasing invariant, fuzzed). SLITHER-TRIAGE.md 'divide-before-multiply'; H-6 sub-vault-only caveat is dormant at launch (C-1, sub-vaults disabled)."
+    },
+    "incorrect-equality::Checkpoints.push": {
+      "count": 1,
+      "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+    },
+    "incorrect-equality::Governance._isSettled": {
+      "count": 1,
+      "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+    },
+    "incorrect-equality::VaultCore._mintShares": {
+      "count": 1,
+      "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+    },
+    "incorrect-equality::VaultCore._settleExit": {
+      "count": 6,
+      "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+    },
+    "incorrect-equality::VaultCore.convertToAssets": {
+      "count": 1,
+      "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+    },
+    "incorrect-equality::VaultCore.convertToShares": {
+      "count": 1,
+      "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+    },
+    "incorrect-equality::VaultCore.navPerShareWad": {
+      "count": 1,
+      "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+    },
+    "low-level-calls::AggregationRouterAdapter.executeSwap": {
+      "count": 1,
+      "reason": "By design -- pinned-router call behind the selector allowlist + measured-delta minOut (EX-3). SLITHER-TRIAGE.md 'low-level-calls'."
+    },
+    "low-level-calls::ChainlinkOracle._requireUsdQuote": {
+      "count": 1,
+      "reason": "By design -- constructor-only staticcall to probe an oracle's description(), ok/length checked, fails CLOSED (require(ok && ret.length>=96)). Read 2026-09-24: contracts/src/oracle/ChainlinkOracle.sol. Same 'checked ok, validated payload' class as the row's other sites -- reconciled 2026-09-24."
+    },
+    "low-level-calls::IdentityGate.agentIdOf": {
+      "count": 1,
+      "reason": "By design -- staticcall to the ERC-8004 identity registry, ok/data.length checked, fails OPEN (documented NatSpec: returns not-found rather than reverting). Read 2026-09-24: contracts/src/IdentityGate.sol. Same 'checked ok, validated payload' class -- reconciled 2026-09-24."
+    },
+    "low-level-calls::IdentityGate.hasIdentity": {
+      "count": 1,
+      "reason": "By design -- same staticcall pattern as IdentityGate.agentIdOf above."
+    },
+    "missing-inheritance::OperatorRegistry": {
+      "count": 1,
+      "reason": "Cosmetic -- interface-shaped contracts that do not formally `is` the interface; ABIs match and are exercised across the interface by the factory-path tests. SLITHER-TRIAGE.md 'missing-inheritance'."
+    },
+    "missing-inheritance::SubVaultRegistry": {
+      "count": 1,
+      "reason": "Cosmetic -- interface-shaped contracts that do not formally `is` the interface; ABIs match and are exercised across the interface by the factory-path tests. SLITHER-TRIAGE.md 'missing-inheritance'."
+    },
+    "missing-inheritance::VaultCore": {
+      "count": 1,
+      "reason": "Cosmetic -- interface-shaped contracts that do not formally `is` the interface; ABIs match and are exercised across the interface by the factory-path tests. SLITHER-TRIAGE.md 'missing-inheritance'."
+    },
+    "missing-inheritance::VaultDeployer": {
+      "count": 1,
+      "reason": "Cosmetic -- interface-shaped contracts that do not formally `is` the interface; ABIs match and are exercised across the interface by the factory-path tests. SLITHER-TRIAGE.md 'missing-inheritance'."
+    },
+    "missing-zero-check::IdentityGate.agentIdOf": {
+      "count": 1,
+      "reason": "Safe -- `agent` is a view-function query parameter, not a stored/authoritative address; address(0) is a legitimate 'no identity' input that simply returns not-found, no state mutation. Read 2026-09-24: contracts/src/IdentityGate.sol -- reconciled 2026-09-24."
+    },
+    "missing-zero-check::IdentityGate.hasIdentity": {
+      "count": 1,
+      "reason": "Safe -- same reasoning as IdentityGate.agentIdOf above (view query parameter)."
+    },
+    "missing-zero-check::VaultCore.constructor": {
+      "count": 1,
+      "reason": "By design -- subVaultRegistry_==0 is a VALID config (root-only vaults, the launch default per C-1), so it is intentionally not guarded. SLITHER-TRIAGE.md 'Fixed' row parenthetical."
+    },
+    "missing-zero-check::VaultFactory.constructor": {
+      "count": 1,
+      "reason": "By design -- same subVaultRegistry_==0-is-valid reasoning as VaultCore.constructor above. SLITHER-TRIAGE.md 'Fixed' row parenthetical."
+    },
+    "reentrancy-balance::AggregationRouterAdapter.executeSwap": {
+      "count": 1,
+      "reason": "REAL, fixed (nonReentrant + scoped refund). SLITHER-TRIAGE.md 'AggregationRouterAdapter.executeSwap -- 1 row -- REAL, fixed TWICE'."
+    },
+    "reentrancy-balance::DirectPoolAdapter.executeSwap": {
+      "count": 2,
+      "reason": "Not real as an exploit (no balanceOf sweep, re-entry only shrinks the measured delta and fails closed on Slippage); guarded with nonReentrant anyway since non-reentrancy is a property of IExecutionAdapter, not of any one caller. SLITHER-TRIAGE.md 'DirectPoolAdapter.executeSwap'."
+    },
+    "reentrancy-balance::UniswapV3Adapter.executeSwap": {
+      "count": 1,
+      "reason": "Same disposition as DirectPoolAdapter.executeSwap: nonReentrant, measured-balance-delta settlement (EX-3), and already carries the scoped refund (min(inAfter-inBefore, amountIn)) AggregationRouterAdapter needed a fix for. A 5th reentrancy-balance site not named in SLITHER-TRIAGE.md's 'eight rows, four sites' table (read 2026-09-24: contracts/src/UniswapV3Adapter.sol lines ~152-207) -- reconciled 2026-09-24, same class as the sibling adapters."
+    },
+    "reentrancy-balance::VaultCore._settleExit": {
+      "count": 1,
+      "reason": "Not real -- every internal decrement completes before the first external call; the flagged shortfallWad condition is evaluated against already-final accounting. SLITHER-TRIAGE.md '_settleExit -> _redeemChildMeasured -- 1 row'."
+    },
+    "reentrancy-balance::VaultCore.executeRebalance": {
+      "count": 4,
+      "reason": "Not real as flagged (nonReentrant mutex across the loop); real in a dimension the detector does not model, registered as H-9 and FIXED (VaultCore.sol locked()/Reentrancy() guard, 0e70ea69). SLITHER-TRIAGE.md 'VaultCore.executeRebalance -- 4 rows, 1 site'."
+    },
+    "reentrancy-benign::FeeEngine.pullEscrowed": {
+      "count": 1,
+      "reason": "Covered by its own nonReentrant mutex (read 2026-09-24: contracts/src/FeeEngine.sol#144, `function pullEscrowed(...) external nonReentrant`). A site not named in SLITHER-TRIAGE.md's reentrancy-no-eth/-events/-benign row (that row's 'FeeEngine has no mutex' names onFeeCollected specifically, not this function) -- reconciled 2026-09-24."
+    },
+    "reentrancy-benign::VaultCore._redeemChildMeasured": {
+      "count": 1,
+      "reason": "Covered by VaultCore's nonReentrant mutex across the exit path. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "reentrancy-benign::VaultCore._settleExit": {
+      "count": 1,
+      "reason": "Covered by VaultCore's nonReentrant mutex -- both call sites (requestExit, settleQueuedExit) are nonReentrant. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "reentrancy-benign::VaultCore.pullChildEscrow": {
+      "count": 1,
+      "reason": "Covered by VaultCore's nonReentrant mutex. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "reentrancy-benign::VaultFactory.createChildVault": {
+      "count": 1,
+      "reason": "No mutex, but the factory's only state is the append-only allVaults array; nesting only interleaves push order, VaultCreated is emitted innermost-first matching indexer sort order, and a nested attempt to register the still-constructing outer vault fails (no code yet). SLITHER-TRIAGE.md 'Sprint 10 correction' under 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "reentrancy-benign::VaultFactory.createVault": {
+      "count": 1,
+      "reason": "Same reasoning as createChildVault above (append-only allVaults, innermost-first emission, no-code-yet guard). SLITHER-TRIAGE.md 'Sprint 10 correction'."
+    },
+    "reentrancy-events::FeeEngine.onFeeCollected": {
+      "count": 1,
+      "reason": "False positive by CEI -- no mutex, but checks-effects-interactions holds. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "reentrancy-events::Governance.execute": {
+      "count": 1,
+      "reason": "Governance carries no mutex anywhere by design; argued by CEI, not the VaultCore lock. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "reentrancy-events::VaultFactory.createChildVault": {
+      "count": 1,
+      "reason": "Same append-only-state reasoning as reentrancy-benign::VaultFactory.createChildVault above."
+    },
+    "reentrancy-events::VaultFactory.createVault": {
+      "count": 1,
+      "reason": "Same append-only-state reasoning as reentrancy-benign::VaultFactory.createVault above."
+    },
+    "reentrancy-no-eth::VaultCore.allocateToChild": {
+      "count": 1,
+      "reason": "Covered by VaultCore's nonReentrant mutex. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "reentrancy-no-eth::VaultCore.executeRebalance": {
+      "count": 1,
+      "reason": "Covered by VaultCore's nonReentrant mutex across the loop. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "timestamp::AggregationRouterAdapter.executeSwap": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::ChainlinkOracle._requireSequencerUp": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::ChainlinkOracle.priceWad": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Checkpoints.push": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::DirectPoolAdapter.executeSwap": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance._accrueDelegate": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance._isSettled": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance._refreshStatus": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.applyStandingDefault": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.commitVote": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.execute": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.finalize": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.hasPendingExecution": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.markExpired": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.propose": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.revealDelegated": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.revealVote": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::Governance.setDelegate": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::UniswapV3Adapter.executeSwap": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore._checkCreatorGate": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore._deposit": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore._exitFeeBps": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore._mintShares": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore._settleExit": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore.activate": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore.allocateToChild": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore.convertToAssets": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore.convertToShares": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore.executeRebalance": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore.navPerShareWad": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore.requestExit": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "too-many-digits::SafeTransferLib.tryTransfer": {
+      "count": 1,
+      "reason": "False positive -- a compiler-embedded creation-code blob and a left-aligned 4-byte selector padded to a word, neither a literal anyone typed. SLITHER-TRIAGE.md 'too-many-digits'."
+    },
+    "too-many-digits::VaultDeployer.constructor": {
+      "count": 1,
+      "reason": "False positive -- a compiler-embedded creation-code blob and a left-aligned 4-byte selector padded to a word, neither a literal anyone typed. SLITHER-TRIAGE.md 'too-many-digits'."
+    },
+    "uninitialized-local::VaultCore._settleExit": {
+      "count": 2,
+      "reason": "Safe -- accumulators intentionally relying on Solidity's zero default before being summed. SLITHER-TRIAGE.md 'uninitialized-local'."
+    },
+    "unused-return::ChainlinkOracle._requireSequencerUp": {
+      "count": 1,
+      "reason": "By design -- boundedCall results are best-effort (H-1), IExecutionAdapter.executeSwap's return is ignored because settlement is measured-balance-delta (EX-3), and oracle calls ignore fields the caller does not need. SLITHER-TRIAGE.md 'unused-return'."
+    },
+    "unused-return::ChainlinkOracle.constructor": {
+      "count": 2,
+      "reason": "By design -- boundedCall results are best-effort (H-1), IExecutionAdapter.executeSwap's return is ignored because settlement is measured-balance-delta (EX-3), and oracle calls ignore fields the caller does not need. SLITHER-TRIAGE.md 'unused-return'."
+    },
+    "unused-return::ChainlinkOracle.priceWad": {
+      "count": 1,
+      "reason": "By design -- boundedCall results are best-effort (H-1), IExecutionAdapter.executeSwap's return is ignored because settlement is measured-balance-delta (EX-3), and oracle calls ignore fields the caller does not need. SLITHER-TRIAGE.md 'unused-return'."
+    },
+    "unused-return::DirectPoolAdapter.executeSwap": {
+      "count": 1,
+      "reason": "By design -- boundedCall results are best-effort (H-1), IExecutionAdapter.executeSwap's return is ignored because settlement is measured-balance-delta (EX-3), and oracle calls ignore fields the caller does not need. SLITHER-TRIAGE.md 'unused-return'."
+    },
+    "unused-return::UniswapV3Adapter.executeSwap": {
+      "count": 1,
+      "reason": "By design -- boundedCall results are best-effort (H-1), IExecutionAdapter.executeSwap's return is ignored because settlement is measured-balance-delta (EX-3), and oracle calls ignore fields the caller does not need. SLITHER-TRIAGE.md 'unused-return'."
+    },
+    "unused-return::VaultCore._recordRealization": {
+      "count": 1,
+      "reason": "By design -- boundedCall results are best-effort (H-1), IExecutionAdapter.executeSwap's return is ignored because settlement is measured-balance-delta (EX-3), and oracle calls ignore fields the caller does not need. SLITHER-TRIAGE.md 'unused-return'."
+    },
+    "unused-return::VaultCore._settleExit": {
+      "count": 4,
+      "reason": "By design -- boundedCall results are best-effort (H-1), IExecutionAdapter.executeSwap's return is ignored because settlement is measured-balance-delta (EX-3), and oracle calls ignore fields the caller does not need. SLITHER-TRIAGE.md 'unused-return'."
+    },
+    "unused-return::VaultCore.executeRebalance": {
+      "count": 1,
+      "reason": "By design -- boundedCall results are best-effort (H-1), IExecutionAdapter.executeSwap's return is ignored because settlement is measured-balance-delta (EX-3), and oracle calls ignore fields the caller does not need. SLITHER-TRIAGE.md 'unused-return'."
+    }
+  }
+}
