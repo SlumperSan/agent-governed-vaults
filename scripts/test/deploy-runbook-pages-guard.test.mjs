@@ -229,14 +229,45 @@ const markdownPaths = () => {
 // fences only — the repo already carries 8 ```shell``` and 3 ```sh``` blocks, so a
 // `wrangler pages deploy .` planted inside any of those, or a ```console```/```powershell```/
 // ```ps1``` block, was invisible to this test regardless of the command inside it.
-// The regex opens on ANY info string, not only the runnable ones, so fence pairing stays aligned: a
-// json or solidity fence that this regex skipped would make its CLOSING fence read as a bare opener
-// and mis-pair every later block, hiding a planted deploy command in a following sh block
-// (Security, PR #432 review). Runnable-ness is filtered afterwards by `runnableBlocks`.
-const DEPLOY_FENCE_RE = /```([\w-]*)\n([\s\S]*?)```/g;
+// Fences are parsed by the CommonMark rules, line by line, not by one regex: an opening fence is 3+
+// backticks or tildes (after any indent or blockquote marker) followed by ANY info string, and it
+// closes only on a fence of the SAME character at least as long as the opener, with nothing else
+// on the line. Every fence is read, runnable or not, so pairing stays aligned: a json or solidity
+// fence that was skipped would make its CLOSING fence read as a bare opener and mis-pair every
+// later block, hiding a planted deploy command in a following sh block. The first attempt matched
+// the info string with a word-characters-only class, and so still failed to open ```ts title="x",
+// ```c++, ```sh {.copy}, a fence with a trailing space after the language, and ~~~ fences
+// (Security, PR #432 review). Runnable-ness is decided afterwards, on the first word of the info
+// string, case-insensitively, by `runnableBlocks`.
+const FENCE_OPEN_RE = /^[ \t>]*(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE_RE = /^[ \t>]*(`{3,}|~{3,})[ \t]*$/;
 const RUNNABLE_LANGS = new Set(['', 'sh', 'bash', 'shell', 'console', 'powershell', 'ps1']);
+const parseFences = (text) => {
+  const fences = [];
+  let open = null;
+  for (const line of text.split(/\r?\n/)) {
+    if (open) {
+      const close = line.match(FENCE_CLOSE_RE);
+      if (close && close[1][0] === open.ch && close[1].length >= open.len) {
+        fences.push({ lang: open.lang, body: open.lines.join('\n') + '\n' });
+        open = null;
+      } else {
+        open.lines.push(line);
+      }
+      continue;
+    }
+    const m = line.match(FENCE_OPEN_RE);
+    // A backtick fence's info string may not itself contain a backtick (that is inline code).
+    if (!m || (m[1][0] === '`' && m[2].includes('`'))) continue;
+    const lang = m[2].trim().split(/[\s{,]/)[0].toLowerCase();
+    open = { ch: m[1][0], len: m[1].length, lang, lines: [] };
+  }
+  // An unclosed fence runs to the end of the document (CommonMark); still read it.
+  if (open) fences.push({ lang: open.lang, body: open.lines.join('\n') + '\n' });
+  return fences;
+};
 const runnableBlocks = (text) =>
-  [...text.matchAll(DEPLOY_FENCE_RE)].filter((m) => RUNNABLE_LANGS.has(m[1])).map((m) => m[2]);
+  parseFences(text).filter((f) => RUNNABLE_LANGS.has(f.lang)).map((f) => f.body);
 
 test('no tracked Markdown file instructs `wrangler pages deploy .` (or `./`) in a runnable code block', () => {
   const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
@@ -287,4 +318,60 @@ test('probe: an unlisted-language fence ahead of a runnable one does not misalig
   const found = [];
   for (const block of runnableBlocks(doc)) for (const hit of block.matchAll(deployDotRe)) found.push(hit[1]);
   assert.deepEqual(found, ['.'], 'a runnable fence after an unlisted-language fence must still be read');
+});
+
+test('probe: fence pairing survives info strings with spaces, symbols, case, and tilde fences', () => {
+  // Security review of PR #432, second round: each opener below used to fail to open under the
+  // word-characters-only info-string class, which mis-paired every later block and hid the planted
+  // command in the sh fence.
+  const deployDotRe = /wrangler(?:@\S+)?\s+pages\s+deploy\s+(\.\/?)(?:\s|$)/g;
+  const hits = (doc) => {
+    const found = [];
+    for (const block of runnableBlocks(doc)) for (const hit of block.matchAll(deployDotRe)) found.push(hit[1]);
+    return found;
+  };
+  const planted = '```sh\nwrangler pages deploy . --project-name rwally\n```\n';
+  const lead = [
+    '```ts title="x"\nconst a = 1;\n```\n',
+    '```c++\nint a;\n```\n',
+    '```sh {.copy}\necho hi\n```\n',
+    '```json \n{"a":1}\n```\n',
+    '~~~yaml\na: 1\n~~~\n',
+    '````md\n```sh\necho nested\n```\n````\n',
+  ];
+  for (const l of lead) {
+    assert.deepEqual(hits(`${l}\ntext\n\n${planted}`), ['.'], `a runnable fence after ${JSON.stringify(l)} must still be read`);
+  }
+  // The planted command inside each unusual-but-runnable opener.
+  const cmd = 'wrangler pages deploy . --project-name rwally';
+  for (const [open, close] of [
+    ['```Bash', '```'],
+    ['```sh ', '```'],
+    ['```sh {.copy}', '```'],
+    ['```SH title="x"', '```'],
+    ['~~~sh', '~~~'],
+    ['~~~~bash', '~~~~'],
+    ['```sh{.copy}', '```'],
+    ['```bash,title=x', '```'],
+  ]) {
+    assert.deepEqual(hits(`${open}\n${cmd}\n${close}\n`), ['.'], `a deploy-dot inside ${JSON.stringify(open)} must be caught`);
+  }
+  // A closing fence may carry trailing spaces; if it did not close, the next block would mis-pair.
+  assert.deepEqual(
+    hits(`\`\`\`json\n{}\n\`\`\`  \n\ntext\n\n${planted}`),
+    ['.'],
+    'a closing fence with trailing spaces must close the block',
+  );
+  // Triple backticks with a backtick later on the line are inline code, not a fence opener.
+  assert.deepEqual(
+    hits(`Use \`\`\`x\`\`\` inline.\n\`\`\`x\`\`\` is inline code too.\n\n${planted}`),
+    ['.'],
+    'an inline-code line starting with triple backticks must not open a fence',
+  );
+  // A shorter or different-character fence line inside a block does not close it.
+  assert.deepEqual(
+    hits(`\`\`\`\`sh\n\`\`\`\n${cmd}\n~~~\n\`\`\`\`\n`),
+    ['.'],
+    'a shorter or different-char fence line must not close the block early',
+  );
 });
