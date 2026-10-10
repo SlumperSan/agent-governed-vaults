@@ -420,6 +420,16 @@ export function readCalendar(vaultRoot) {
   return { problem: skipped.length ? `skipped: ${skipped.join(', ')}` : '', items, dir: base };
 }
 
+/**
+ * EXPORTED so the dashboard can re-read the board WITHOUT re-running collect(). The board is pure
+ * filesystem and costs milliseconds; collect() shells out to git and gh and takes seconds. A card
+ * that was just answered or deleted must show its new state on the very next poll, not after the
+ * next collection finishes.
+ */
+export function readBoard(vaultRoot) {
+  return board(vaultRoot);
+}
+
 function board(vaultRoot) {
   const base = path.join(vaultRoot, 'Tasks');
   if (!existsSync(base)) {

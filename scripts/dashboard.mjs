@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync, renameSync, appendFileSync, mkdirSync, unl
 import path from 'node:path';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
 import { buildSignQueueResponse, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
-import { readCalendar } from './lib/project-status.mjs';
+import { readBoard, readCalendar } from './lib/project-status.mjs';
 import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions } from './lib/task-numbers.mjs';
 
 const argv = process.argv.slice(2);
@@ -53,13 +53,15 @@ const VAULT_ROOT = 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed 
 const TASKS_DIR = path.join(VAULT_ROOT, 'Tasks');
 
 /**
- * The content calendar is pure filesystem and costs milliseconds, so it is read on every status
- * request and laid over the cached snapshot rather than being collected in the worker. A calendar
- * that cannot be read leaves the snapshot as it was: the board is the point.
+ * The board and the content calendar are pure filesystem and cost milliseconds, so they are read on
+ * every status request and laid over the snapshot the worker collected (git, CI, launch gates: the
+ * slow half). A card he just answered or deleted therefore shows its new state on the next poll
+ * instead of waiting for the next collection, and a file edited in Obsidian appears within a poll.
+ * If the fast read fails the worker's own board is served: stale, not wrong.
  */
-function withCalendar(snap) {
+function withLiveVault(snap) {
   try {
-    return { ...snap, calendar: readCalendar(VAULT_ROOT) };
+    return { ...snap, board: readBoard(VAULT_ROOT), calendar: readCalendar(VAULT_ROOT) };
   } catch {
     return snap;
   }
@@ -1683,6 +1685,56 @@ document.getElementById('sq-items').addEventListener('click', async (e) => {
  * listener. Do not widen the bind address to "make it reachable from my phone".
  */
 /**
+ * Resolve ONE task from disk, without collecting a snapshot.
+ *
+ * recordAnswer and deleteTask used to start from a forced snapshot, which waits for a full
+ * collect(): git, GitHub CI, the launch gates and the deployment address book, seconds on a good day.
+ * The page showed that as a button stuck on "saving..." and, when the poll next rendered, a card that
+ * had moved on its own. A write needs ONE task file, so this reads that file and parses only the
+ * fields a write decision turns on.
+ *
+ * It refuses a traversal outright rather than normalising it: ids come from the page, and the page
+ * is not a trust boundary this server should be relying on.
+ */
+function taskFromDisk(id) {
+  if (!id || /[\\/]|\.\./.test(id)) return null;
+  const file = path.join(TASKS_DIR, `${id}.md`);
+  let raw;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  const end = raw.indexOf('\n---', 3);
+  if (!raw.startsWith('---') || end === -1) return null;
+  const head = raw.slice(0, end);
+  const field = (k) => {
+    const m = new RegExp(`^${k}:[ \\t]*(.*)$`, 'mi').exec(head);
+    return m ? m[1].trim() : '';
+  };
+  const list = (v) => {
+    const s = v.trim();
+    if (!s) return [];
+    // Frontmatter lists arrive as ["a", "b"] or as a bare comma-separated line.
+    const inner = s.startsWith('[') && s.endsWith(']') ? s.slice(1, -1) : s;
+    return inner
+      .split(',')
+      .map((x) => x.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+  };
+  return {
+    id,
+    file,
+    num: Number(field('num')) || 0,
+    title: field('title').replace(/^["']|["']$/g, ''),
+    status: field('status').toLowerCase() || 'backlog',
+    options: list(field('options')),
+    answer: field('answer'),
+    notify: list(field('notify')),
+  };
+}
+
+/**
  * Remove a task from the board. THE FILE IS MOVED, NEVER UNLINKED.
  *
  * It goes to `Tasks/_deleted/` with a `deleted:` stamp in its frontmatter. The board reads
@@ -1700,8 +1752,8 @@ document.getElementById('sq-items').addEventListener('click', async (e) => {
  * A name collision in `_deleted/` is suffixed rather than overwritten, for the same reason: deleting
  * a second task that happens to share a filename must not destroy the first.
  */
-function deleteTask(id, tasks) {
-  const t = tasks.find((x) => x.id === id);
+function deleteTask(id) {
+  const t = taskFromDisk(id);
   if (!t) return { code: 404, msg: `no task ${id}` };
 
   const dir = path.dirname(t.file);
@@ -1760,8 +1812,8 @@ function deleteTask(id, tasks) {
 const SUGGESTION_OPTIONS = Object.freeze(['Approve - move to To do', 'Decline']);
 const optionsFor = (t) => (t.options.length ? t.options : t.status === 'suggestion' ? [...SUGGESTION_OPTIONS] : []);
 
-function recordAnswer(id, answer, custom, tasks) {
-  const t = tasks.find((x) => x.id === id);
+function recordAnswer(id, answer, custom) {
+  const t = taskFromDisk(id);
   if (!t) return { code: 404, msg: `no task ${id}` };
   // A listed option must match exactly; a free-text answer is accepted as written. The option list
   // is a shortcut for the common cases, never a menu he has to squeeze a real decision into.
@@ -1848,13 +1900,12 @@ const server = createServer((req, res) => {
       body += c;
       if (body.length > 4096) req.destroy(); // a decision is short; anything larger is not one
     });
-    req.on('end', async () => {
+    req.on('end', () => {
       let out;
       try {
         const { id, answer, custom } = JSON.parse(body);
-        // A fresh read of the board, as before: the task must exist and be unanswered NOW.
-        const snap = await getSnapshot(true);
-        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom), snap?.board?.tasks ?? []);
+        // Read from disk, as before: the task must exist and be unanswered NOW.
+        out = recordAnswer(String(id ?? ''), String(answer ?? ''), Boolean(custom));
       } catch (e) {
         out = { code: 400, msg: String(/** @type {Error} */ (e).message) };
       }
@@ -1945,12 +1996,11 @@ const server = createServer((req, res) => {
       body += c;
       if (body.length > 1024) req.destroy();
     });
-    req.on('end', async () => {
+    req.on('end', () => {
       let out;
       try {
         const { id } = JSON.parse(body);
-        const snap = await getSnapshot(true);
-        out = deleteTask(String(id ?? ''), snap?.board?.tasks ?? []);
+        out = deleteTask(String(id ?? ''));
       } catch (e) {
         out = { code: 400, msg: String(/** @type {Error} */ (e).message) };
       }
@@ -1964,7 +2014,7 @@ const server = createServer((req, res) => {
     getSnapshot(url.searchParams.has('force'))
       .then((snap) => {
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-        res.end(JSON.stringify(withCalendar(snap)));
+        res.end(JSON.stringify(withLiveVault(snap)));
       })
       .catch((e) => {
         res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
