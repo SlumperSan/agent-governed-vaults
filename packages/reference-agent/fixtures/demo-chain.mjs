@@ -2,10 +2,9 @@
 /**
  * Demo scenario — three vaults chosen to exercise every branch of the policy in one pass.
  *
- * This is FIXTURE DATA, not live protocol state. (`contracts/config/deployments/` holds
- * `base-sepolia.json`, a testnet trial, and `robinhood-mainnet.json`, a Robinhood Chain mainnet
- * deployment of 2026-09-05 whose singletons are wired and on which two vaults hold real funds.
- * Nothing here is read from either.) But no
+ * This is FIXTURE DATA, not live protocol state. (`contracts/config/deployments/` holds the
+ * deployment records, among them a Base Sepolia trial and the Arc mainnet deployment. Nothing
+ * here is read from any of them.) But no
  * deployment retires this file. The scenario below needs three vaults holding a specific joint state at
  * the same moment — an unattested `operatorId 0`, an operator whose realized net has gone
  * negative, and a Rebalance proposal in its reveal phase against a commit THIS agent already made

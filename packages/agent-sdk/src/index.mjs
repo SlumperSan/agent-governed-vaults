@@ -16,6 +16,16 @@
  *     domain: { name: 'USD Coin', version: '2', chainId: 8453, verifyingContract: USDC },
  *   });
  *   const board = await client.leaderboard();     // pays $0.01 over x402 automatically
+ *
+ * @example Arc mainnet (chain 5042). The domain is the token's own, read from the chain by
+ * `scripts/verify-arc-usdc-domain.mjs` and recorded in
+ * `packages/reference-agent/presets/arc-mainnet.json`; it differs from the Base example above in
+ * the name, so copy the pair that matches the chain you pay on.
+ *   const client = createProtocolClient({
+ *     baseUrl: 'https://api.example.xyz',
+ *     wallet: { address: '0x…', sign: (td) => walletSignTypedData(td) },
+ *     domain: { name: 'USDC', version: '2', chainId: 5042, verifyingContract: '0x3600000000000000000000000000000000000000' },
+ *   });
  */
 
 import { authorizeFromChallenge } from './eip3009.mjs';

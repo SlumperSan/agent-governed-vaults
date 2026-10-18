@@ -22,7 +22,9 @@ import {
   createChainReader,
   createStubChainReader,
   decodeProposal,
+  viemChainFor,
 } from '../src/chain.mjs';
+import { loadConfig } from '../src/config.mjs';
 
 const OUT = new URL('../../../contracts/out/', import.meta.url);
 
@@ -347,4 +349,24 @@ test('an unreadable voting weight is null, which the planner turns into a blocke
   const reader = createChainReader({ client: fakeClient(TABLE, new Set(['pastVotingEligibleShares'])) });
   assert.equal(await reader.readVotingWeight('0x' + '1'.repeat(40), '0x' + '2'.repeat(40), 1n), null);
   assert.equal(await reader.readVotingWeight('0x' + '1'.repeat(40), null, 1n), null, 'no member, no weight');
+});
+
+// ── native currency ───────────────────────────────────────────────────────────────────────────
+
+test('the viem chain object takes its native currency from the config, not from Ether', async () => {
+  const { createPublicClient, http } = await import('viem');
+  const c = loadConfig({ chain: { preset: 'arc-mainnet' } }).chain;
+  const chain = viemChainFor({ chainId: c.chainId, chainName: c.chainName, nativeCurrency: c.nativeCurrency, rpcUrl: c.rpcUrl });
+  assert.equal(chain.id, 5042);
+  assert.deepEqual(chain.nativeCurrency, { name: 'USDC', symbol: 'USDC', decimals: 18 });
+  assert.deepEqual(chain.rpcUrls.default.http, [c.rpcUrl]);
+  // And viem accepts it as a real client's chain, carrying the currency through.
+  assert.equal(createPublicClient({ chain, transport: http(c.rpcUrl) }).chain.nativeCurrency.symbol, 'USDC');
+});
+
+test("with no preset the gas asset stays Base Sepolia's Ether, so existing callers are unchanged", () => {
+  const c = loadConfig().chain;
+  assert.deepEqual(c.nativeCurrency, { name: 'Ether', symbol: 'ETH', decimals: 18 });
+  const chain = viemChainFor({ chainId: c.chainId, chainName: c.chainName, nativeCurrency: c.nativeCurrency, rpcUrl: 'http://127.0.0.1:1' });
+  assert.equal(chain.nativeCurrency.symbol, 'ETH');
 });

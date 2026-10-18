@@ -13,9 +13,20 @@
  *     path to one. `redact()` is what every log line and config dump goes through, and it reduces
  *     an account to `{ address }` — a test asserts a key-shaped value cannot survive it.
  *
+ * Chains: the default is Base Sepolia. `chain.preset: 'arc-mainnet'` fills the whole chain block
+ * (chain id, native currency, RPC list, contract addresses, USDC domain) and the default deposit
+ * from `presets/arc-mainnet.json`, a file generated from the deployment record by
+ * `scripts/build-agent-preset.mjs`. Anything you set beside the preset wins over it, except a
+ * `chainId` that disagrees with the preset, which is refused.
+ *
  * Policy knobs are plain data so they can be diffed, committed, and reasoned about without
  * reading code. See docs/REFERENCE-AGENT.md for what each one means in protocol terms.
  */
+
+// A static JSON import, not `node:fs`: apps/vaults-ui bundles this module for the browser, where a
+// file read does not exist. Each preset is listed here by name so the bundle carries exactly the
+// presets that ship.
+import arcMainnet from '../presets/arc-mainnet.json' with { type: 'json' };
 
 /** USDC has 6 decimals; policy numbers are written in whole USDC and scaled here. */
 export const USDC_DECIMALS = 6n;
@@ -38,6 +49,10 @@ export function fromBaseUnits(base) {
   return (neg ? '-' : '') + (v / USDC_UNIT) + (frac ? '.' + frac : '');
 }
 
+/** Presets that ship in `presets/`. Base Sepolia is the default and needs none. */
+const PRESET_FILES = Object.freeze({ 'arc-mainnet': arcMainnet });
+export const CHAIN_PRESETS = Object.freeze(Object.keys(PRESET_FILES));
+
 /**
  * Defaults are deliberately conservative: attested operators only, positive track record, tight
  * fee ceilings, a small deposit, and `allowSkipWindow: false`. An operator who wants the agent to
@@ -54,10 +69,20 @@ export const DEFAULT_CONFIG = Object.freeze({
   },
 
   chain: {
+    /** Name of a file in `presets/` that fills this block, or null for the Base Sepolia defaults. */
+    preset: null,
     rpcUrl: null,
+    /** Every RPC the preset names; `rpcUrl` is the first. null unless a preset set it. */
+    rpcUrls: null,
     chainId: 84532,
     chainName: 'base-sepolia',
+    /** The chain's gas asset, for the viem chain object. Base Sepolia pays gas in Ether. */
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     governance: null,
+    /** VaultFactory, and the pointer a later vault-discovery step enumerates from. */
+    factory: null,
+    vaultList: null,
+    operatorRegistry: null,
     /** SubVaultRegistry — source of the STACKED fee figures (sub-vault fees compound). */
     subvaultRegistry: null,
     /** USDC address — the EIP-712 verifyingContract for x402 authorizations. */
@@ -69,7 +94,8 @@ export const DEFAULT_CONFIG = Object.freeze({
      * default here is `"USDC"` — pairing it with `"USD Coin"` produced a valid signature over the
      * wrong struct hash, recovering to a stranger and failing as an opaque `signer-mismatch`.
      *
-     * Change `chainId` and you must change these too. Read them from the token rather than
+     * Change `chainId` and you must change these too (or set `preset: 'arc-mainnet'`, which fills
+     * them from the token's own reads). Read them from the token rather than
      * guessing: `cast call <usdc> 'name()(string)'` / `'version()(string)'`, and confirm the pair
      * reproduces `DOMAIN_SEPARATOR()`. See docs/X402-LIVE-REPORT.md §6.
      */
@@ -161,9 +187,51 @@ function merge(base, over) {
   return out;
 }
 
+/**
+ * The preset file as a config fragment. Addresses are lower-cased the way `run.mjs` lower-cases
+ * the same flags, so a comparison against a chain read never trips on checksum casing.
+ * @param {string} name @returns {any}
+ */
+export function presetFragment(name) {
+  if (!CHAIN_PRESETS.includes(name))
+    throw new ConfigError(`unknown chain preset ${JSON.stringify(name)}; the presets are ${CHAIN_PRESETS.join(', ')}`);
+  const p = PRESET_FILES[name];
+  const lc = (a) => a.toLowerCase();
+  return {
+    chain: {
+      preset: name,
+      rpcUrl: p.rpcUrls[0],
+      rpcUrls: p.rpcUrls,
+      chainId: p.chainId,
+      chainName: p.chainName,
+      nativeCurrency: p.nativeCurrency,
+      governance: lc(p.contracts.governance),
+      factory: lc(p.contracts.factory),
+      vaultList: { ...p.vaultList, contract: lc(p.vaultList.contract) },
+      operatorRegistry: lc(p.contracts.operatorRegistry),
+      subvaultRegistry: lc(p.contracts.subvaultRegistry),
+      usdc: lc(p.contracts.usdc),
+      usdcName: p.usdcDomain.name,
+      usdcVersion: p.usdcDomain.version,
+    },
+    policy: { join: { depositUsdc: p.depositUsdc } },
+  };
+}
+
 /** @param {object} [overrides] @returns {any} */
 export function loadConfig(overrides = {}) {
-  const cfg = merge(DEFAULT_CONFIG, overrides);
+  const presetName = /** @type {any} */ (overrides).chain?.preset;
+  let base = DEFAULT_CONFIG;
+  if (presetName !== undefined && presetName !== null) {
+    const fragment = presetFragment(presetName);
+    const chosen = /** @type {any} */ (overrides).chain?.chainId;
+    // The USDC domain and every address belong to the preset's chain; a different id beside it
+    // would pair them with a chain they are not on.
+    if (chosen !== undefined && Number(chosen) !== fragment.chain.chainId)
+      throw new ConfigError(`chain.preset ${presetName} is chain ${fragment.chain.chainId}, but chain.chainId is ${chosen}; drop one of them`);
+    base = merge(DEFAULT_CONFIG, fragment);
+  }
+  const cfg = merge(base, overrides);
   if (cfg.mode !== 'dry-run' && cfg.mode !== 'execute')
     throw new ConfigError(`mode must be 'dry-run' or 'execute', got ${JSON.stringify(cfg.mode)}`);
   // Validate the money knobs eagerly so a typo fails at startup, not at the first paid read.

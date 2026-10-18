@@ -156,6 +156,18 @@ export function decodeProposal(raw) {
 export const ZERO_BYTES32 = '0x' + '0'.repeat(64);
 
 /**
+ * The viem chain object a reader builds for its RPC. The gas asset comes from the caller (the
+ * config's `chain.nativeCurrency`) rather than being fixed to Ether, because Arc pays gas in USDC.
+ * @param {{chainId:number, chainName:string, nativeCurrency:{name:string,symbol:string,decimals:number}, rpcUrl:string}} p
+ */
+export const viemChainFor = ({ chainId, chainName, nativeCurrency, rpcUrl }) => ({
+  id: chainId,
+  name: chainName,
+  nativeCurrency,
+  rpcUrls: { default: { http: [rpcUrl] } },
+});
+
+/**
  * A chain reader over a viem-style public client. Tests inject `client`; production passes
  * `rpcUrl` (the lazy-viem pattern from packages/indexer/src/rpc.mjs).
  *
@@ -168,10 +180,11 @@ export const ZERO_BYTES32 = '0x' + '0'.repeat(64);
  * @param {string} [cfg.rpcUrl]
  * @param {number} [cfg.chainId]
  * @param {string} [cfg.chainName]
+ * @param {{name:string,symbol:string,decimals:number}} [cfg.nativeCurrency] the chain's gas asset (config.chain.nativeCurrency)
  * @param {string|null} [cfg.governance]
  * @param {(e:{level:string,msg:string,detail?:any})=>void} [cfg.onEvent]
  */
-export function createChainReader({ client, rpcUrl, chainId = 84532, chainName = 'base-sepolia', governance = null, onEvent = () => {} }) {
+export function createChainReader({ client, rpcUrl, chainId = 84532, chainName = 'base-sepolia', nativeCurrency = { name: 'Ether', symbol: 'ETH', decimals: 18 }, governance = null, onEvent = () => {} }) {
   let _client = client ?? null;
   const failures = new Map(); // vault ⇒ consecutive NAV read failures
 
@@ -182,12 +195,7 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
       throw new Error('chain: viem is not installed — run `npm install viem` at the repo root');
     });
     _client = createPublicClient({
-      chain: {
-        id: chainId,
-        name: chainName,
-        nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-        rpcUrls: { default: { http: [rpcUrl] } },
-      },
+      chain: viemChainFor({ chainId, chainName, nativeCurrency, rpcUrl }),
       transport: http(rpcUrl),
     });
     return _client;

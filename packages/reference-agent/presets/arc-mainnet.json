@@ -1,0 +1,37 @@
+{
+  "preset": "arc-mainnet",
+  "generatedBy": "scripts/build-agent-preset.mjs",
+  "source": "contracts/config/deployments/arc-mainnet.json",
+  "chainId": 5042,
+  "chainName": "arc-mainnet",
+  "nativeCurrency": {
+    "name": "USDC",
+    "symbol": "USDC",
+    "decimals": 18
+  },
+  "rpcUrls": [
+    "https://rpc.mainnet.arc.io",
+    "https://arc.gateway.tenderly.co"
+  ],
+  "contracts": {
+    "governance": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB",
+    "factory": "0x692385262C05df7515560886f167c4eDD0814025",
+    "operatorRegistry": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc",
+    "subvaultRegistry": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c",
+    "usdc": "0x3600000000000000000000000000000000000000"
+  },
+  "usdcDomain": {
+    "name": "USDC",
+    "version": "2",
+    "chainId": 5042,
+    "verifyingContract": "0x3600000000000000000000000000000000000000",
+    "separator": "0x940506929bba468048a19b567f4f0d534714bc06604b5c3017e5d16785ccdf84"
+  },
+  "vaultList": {
+    "contract": "0x692385262C05df7515560886f167c4eDD0814025",
+    "countFunction": "vaultCount()",
+    "itemFunction": "allVaults(uint256)"
+  },
+  "minDepositUsdc": "100",
+  "depositUsdc": "100"
+}

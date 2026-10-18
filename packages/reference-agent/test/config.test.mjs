@@ -5,6 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   DEFAULT_CONFIG,
   EXECUTE_ENV_VAR,
@@ -134,4 +135,63 @@ test('the default USDC domain matches the default chain, not mainnet', () => {
   assert.equal(DEFAULT_CONFIG.chain.chainId, 84532);
   assert.equal(DEFAULT_CONFIG.chain.usdcName, 'USDC');
   assert.equal(DEFAULT_CONFIG.chain.usdcVersion, '2');
+});
+
+// ── chain presets ─────────────────────────────────────────────────────────────────────────────
+
+test('with no preset the chain block is exactly the Base Sepolia defaults, as before', () => {
+  const c = loadConfig().chain;
+  assert.equal(c.preset, null);
+  assert.equal(c.chainId, 84532);
+  assert.equal(c.chainName, 'base-sepolia');
+  assert.equal(c.rpcUrl, null);
+  assert.equal(c.usdcName, 'USDC');
+  assert.deepEqual(c.nativeCurrency, { name: 'Ether', symbol: 'ETH', decimals: 18 });
+  assert.equal(loadConfig().policy.join.depositUsdc, '25');
+  assert.equal(DEFAULT_CONFIG.chain.chainId, 84532, 'the shipped default must stay Base Sepolia');
+});
+
+test("chain.preset 'arc-mainnet' fills the chain block and the default deposit from the preset file", () => {
+  const preset = JSON.parse(readFileSync(new URL('../presets/arc-mainnet.json', import.meta.url), 'utf8'));
+  const cfg = loadConfig({ chain: { preset: 'arc-mainnet' } });
+  assert.equal(cfg.chain.chainId, 5042);
+  assert.equal(cfg.chain.chainName, 'arc-mainnet');
+  assert.deepEqual(cfg.chain.nativeCurrency, { name: 'USDC', symbol: 'USDC', decimals: 18 });
+  assert.deepEqual(cfg.chain.rpcUrls, preset.rpcUrls);
+  assert.equal(cfg.chain.rpcUrl, preset.rpcUrls[0]);
+  assert.equal(cfg.chain.governance, preset.contracts.governance.toLowerCase());
+  assert.equal(cfg.chain.factory, preset.contracts.factory.toLowerCase());
+  assert.equal(cfg.chain.operatorRegistry, preset.contracts.operatorRegistry.toLowerCase());
+  assert.equal(cfg.chain.subvaultRegistry, preset.contracts.subvaultRegistry.toLowerCase());
+  assert.equal(cfg.chain.usdc, '0x3600000000000000000000000000000000000000');
+  assert.equal(cfg.chain.usdcName, preset.usdcDomain.name);
+  assert.equal(cfg.chain.usdcVersion, preset.usdcDomain.version);
+  assert.equal(cfg.policy.join.depositUsdc, '100');
+  assert.equal(toBaseUnits(cfg.policy.join.depositUsdc), toBaseUnits(preset.minDepositUsdc), 'the default deposit meets the vault minimum');
+  // Everything outside the chain block and the deposit is untouched.
+  assert.equal(cfg.policy.join.requireAttestedOperator, true);
+  assert.equal(cfg.mode, 'dry-run');
+});
+
+test('an explicit setting beside the preset wins over it', () => {
+  const cfg = loadConfig({ chain: { preset: 'arc-mainnet', rpcUrl: 'https://arc.gateway.tenderly.co' }, policy: { join: { depositUsdc: '250' } } });
+  assert.equal(cfg.chain.rpcUrl, 'https://arc.gateway.tenderly.co');
+  assert.equal(cfg.policy.join.depositUsdc, '250');
+  assert.equal(cfg.chain.chainId, 5042);
+});
+
+test('a chainId that disagrees with the preset is refused, an agreeing one is accepted', () => {
+  assert.throws(() => loadConfig({ chain: { preset: 'arc-mainnet', chainId: 84532 } }), (e) => e instanceof ConfigError && /is chain 5042, but chain.chainId is 84532/.test(e.message));
+  assert.equal(loadConfig({ chain: { preset: 'arc-mainnet', chainId: 5042 } }).chain.chainId, 5042);
+});
+
+test('an unknown preset name is refused, including a path-shaped one', () => {
+  for (const name of ['mainnet', 'base-sepolia', '../config', 'arc-mainnet.json'])
+    assert.throws(() => loadConfig({ chain: { preset: name } }), (e) => e instanceof ConfigError && /unknown chain preset/.test(e.message), name);
+});
+
+test('the preset does not leak into a later default load', () => {
+  loadConfig({ chain: { preset: 'arc-mainnet' } });
+  assert.equal(loadConfig().chain.chainId, 84532);
+  assert.equal(DEFAULT_CONFIG.chain.preset, null);
 });
