@@ -17,6 +17,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { reconcileAnsweredSuggestions } from '../lib/task-numbers.mjs';
 
 const DASHBOARD = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dashboard.mjs');
 
@@ -152,4 +153,88 @@ test('the Approve and Decline buttons still move the card', async () => {
   assert.equal((await post('/api/answer', { id: 'no', answer: 'Decline', custom: false }, { origin: base })).status, 200);
   assert.match(read('yes.md'), /^status: backlog$/m);
   assert.match(read('no.md'), /^status: done$/m);
+});
+
+// ── Host allowlist on EVERY request (DNS rebinding can READ, not only write) ─────────────────────
+//
+// fetch() ignores a Host override, so these go through node:http. The routes below are the GET
+// endpoints that return vault data, plus the page, a 404 and a non-GET to a read route. A request
+// refused at the gate never reaches a handler, so none of these touch the numbering pass, the Sign
+// queue file or the chain.
+
+function rawRequest(pathname, host, method = 'GET') {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path: pathname, method, headers: { host } }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body, headers: res.headers }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const REBIND_HOSTS = () => [`evil.example:${port}`, 'evil.example', `localhost:${port}`, `127.0.0.1.evil.example:${port}`, '127.0.0.1'];
+
+for (const route of ['/api/status', '/api/status?force=1', '/', '/sign', '/api/sign-queue', '/api/launch-checks', '/nope']) {
+  test(`GET ${route} refuses a rebinding Host`, async () => {
+    for (const host of REBIND_HOSTS()) {
+      const r = await rawRequest(route, host);
+      assert.equal(r.status, 403, `${route} with Host ${host} returned ${r.status}`);
+      assert.match(r.body, /^refused: Host is /);
+    }
+  });
+}
+
+test('a rebinding Host is refused for non-GET methods on a read route too', async () => {
+  for (const method of ['POST', 'PUT', 'HEAD', 'DELETE']) {
+    assert.equal((await rawRequest('/api/status', `evil.example:${port}`, method)).status, 403, method);
+  }
+});
+
+test('a rebinding Host to /api/status does not run the numbering pass', async () => {
+  task('unnumbered.md', 'backlog');
+  await rawRequest('/api/status', `evil.example:${port}`);
+  assert.ok(!/^num:/m.test(read('unnumbered.md')), 'a refused request must not number or reconcile anything');
+});
+
+test('the dashboard\'s own Host still gets the page, and the page cannot be framed', async () => {
+  const r = await rawRequest('/', `127.0.0.1:${port}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers['x-frame-options'], 'DENY');
+  assert.match(String(r.headers['content-security-policy']), /frame-ancestors 'none'/);
+  assert.equal((await rawRequest('/sign', `127.0.0.1:${port}`)).headers['x-frame-options'], 'DENY');
+});
+
+// ── A typed answer that spells a button exactly ─────────────────────────────────────────────────
+
+test('a typed answer equal to a button label stays put, and the refresh reconcile leaves it there', async () => {
+  task('typed.md', 'suggestion');
+  const r = await post('/api/answer', { id: 'typed', answer: 'Decline', custom: true }, { origin: base });
+  assert.equal(r.status, 200, await r.text());
+  assert.match(read('typed.md'), /^status: suggestion$/m);
+  assert.match(read('typed.md'), /^answer: Decline$/m);
+  assert.match(read('typed.md'), /^answer_custom: true$/m);
+  // The reconcile is what the next refresh runs. Run it on a copy of the file the endpoint wrote.
+  const copy = mkdtempSync(path.join(tmpdir(), 'agv-board-ep-copy-'));
+  try {
+    writeFileSync(path.join(copy, 'typed.md'), read('typed.md'));
+    assert.deepEqual(reconcileAnsweredSuggestions(copy).moved, []);
+    assert.match(readFileSync(path.join(copy, 'typed.md'), 'utf8'), /^status: suggestion$/m);
+  } finally { rmSync(copy, { recursive: true, force: true }); }
+});
+
+test('a button answer carries no custom mark, so the reconcile still sees it', async () => {
+  task('clicked.md', 'suggestion');
+  assert.equal((await post('/api/answer', { id: 'clicked', answer: 'Decline', custom: false }, { origin: base })).status, 200);
+  assert.ok(!/answer_custom/.test(read('clicked.md')));
+});
+
+test('a typed answer cannot forge the custom mark or a status line with a newline', async () => {
+  task('forge.md', 'suggestion');
+  const r = await post('/api/answer', { id: 'forge', answer: 'x\nanswer_custom: false\nstatus: done', custom: true }, { origin: base });
+  assert.equal(r.status, 200, await r.text());
+  const lines = read('forge.md').split('\n');
+  assert.equal(lines.filter((l) => l === 'status: done').length, 0);
+  assert.equal(lines.filter((l) => l.startsWith('answer_custom:')).length, 1);
 });

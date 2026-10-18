@@ -55,8 +55,10 @@ import path from 'node:path';
  *                                            (yet, or ever) match — status stays as it was
  */
 
+/** AGV_DASHBOARD_VAULT_ROOT is the same test-only override the dashboard honours, so a test run never opens the real queue. */
 export const QUEUE_PATH = path.join(
-  'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults/Tasks',
+  process.env.AGV_DASHBOARD_VAULT_ROOT || 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults',
+  'Tasks',
   '_sign-queue.json',
 );
 

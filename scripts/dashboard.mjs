@@ -20,9 +20,9 @@ import { Worker } from 'node:worker_threads';
 import { readFileSync, writeFileSync, renameSync, appendFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
-import { buildSignQueueResponse, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
+import { buildSignQueueResponse, hostGateRefusal, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
 import { readBoard, readCalendar } from './lib/project-status.mjs';
-import { assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS } from './lib/task-numbers.mjs';
+import { ANSWER_CUSTOM_KEY, assignNumbers, movedStatusFor, reconcileAnsweredSuggestions, SUGGESTION_OPTIONS } from './lib/task-numbers.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -1855,7 +1855,11 @@ function recordAnswer(id, answer, custom) {
     const moved = custom ? '' : movedStatusFor(answer, optionsFor(t));
     if (moved) head = head.replace(/^status:[ \t]*suggestion[ \t]*$/mi, `status: ${moved}`);
   }
-  const patched = head + `\nanswer: ${answer}\nanswered: ${stamp}` + raw.slice(end);
+  // A typed answer is marked on the card. The reconcile (task-numbers.mjs) runs on every refresh and
+  // sees only the file, so without this mark a typed "Decline" that equals a button label would be
+  // indistinguishable from the button and the next refresh would move the card the endpoint just
+  // left alone. The newline collapse above means `answer` cannot carry this key.
+  const patched = head + `\nanswer: ${answer}${custom ? `\n${ANSWER_CUSTOM_KEY}: true` : ''}\nanswered: ${stamp}` + raw.slice(end);
   // Write via a temp file in the same directory, then rename. A half-written task file would be
   // parsed by the next poll 5s later and render as a task with no title.
   const tmp = `${t.file}.tmp-${process.pid}`;
@@ -1914,6 +1918,16 @@ function refusedByOriginGate(req, res) {
 }
 
 const server = createServer((req, res) => {
+  // EVERY REQUEST, EVERY METHOD, BEFORE ROUTING. The origin gate above only covers the writes; a
+  // DNS-rebinding page (attacker hostname re-resolving to 127.0.0.1) is same-origin with this
+  // server and could READ /api/status, the Sign queue and the launch checks, and any request to
+  // /api/status also ran the numbering and reconcile pass. The Host header cannot be overridden by
+  // a page, so one check here covers the board, the calendar copy and every route added later.
+  const hostRefusal = hostGateRefusal({ host: req.headers.host }, PORT);
+  if (hostRefusal) {
+    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+    return res.end(`refused: ${hostRefusal}`);
+  }
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
 
   if (url.pathname === '/api/answer' && req.method === 'POST') {
@@ -2041,7 +2055,13 @@ const server = createServer((req, res) => {
   // Two tabs over one page: / is the task board, /sign is the Sign queue alone. The view is a body
   // attribute, so each tab polls only its own endpoint (see PAGE_VIEW in the page script).
   if (url.pathname === '/' || url.pathname === '/sign') {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    // Never framed: a hostile page could overlay or iframe the Sign tab and steer the owner's clicks.
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-frame-options': 'DENY',
+      'content-security-policy': "frame-ancestors 'none'",
+    });
     return res.end(url.pathname === '/sign' ? PAGE.replace('</head><body>', '</head><body data-view="sign">') : PAGE);
   }
   res.writeHead(404, { 'content-type': 'text/plain' });

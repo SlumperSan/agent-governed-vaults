@@ -263,3 +263,10 @@ test('recordSentHash: an unknown item id 404s', async () => {
   const out = await recordSentHashSafe('nope', { hash: HASH, from: FROM }, fetch, () => '', qp);
   assert.equal(out.code, 404);
 });
+
+test('hostGateRefusal: only the exact 127.0.0.1:<port> Host passes, with no Origin or Content-Type needed (it guards reads)', () => {
+  assert.equal(server.hostGateRefusal({ host: '127.0.0.1:4270' }, 4270), null);
+  for (const host of [undefined, '', 'localhost:4270', '127.0.0.1', '127.0.0.1:4271', '127.0.0.1:4270.evil.example', 'attacker.example']) {
+    assert.match(String(server.hostGateRefusal({ host }, 4270)), /^Host is /, String(host));
+  }
+});

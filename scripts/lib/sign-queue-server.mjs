@@ -338,6 +338,27 @@ async function preconditionRefusal(item, itemsById, fetchImpl, castFn, root) {
 }
 
 /**
+ * The Host check on its own, applied to EVERY request this server answers, reads included. A page
+ * served from an attacker hostname that later re-resolves to 127.0.0.1 is same-origin with this
+ * server as far as the browser is concerned, so it can READ every GET response (the board, the
+ * calendar copy, the Sign queue), not only fire blind writes. The browser still sends the attacker
+ * hostname in `Host` and a page cannot override that header, so refusing any Host other than
+ * `127.0.0.1:<port>` closes the read side. originGateRefusal reuses this same check.
+ *
+ * @param {{host?: string}} headers lower-cased header map
+ * @param {number} port this server's own listening port
+ * @returns {string|null} a refusal reason, or null when the Host is this server's own
+ */
+export function hostGateRefusal(headers, port) {
+  const wantHost = `127.0.0.1:${port}`;
+  const host = (headers.host ?? '').trim();
+  if (host !== wantHost) {
+    return `Host is ${JSON.stringify(host)}, expected ${JSON.stringify(wantHost)}`;
+  }
+  return null;
+}
+
+/**
  * Refuses a `POST /api/sign-queue/:id/hash` request that did not come from THIS dashboard's own
  * page — V-381-r1-8083f497 (Security, PR #381): with no check at all, any website the owner has
  * open could `fetch('http://127.0.0.1:<port>/api/sign-queue/<id>/hash', {method:'POST', ...})` —
@@ -365,12 +386,9 @@ async function preconditionRefusal(item, itemsById, fetchImpl, castFn, root) {
  * @returns {string|null} a refusal reason, or null when the request may proceed
  */
 export function originGateRefusal(headers, port) {
-  const wantHost = `127.0.0.1:${port}`;
   const wantOrigin = `http://127.0.0.1:${port}`;
-  const host = (headers.host ?? '').trim();
-  if (host !== wantHost) {
-    return `Host is ${JSON.stringify(host)}, expected ${JSON.stringify(wantHost)}`;
-  }
+  const hostRefusal = hostGateRefusal(headers, port);
+  if (hostRefusal) return hostRefusal;
   const origin = headers.origin;
   if (origin !== undefined && origin.trim() !== wantOrigin) {
     return `Origin is ${JSON.stringify(origin)}, expected absent or ${JSON.stringify(wantOrigin)}`;
