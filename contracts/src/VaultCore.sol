@@ -35,6 +35,8 @@ interface IERC20Metadata {
 ///  - Oracle staleness reverts every NAV-reading path INCLUDING exits (SF-2 / K-4).
 ///  - Shares are non-transferable in Sprint 1 (EE-7).
 ///  - Creator 5% is a withdrawal gate, not a solvency condition (CM-2).
+///  - An exit may not leave its member a nonzero balance under MIN_POSITION_SHARES (exit-fee
+///    share-price ratchet defence); a full exit is always allowed.
 contract VaultCore {
     using SafeTransferLib for address;
     using Checkpoints for Checkpoints.History;
@@ -52,6 +54,23 @@ contract VaultCore {
     uint256 public constant OBSERVATION_WINDOW = 4 hours;
     uint256 public constant CREATOR_MIN_STAKE_BPS = 500; // 5%
     uint256 public constant EXIT_FEE_CAP_BPS = 100; // 1% protocol cap
+
+    /// @notice Exit-fee share-price ratchet defence. An exit may not leave its member holding a
+    /// nonzero balance below this many share-wei: the remainder is 0 (a full exit, always allowed)
+    /// or at least this much (`PositionBelowFloor` otherwise). 1e18 share-wei is one share, which is
+    /// 1 USDC at the 1:1 first mint and 1% of the 100 USDC minimum first deposit of the Arc launch.
+    /// WHY. The exit fee stays in the vault, so it accrues to whoever holds the supply. Without a
+    /// floor an outsider could burn down to ONE share-wei, cycle a second account through deposit and
+    /// exit until that wei was worth tens of USDC, and then a depositor whose mint rounded to a single
+    /// share-wei lost up to a quarter of the deposit to the wei's owner. With every balance 0 or at
+    /// least the floor the supply is too, and a depositor's rounding loss is at most the value of one
+    /// share-wei, which is NAV / totalShares: a vault worth N USDC prices one share-wei at no more than
+    /// N * 1e-18 USDC, under one USDC unit (1e-6) for any N below 1e12.
+    /// The floor binds the EXITER's own remainder, never the pool's, so no member can be trapped by
+    /// what other members hold. A position below the floor can only come from a mint (a share price far
+    /// above the launch price, or a minimum deposit worth under one share); it can always leave in
+    /// full, and a holder of such a position cannot block anyone else's exit.
+    uint256 public constant MIN_POSITION_SHARES = 1e18;
 
     /// @dev H-4: the maximum value a single rebalance leg may give up against the vault's own
     /// oracle. THREAT-MODEL EX-2 stated this bound as "minOut bound from oracle median ±
@@ -214,6 +233,7 @@ contract VaultCore {
     error TooManyChildren();
     error ChildSettlementPending();
     error ExitNeedsChildSettlement();
+    error PositionBelowFloor(); // an exit may not leave a nonzero balance under MIN_POSITION_SHARES
 
     // ─────────────────────────────── constructor ──────────────────────────────
 
@@ -542,7 +562,9 @@ contract VaultCore {
     /// Queued shares stay outstanding but are locked: no voting eligibility, irrevocable. They do
     ///   NOT settle as a side effect of execution — `settleQueuedExit` is a separate call anyone
     ///   can make once no execution is pending.
-    /// @param shares share amount to redeem (≤ balance; one queued exit per member at a time)
+    /// @param shares share amount to redeem (≤ balance, and what is left must be 0 or at least
+    /// MIN_POSITION_SHARES, else `PositionBelowFloor`, checked at queue time in Mode F too; one queued
+    /// exit per member at a time)
     /// @dev M-15 note: unlike `deposit`, exit has no `minValueOut` overload. The byte budget did
     /// not fit both, and the deposit side is the primary user-side defence (the C-4/H-1/H-2
     /// depressed-price anomaly mints excess shares to a DEPOSITOR; an exiter at a depressed NAV
@@ -557,6 +579,7 @@ contract VaultCore {
             // L-1 fix: evaluate the creator gate at QUEUE time — a gate-violating Mode-F
             // request must revert here, not strand an un-cancellable queued exit at settle.
             _checkCreatorGate(msg.sender, shares);
+            _checkPositionFloor(sharesOf[msg.sender] - shares); // same reason: refuse at queue time
             queuedExitShares[msg.sender] = shares;
             totalQueuedShares += shares;
             _snapshot(msg.sender); // locked shares leave eligible stake immediately
@@ -607,9 +630,19 @@ contract VaultCore {
         }
     }
 
+    /// @dev The exit-fee ratchet floor (see MIN_POSITION_SHARES): the exiter's remaining balance is
+    /// zero or at least the floor. Checked at queue time for Mode F (a queued exit is irrevocable, so
+    /// it must never be able to revert at settlement) and again at every settlement; a queued exit
+    /// that passed at queue time still passes, because the member's balance can only grow while the
+    /// exit is queued (no second exit is allowed, deposits add).
+    function _checkPositionFloor(uint256 remaining) internal pure {
+        require(remaining == 0 || remaining >= MIN_POSITION_SHARES, PositionBelowFloor());
+    }
+
     function _settleExit(address member, uint256 burnShares, bool fromQueue) internal {
         uint256 memberShares = sharesOf[member];
         require(memberShares >= burnShares, InsufficientShares());
+        _checkPositionFloor(memberShares - burnShares);
         uint256 ts = totalShares;
 
         // Queued exits passed the gate at queue time (L-1); re-checking here could re-strand
