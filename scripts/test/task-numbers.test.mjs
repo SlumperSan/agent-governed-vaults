@@ -307,6 +307,93 @@ test('the holder frees the lock on exit, including when the section throws, and 
   } finally { done(); }
 });
 
+// ── A lock file is never observed empty ─────────────────────────────────────────────────────────
+
+test('a no-work poll creates no lock file', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    assignNumbers(dir);
+    const before = readdirSync(dir).sort();
+    for (let i = 0; i < 5; i += 1) assert.equal(assignNumbers(dir).assigned, 0);
+    assert.deepEqual(readdirSync(dir).sort(), before, 'polling with nothing to number must not take the lock or grow the series');
+  } finally { done(); }
+});
+
+test('no lock or temp file is left behind empty, and only generation files remain after a section', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    assignNumbers(dir);
+    assert.deepEqual(lockFiles(dir), ['_task-numbers.lock.1', '_task-numbers.lock.2']);
+    for (const f of lockFiles(dir)) assert.notEqual(readFileSync(path.join(dir, f), 'utf8'), '', `${f} was published empty`);
+    assert.deepEqual(readdirSync(dir).filter((f) => f.includes('.tmp-') && f.startsWith('_task-numbers')), [], 'the private temp name is removed');
+  } finally { done(); }
+});
+
+/**
+ * Run `body` in a fresh node process whose fs functions are patched BEFORE the module loads, then
+ * syncBuiltinESMExports() so the module's named imports see the patch. `hooks` is code run with
+ * `fs` and `real` (the original functions) in scope.
+ */
+function runPatched(dir, hooks, body, expectKill = false) {
+  const script = `
+const fs = require('node:fs');
+const real = { ...fs };
+${hooks}
+require('node:module').syncBuiltinESMExports();
+import(${MODULE_URL}).then((m) => { ${body} }).catch((e) => { console.error(e); process.exit(1); });`;
+  const r = spawnSync(process.execPath, ['-e', script], { stdio: 'pipe' });
+  if (expectKill) assert.notEqual(r.status, 0, 'the child was meant to die mid-create');
+  else assert.equal(r.status, 0, r.stderr.toString());
+  return r;
+}
+
+// The round-3 finding: SIGKILL between creating the top generation and writing its owner record left
+// an empty file that stayed unbreakable for 30 s while waiters give up at 10 s. The child is killed
+// at the last instant before the file would be published (the link) or, for the old create-then-write
+// shape, at the first write into it. Either way the parent must be able to take the lock at once.
+test('a process killed mid-create leaves no empty top generation: the next waiter takes the lock at once', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    runPatched(dir,
+      `const die = () => process.kill(process.pid, 'SIGKILL');
+fs.linkSync = die; fs.writeSync = die;`,
+      `m.withDirLock(${JSON.stringify(dir)}, () => {});`, true);
+    for (const f of lockFiles(dir)) assert.notEqual(readFileSync(path.join(dir, f), 'utf8'), '', `${f} was left empty by the kill`);
+    let ran = false;
+    const t0 = Date.now();
+    withDirLock(dir, () => { ran = true; }, 1_000);
+    assert.ok(ran);
+    assert.ok(Date.now() - t0 < 900, 'not waited out');
+  } finally { done(); }
+});
+
+test('losing the create race (the name appears just before the link) is a plain refusal: next generation, winner untouched', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    runPatched(dir,
+      `let first = true;
+fs.linkSync = (a, b) => { if (first) { first = false; fs.writeFileSync(b, JSON.stringify({ pid: ${deadPid()}, host: require('node:os').hostname(), token: 'race-winner' })); } return real.linkSync(a, b); };`,
+      `m.withDirLock(${JSON.stringify(dir)}, () => {}, 500);`);
+    assert.deepEqual(lockFiles(dir), ['_task-numbers.lock.1', '_task-numbers.lock.2', '_task-numbers.lock.3'], 'winner, our takeover, our release');
+    assert.equal(JSON.parse(readFileSync(path.join(dir, '_task-numbers.lock.1'), 'utf8')).token, 'race-winner', 'the winner record is untouched');
+  } finally { done(); }
+});
+
+test('a volume without hard links still locks: link failing with ENOTSUP falls back to an exclusive create', () => {
+  const { dir, done } = tmpTasks();
+  try {
+    card(dir, 'a.md');
+    runPatched(dir,
+      `fs.linkSync = () => { const e = new Error('no links'); e.code = 'ENOTSUP'; throw e; };`,
+      `m.assignNumbers(${JSON.stringify(dir)});`);
+    assert.equal(numOf(dir, 'a.md'), 1);
+    assert.deepEqual(lockFiles(dir), ['_task-numbers.lock.1', '_task-numbers.lock.2']);
+    assert.equal(lockHeld(dir), false);
+  } finally { done(); }
+});
+
 // ── Taking over a stale lock: one winner, nothing deleted ─────────────────────────────────────────
 
 // The scenario the round-2 review reproduced: a dead holder's lock AND a dead breaker file left
