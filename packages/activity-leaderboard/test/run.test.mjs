@@ -126,7 +126,7 @@ test('starting the log read too late is an error, not a quiet undercount', async
 test('refuses the wrong chain, an empty vault list, and an endpoint that is behind', async () => {
   const wrong = fakeChain({ chainId: 1 });
   wrong.advanceTo(2_000_000);
-  await assert.rejects(run(wrong), /answers for chain 1/);
+  await assert.rejects(run(wrong), /WRONG CHAIN/);
   await assert.rejects(run(history(), { vaults: [] }), /no vaults configured/);
   const ch = fakeChain({ startTs: ANCHOR, creator: CREATOR });
   ch.deposit(A, USDC, ANCHOR + DAY);

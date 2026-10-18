@@ -54,7 +54,8 @@ async function main() {
   const valid = validateSeededAddressesDoc(seededDoc);
   if (!valid.ok) throw new Error(`docs/seeded-addresses.json is invalid: ${valid.errors.join('; ')}`);
 
-  const chains = keys.map((key) => {
+  const chains = [];
+  for (const key of keys) {
     const cfg = CHAINS[key];
     if (!cfg) throw new Error(`unknown chain ${key}`);
     const vaults = o.vault.length
@@ -68,8 +69,9 @@ async function main() {
       ...(o.window ? { windowBlocks: Number(o.window) } : {}),
       ...(o.confirmations ? { confirmations: Number(o.confirmations) } : {}),
     });
-    return { chainId: cfg.chainId, name: cfg.name, vaults, deployers: cfg.deployer ? [cfg.deployer] : [], reader };
-  });
+    await reader.assertBoundToDeclaredChain();
+    chains.push({ chainId: cfg.chainId, name: cfg.name, vaults, deployers: cfg.deployer ? [cfg.deployer] : [], reader });
+  }
 
   const codeCommit = o['code-commit'] ?? execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   const { board, diagnostics } = await runEpoch({

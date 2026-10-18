@@ -34,7 +34,7 @@ export async function runEpoch({ chains, anchor, epochNumber, nowSec, seededDoc,
   const creators = [];
   const deployers = [];
   for (const c of chains) {
-    await c.reader.assertChainId();
+    await c.reader.assertBoundToDeclaredChain();
     deployers.push(...c.deployers);
     for (const v of c.vaults) creators.push(await c.reader.creatorOf(v.address));
   }

@@ -1,5 +1,6 @@
 // @ts-check
 import { keccak256 } from 'viem';
+import { assertChainBinding } from '../../chain-config/src/chain-binding.mjs';
 import { DEFAULT_CONFIRMATIONS, DEFAULT_WINDOW_BLOCKS } from './constants.mjs';
 import { VAULT_EVENTS, VAULT_READ_ABI } from './abis.mjs';
 
@@ -87,11 +88,17 @@ export function createChainReader({
     return info;
   }
 
-  /** Refuse unless the endpoint answers for the chain the config says it is. */
-  async function assertChainId() {
-    const c = await getClient();
-    const got = Number(await c.getChainId());
-    if (got !== chainId) throw new Error(`source: endpoint answers for chain ${got}, config says ${chainId}`);
+  /**
+   * Refuse unless the endpoint answers for the chain the config declares (#204). Awaited by every
+   * caller before the first read; throws `ChainBindingError` otherwise.
+   */
+  async function assertBoundToDeclaredChain() {
+    return assertChainBinding({
+      client: await getClient(),
+      declaredChainId: chainId,
+      rpc: rpcUrl ?? '(injected client)',
+      declaredBy: 'the leaderboard chain config',
+    });
   }
 
   /** The newest block that is `confirmations` behind the head. */
@@ -181,5 +188,5 @@ export function createChainReader({
     return keccak256(code ?? '0x');
   }
 
-  return { chainId, assertChainId, confirmedHead, blockInfo, lastBlockBefore, vaultEvents, readPosition, creatorOf, codeHash };
+  return { chainId, assertBoundToDeclaredChain, confirmedHead, blockInfo, lastBlockBefore, vaultEvents, readPosition, creatorOf, codeHash };
 }
