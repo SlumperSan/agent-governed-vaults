@@ -146,3 +146,29 @@ test('authorizeFromChallenge lets an operator widen or zero the skew margin', as
   assert.equal((await mk(300)).authorization.validAfter, '999700');
   await assert.rejects(() => mk(-1), /skewSec must be >= 0/);
 });
+
+// ── Arc mainnet (chain 5042) ──────────────────────────────────────────────────────────────────
+// The SDK has no chain table; the caller supplies the domain. This pins the typed data for Arc
+// against the domain separator the token itself reports (recorded in the reference agent's Arc
+// preset by scripts/verify-arc-usdc-domain.mjs), through the real viem hashing and signature
+// recovery rather than through the SDK's own assumptions about its output.
+test('buildTypedData for chain 5042 hashes to the Arc USDC DOMAIN_SEPARATOR and its signature recovers', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { hashDomain, recoverTypedDataAddress } = await import('viem');
+  const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts');
+  const preset = JSON.parse(readFileSync(new URL('../../reference-agent/presets/arc-mainnet.json', import.meta.url), 'utf8'));
+  const arcDomain = { name: preset.usdcDomain.name, version: preset.usdcDomain.version, chainId: 5042, verifyingContract: preset.contracts.usdc };
+  const acct = privateKeyToAccount(generatePrivateKey());
+  const td = buildTypedData({
+    authorization: { from: acct.address, to: '0x' + 'b'.repeat(40), value: '10000', validAfter: '0', validBefore: '999', nonce: '0x' + '1'.repeat(64), asset: arcDomain.verifyingContract },
+    domain: arcDomain,
+  });
+  assert.equal(td.domain.chainId, 5042);
+  assert.equal(hashDomain({ domain: td.domain, types: { EIP712Domain: td.types.EIP712Domain } }), preset.usdcDomain.separator);
+  const typed = { domain: td.domain, types: { TransferWithAuthorization: td.types.TransferWithAuthorization }, primaryType: td.primaryType, message: td.message };
+  const signature = await acct.signTypedData(typed);
+  assert.equal(await recoverTypedDataAddress({ ...typed, signature }), acct.address);
+  // The Base example domain is a different struct hash: signing for the wrong chain is not a no-op.
+  const baseTd = buildTypedData({ authorization: td.message, domain: { ...arcDomain, name: 'USD Coin', chainId: 8453 } });
+  assert.notEqual(hashDomain({ domain: baseTd.domain, types: { EIP712Domain: baseTd.types.EIP712Domain } }), preset.usdcDomain.separator);
+});
