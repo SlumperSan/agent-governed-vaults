@@ -208,7 +208,7 @@ test('discoverFromChain builds rows in the shape the join policy already consume
     vault: addr(0x2000),
     operatorId: 1,
     memberCount: 4,
-    depth: 0,
+    depth: null,
     parent: null,
     capacityCapUsdc: null,
     attested: true,
@@ -360,6 +360,75 @@ test('perceive on the chain source makes no paid read even when payments are ena
   assert.deepEqual(paid, [], 'no API method is called, in particular getVault');
   assert.equal(world.vaults.length, 1);
   assert.equal(b.summary().paidReads, 0);
+});
+
+// ── depth: a failed read is a refusal with a named gap, never an invented 0 ───
+
+/** Perceive one chain vault (a sub-vault by default: depth 1) and decide the join. */
+async function joinAtDepth({ depth = 1, failing = new Set(), config = chainConfig(), withRegistry = true } = {}) {
+  const client = createFakeChainClient({
+    vaults: [{ address: addr(0x4000), operatorId: 1, holders: 3, depth }],
+    operators: { 1: { gain: 5_000n * USDC, loss: 1_000n * USDC } },
+    failing,
+  });
+  const { log } = quiet();
+  const cfg = withRegistry ? config : { ...config, chain: { ...config.chain, subvaultRegistry: null } };
+  const world = await perceive({ client: noApi, chainReader: readerFor(client), budget: budget(), config: cfg, member: null, log, nowSec: NOW });
+  const { decisions } = plan({ world, config: cfg, entryMarks: new Map(), log });
+  const d = decisions.find((x) => x.kind === 'join');
+  return { world, d, check: d.checks.find((c) => c.name === 'depth-within-limit') };
+}
+
+test('chain source: an unreadable depthOf refuses the join and names a perception gap', async () => {
+  const { world, d, check } = await joinAtDepth({ depth: 1, failing: new Set(['depthOf']) });
+  assert.equal(world.vaults[0].fees.depth, null, 'the read failed; nothing fills the value in');
+  assert.equal(world.vaults[0].summary.depth, null, 'and the chain row does not invent one either');
+  assert.equal(check.ok, false);
+  assert.match(check.detail, /depth unreadable/);
+  assert.equal(d.join, false);
+  assert.ok(world.gaps.some((g) => /depth unreadable for 0x0+4000.*depthOf read failed/.test(g)), world.gaps.join('; '));
+});
+
+test('chain source: an unreadable depthOf refuses even when the true depth would have passed', async () => {
+  // Depth 0 is what the old default invented. It must not matter: a failed read refuses.
+  const { check, d } = await joinAtDepth({ depth: 0, failing: new Set(['depthOf']) });
+  assert.equal(check.ok, false);
+  assert.equal(d.join, false);
+});
+
+test('chain source: no subvaultRegistry configured is the same unmeasured depth, named and refused', async () => {
+  const { world, d, check } = await joinAtDepth({ depth: 0, withRegistry: false });
+  assert.equal(check.ok, false);
+  assert.equal(d.join, false);
+  assert.ok(world.gaps.some((g) => /depth unreadable.*chain.subvaultRegistry not configured/.test(g)), world.gaps.join('; '));
+});
+
+test('chain source: a real depth above the limit refuses on the measured number', async () => {
+  const { world, d, check } = await joinAtDepth({ depth: 1 });
+  assert.equal(world.vaults[0].fees.depth, 1);
+  assert.equal(check.ok, false);
+  assert.match(check.detail, /vault depth 1, max 0/);
+  assert.equal(d.join, false);
+  assert.deepEqual(world.gaps, [], 'a successful read is not a gap');
+});
+
+test('chain source: a depth of 0 read successfully passes the depth gate, with no gap', async () => {
+  const { world, d, check } = await joinAtDepth({ depth: 0 });
+  assert.equal(world.vaults[0].fees.depth, 0);
+  assert.equal(check.ok, true);
+  assert.match(check.detail, /vault depth 0, max 0/);
+  assert.equal(d.join, true, 'the vault is otherwise eligible, so the only change is the measured depth');
+  assert.deepEqual(world.gaps, []);
+});
+
+test('chain source: a measured depth within a raised ceiling passes', async () => {
+  const { check } = await joinAtDepth({ depth: 2, config: chainConfig({ policy: { join: { maxDepth: 2 } } }) });
+  assert.equal(check.ok, true, check.detail);
+});
+
+test('readOperatorRecord: a stats tuple missing a field is an unreadable record, not zeros', async () => {
+  const client = { readContract: async () => [OPERATOR_ADDR(2), { lifetimeGainUsdc: 5n, lifetimeLossUsdc: 3n, lifetimeFeesUsdc: 1n }] };
+  assert.equal(await readerFor(client).readOperatorRecord(REGISTRY, 2), null);
 });
 
 test('perceive with an API URL still uses the API (the chain source is not a replacement)', async () => {

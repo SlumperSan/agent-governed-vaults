@@ -18,7 +18,7 @@ export const OPERATOR_ADDR = (id) => '0x' + (0xa0 + id).toString(16).repeat(20);
 
 /**
  * @param {Object} spec
- * @param {Array<{address:string, operatorId?:number, realOperatorId?:number, holders?:number, creator?:string, capUsdc?:bigint, registry?:string}>} spec.vaults  in factory order (index 0 first).
+ * @param {Array<{address:string, operatorId?:number, realOperatorId?:number, holders?:number, depth?:number, creator?:string, capUsdc?:bigint, registry?:string}>} spec.vaults  in factory order (index 0 first).
  *   `registry` is the registry the VAULT claims to use; when it is not REGISTRY, that address answers `operatorOf`
  *   with `operatorId` (a spoofed attestation) while REGISTRY answers with `realOperatorId ?? operatorId`.
  * @param {Record<number, {gain?:bigint, loss?:bigint, fees?:bigint, vaultCount?:number, operator?:string}>} [spec.operators]
@@ -66,7 +66,7 @@ export function createFakeChainClient({ vaults, operators = {}, failing = new Se
       if (a === SUBVAULT_REGISTRY.toLowerCase()) {
         if (functionName === 'stackedPerfFeeBps') return 1000n;
         if (functionName === 'stackedExitFeeCapBps') return 50n;
-        if (functionName === 'depthOf') return 0n;
+        if (functionName === 'depthOf') return BigInt(byAddress.get(String(args[0]).toLowerCase())?.depth ?? 0);
       }
       if (a === GOVERNANCE.toLowerCase()) {
         if (functionName === 'hasPendingExecution') return false;

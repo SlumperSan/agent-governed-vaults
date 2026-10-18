@@ -429,7 +429,11 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
       const operator = Array.isArray(r.value) ? r.value[0] : r.value?.operator;
       const stats = Array.isArray(r.value) ? r.value[1] : r.value?.stats;
       if (!operator || /^0x0{40}$/i.test(operator) || !stats) return null;
-      const field = (i, name) => BigInt((Array.isArray(stats) ? stats[i] : stats[name]) ?? 0);
+      // A stat the decode did not return is an unreadable record, not a zero: a zero net would
+      // pass the floor when requireProvenOperator is off.
+      const raw = (i, name) => (Array.isArray(stats) ? stats[i] : stats[name]);
+      if ([0, 1, 2, 3].some((i) => raw(i, ['lifetimeGainUsdc', 'lifetimeLossUsdc', 'lifetimeFeesUsdc', 'vaultCount'][i]) == null)) return null;
+      const field = (i, name) => BigInt(raw(i, name));
       const gain = field(0, 'lifetimeGainUsdc');
       const loss = field(1, 'lifetimeLossUsdc');
       return {

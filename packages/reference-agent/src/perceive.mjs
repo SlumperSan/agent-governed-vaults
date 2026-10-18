@@ -148,7 +148,7 @@ export async function discoverFromChain({ chainReader, config, log, gaps }) {
       vault,
       operatorId,
       memberCount: identity.holderCount,
-      depth: 0, // the stacked-fee read below overrides this with SubVaultRegistry.depthOf
+      depth: null, // not measured here: the per-vault SubVaultRegistry.depthOf read supplies it, and null refuses
       parent: null,
       capacityCapUsdc: null, // filled from the per-vault read below
       attested: operatorId !== 0,
@@ -265,6 +265,12 @@ export async function perceive({ client, chainReader, budget, config, member, lo
     // The chain source trusts the registry the config names, not whichever one the vault points at.
     const registryOperatorId = await chainReader.readOperatorId(source === 'chain' ? config.chain.operatorRegistry : chain.operatorRegistry, address);
     const fees = await chainReader.readStackedFees(config.chain.subvaultRegistry ?? null, address);
+    // The row's own depth is only a fallback for the stacked read; with neither, the join gate
+    // refuses, and the log must say why instead of showing a clean pass.
+    if (fees.depth === null && (v.depth === null || v.depth === undefined))
+      gaps.push(
+        `depth unreadable for ${address} (${config.chain.subvaultRegistry ? 'SubVaultRegistry.depthOf read failed' : 'chain.subvaultRegistry not configured'}); the depth gate refuses`,
+      );
     const governance = await chainReader.readGovernance(address, member);
 
     // Voting weight is measured at the proposal's snapshot, not now, and it is NOT the share
