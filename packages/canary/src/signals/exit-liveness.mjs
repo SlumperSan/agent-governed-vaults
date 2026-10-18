@@ -18,7 +18,7 @@
  *
  * ── Classification (three-way, not two) ──
  *   GATE   (ZeroAmount, InsufficientShares, ExitAlreadyQueued, CreatorStakeGate,
- *           ExitNeedsChildSettlement, ChildSettlementPending) — the caller's own position makes
+ *           ExitNeedsChildSettlement, ChildSettlementPending, PositionBelowFloor) — the caller's own position makes
  *           the call invalid. Expected. OK.
  *   FROZEN (StaleOracle) — the SF-2/K-4 breaker. By design, but it IS a live capital freeze, so it
  *           is `skipped` and attributed to the oracle signal, which pages for it. Never reported

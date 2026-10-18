@@ -76,6 +76,7 @@ const EXPECTED = {
   'CreatorStakeGate()': '0xa428ab2d',
   'ExitNeedsChildSettlement()': '0x07b1ee59',
   'ChildSettlementPending()': '0xb5ac4fd1',
+  'PositionBelowFloor()': '0x9dc3430e',
   'StaleOracle(address)': '0xa2671f4b',
   'Reentrancy()': '0xab143c06',
   'NoQueuedExit()': '0xe752017c',
@@ -99,7 +100,7 @@ test('the classification tables are disjoint — no selector can be both a gate 
       seen.add(sel);
     }
   }
-  assert.equal(seen.size, 12);
+  assert.equal(seen.size, 13);
 });
 
 test('StaleOracle is NOT filed as a gate — it must never read as a healthy exit', () => {

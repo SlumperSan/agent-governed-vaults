@@ -439,6 +439,7 @@ export const EXIT_GATE_SELECTORS = Object.freeze({
   '0xa428ab2d': 'CreatorStakeGate',
   '0x07b1ee59': 'ExitNeedsChildSettlement',
   '0xb5ac4fd1': 'ChildSettlementPending',
+  '0x9dc3430e': 'PositionBelowFloor',
 });
 
 export const EXIT_FROZEN_SELECTORS = Object.freeze({ '0xa2671f4b': 'StaleOracle' });

@@ -454,6 +454,7 @@ const KNOWN_ERRORS_ABI = [
   { type: 'error', name: 'TooManyChildren', inputs: [] },
   { type: 'error', name: 'ChildSettlementPending', inputs: [] },
   { type: 'error', name: 'ExitNeedsChildSettlement', inputs: [] },
+  { type: 'error', name: 'PositionBelowFloor', inputs: [] },
   // Governance.sol
   { type: 'error', name: 'OnlyDeployer', inputs: [] },
   { type: 'error', name: 'AlreadyWiredSubRegistry', inputs: [] },
