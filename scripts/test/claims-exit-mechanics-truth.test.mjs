@@ -157,7 +157,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -331,6 +331,9 @@ const SKIP_DIRS = new Set([
   'broadcast',
   'coverage',
   'artifacts',
+  // Transient build output that `apps/vaults-ui` tests create and delete mid-run; walking it raced
+  // them (ENOENT on a file listed and then deleted). Same reason as `claims-lede-truth.test.mjs`.
+  'dist-ssr',
 ]);
 
 // `.json` is here for the same reason `claims-lede-truth.test.mjs` carries it: `contracts/config/
@@ -1221,5 +1224,21 @@ test('every prerendered page is inside the exit-claims walk', () => {
       '  2. `dist` WAS ADDED TO SKIP_DIRS. It is deliberately absent: the site publishes its prose\n' +
       '     only as build output.\n' +
       `Not walked:\n  ${missing.join('\n  ')}`,
+  );
+});
+
+test('the public-surface walk never lists dist-ssr, which a concurrent test creates and deletes mid-run', () => {
+  const probeDir = path.join(REPO, 'apps', 'vaults-ui', 'dist-ssr', `__claims_exit_mechanics_probe_${process.pid}__`);
+  mkdirSync(probeDir, { recursive: true });
+  writeFileSync(path.join(probeDir, 'probe.md'), 'probe');
+  let listed;
+  try {
+    listed = publicSurfaces();
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
+  assert.ok(
+    !listed.some((f) => f.split('/').includes('dist-ssr')),
+    'publicSurfaces() listed a file under dist-ssr; reading it after its owner deletes it is ENOENT',
   );
 });
