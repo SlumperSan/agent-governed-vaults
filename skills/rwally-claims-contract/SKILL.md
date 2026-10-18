@@ -105,7 +105,10 @@ the comments, and the owner is who decides a claim.
   paraphrase of it, so the sweep that enumerated files from the guard could not see it. Write a
   claim so that a reader can check it, not so that a string match passes.
 - **A bare answer to "is it deployed?"** Name the chain, and say what is deployed.
-  **The protocol is deployed on no mainnet.** Arc (5042) is the target and nothing is on it. Base
+  **The protocol is deployed on Arc mainnet (5042) since 2026-09-24** (`contracts/config/deployments/arc-mainnet.json`)
+  and is not a target on any other mainnet: the contracts left on Robinhood Chain (4663) are
+  immutable, hold nothing, and that chain is abandoned (`docs/INCIDENTS.md` §0). Say with any "live" claim that the soak (gate 3) and canary (gate 6) were
+  not re-run on the Arc source commit; `docs/LAUNCH-READINESS.md` has the wording. Base
   is paused. Base Sepolia (84532): a testnet trial with no value at stake.
 
   **Robinhood Chain (4663) is abandoned** — owner decision 2026-09-18. The seven contracts remain

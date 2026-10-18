@@ -40,15 +40,17 @@ reader can run. Never state a recovery time you cannot evidence.
 > status.** A remediation pass on 2026-08-27 closed twelve findings, including **C-3 (#31) and
 > C-5 (#34)**, and removed C-4 (#32)'s trigger. **C-1
 > ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is closed at launch by
-> root-only**, C-6 is resolved by the Chainlink-direct pivot, and the external audit is complete on
-> owner attestation, so gates 0 and 1 are **GO**. The protocol remains **NO-GO for BASE mainnet on
-> the OPERATIONAL gates** (soak + canary, gates 3/6, which need a funded testnet key), not on
-> security ([LAUNCH-READINESS.md](LAUNCH-READINESS.md)).
+> root-only**, C-6 is resolved by the Chainlink-direct pivot, and the external audit of tag `v0.4.0-audit` is complete on
+> owner attestation, so gates 0 and 1 were **GO** for the Base board. Gate 1 is not carried to the
+> Arc deployment: the Arc source differs from that tag in 21 contract source files
+> ([LAUNCH-READINESS.md](LAUNCH-READINESS.md)). The soak and canary (gates 3 and 6) were not
+> re-run on the Arc source commit before the Arc mainnet deployment of 2026-09-24, by owner decision of
+> 2026-09-23; the residual risk that leaves is stated in
+> [LAUNCH-READINESS.md](LAUNCH-READINESS.md).
 >
-> **NO DEPLOYMENT OF THIS PROTOCOL IS LIVE ON ANY MAINNET, AND NO MEMBER FUNDS ARE AT STAKE
-> ANYWHERE.** Every incident below that begins with a deposit, a proposal or an exit is hypothetical
-> today. The one running stack is on **Base Sepolia** testnet, which holds no member money, and
-> its lifecycle evidence is
+> **THE PROTOCOL IS DEPLOYED ON ARC MAINNET (CHAIN 5042) SINCE 2026-09-24,** so an incident below
+> that begins with a deposit, a proposal or an exit can now happen to real funds. The **Base
+> Sepolia** testnet stack holds no member money, and its lifecycle evidence is
 > [`evidence/testnet-lifecycle-run.json`](evidence/testnet-lifecycle-run.json).
 >
 > **Chain 4663 (Robinhood Chain) is abandoned by owner decision of 2026-09-18, and both of its
@@ -84,11 +86,14 @@ reader can run. Never state a recovery time you cannot evidence.
 > has been stopped for more than a day. Neither the ceiling nor its line is quoted here: both have
 > moved once already.
 >
-> **Arc (chain 5042) is the direction and is NOT deployed.** Settlement there is USDC, which is also
-> the native gas asset. What exists is a survey read off the chain,
-> [`evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json), and the open blockers in
-> [`evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md). Nothing in this playbook has
-> been exercised on Arc.
+> **Arc (chain 5042) is where the protocol is deployed, since 2026-09-24**
+> ([`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)).
+> Settlement there is USDC, which is also the native gas asset. The survey read off the chain before
+> the deploy is [`evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json), and the
+> blockers that preceded it are in [`evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md).
+> The restore drill's chain-dependent inputs were measured on Arc
+> ([LAUNCH-READINESS.md](LAUNCH-READINESS.md) §0a); no other drill of this playbook is recorded as
+> run there.
 >
 > §8 still carries its own warning: its defences are now materially stronger, but not complete.
 > Read it before relying on any "the contract's own defences are the response" line here.

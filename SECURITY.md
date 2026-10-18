@@ -17,10 +17,11 @@ Include, as far as you can:
 
 - A clear description of the issue and its impact (funds at risk, data exposure, availability).
 - Steps to reproduce, or a proof-of-concept (a Foundry test, an HTTP request, a transcript).
-- The commit hash, contract address, or deployed chain the finding applies to. **No deployment of
-  this protocol is live on any mainnet.** The running stack is Base Sepolia testnet
-  (`contracts/config/deployments/base-sepolia.json`); the contracts left on Robinhood Chain (chain
-  4663) are immutable and hold nothing, and that chain is no longer a target — `docs/INCIDENTS.md`
+- The commit hash, contract address, or deployed chain the finding applies to. **The protocol is
+  deployed on Arc mainnet (chain 5042) since 2026-09-24**
+  (`contracts/config/deployments/arc-mainnet.json`). The Base Sepolia testnet stack
+  (`contracts/config/deployments/base-sepolia.json`) holds no member money; the contracts left on
+  Robinhood Chain (chain 4663) are immutable and hold nothing, and that chain is no longer a target; `docs/INCIDENTS.md`
   §0 carries the readings.
 - Whether the issue is, to your knowledge, being actively exploited.
 
@@ -30,8 +31,9 @@ In scope:
 
 - `contracts/` — `VaultCore`, `Governance`, `FeeEngine`, `OperatorRegistry`, `ChainlinkOracle`, the
   execution adapters, `SubVaultRegistry`, `VaultFactory`/`VaultDeployer`, and their deployed
-  bytecode on Base Sepolia testnet and on chain 4663, where the contracts remain deployed and
-  immutable although no vault there holds value.
+  bytecode on Arc mainnet (chain 5042; the address book is
+  `contracts/config/deployments/arc-mainnet.json`), on Base Sepolia testnet and on chain 4663, where
+  the contracts remain deployed and immutable although no vault there holds value.
 - `apps/api/` — the metered read API (x402 payment gate, facilitator integration, rate limiting).
   This is the one paid API surface going forward; a duplicate paid endpoint that previously lived
   under `apps/site-next` (settling on Base mainnet) has been removed as part of a parallel cleanup
@@ -73,7 +75,11 @@ authority if the two ever disagree.
   `v0.4.0-audit`. On 2026-08-29 the owner attested, having read the report, that it surfaced **no
   major issues**. **The report itself is held privately** and is deliberately not reproduced or
   linked in this repository. That is an owner attestation, not something independently verifiable
-  from this repo — do not describe the protocol as "audited" without that qualifier. The
+  from this repo. Do not describe the protocol as "audited" without naming the tag and that
+  qualifier. The audited tag is not the source deployed on Arc: that source (`c8f112be`) differs from
+  `v0.4.0-audit` in 21 contract source files, listed in gate 1 of
+  [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md), and no external audit covers those changes.
+  The
   audit-firm-facing entry point and scope notes live at
   [`docs/audit/README.md`](docs/audit/README.md); note its own banner that scope moved after
   Critical **C-6** (the oracle was replaced, not patched — see below).
@@ -92,10 +98,11 @@ authority if the two ever disagree.
   cross-check a Chainlink answer that is wrong but inside its band and heartbeat. See the README's
   "Named residual" paragraph and [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md) (residual
   12, "curation immobility").
-- **Launch verdict:** as of this writing the board in
-  [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md) is the authority on go/no-go; `npm run cc`
-  prints the current computed state. A clean security posture does not by itself mean "launched
-  with no open gates" — read the board, not just this file.
+- **Launch verdict:** the protocol is live on Arc mainnet by owner decision, with the soak and
+  canary gates not re-run on the Arc source commit. The verdict and the residual risk to depositors are
+  at the top of [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md), which is the authority on
+  go/no-go; `npm run cc` prints the current computed state. A clean security posture does not by
+  itself mean "launched with no open gates". Read the board, not just this file.
 
 ## Bug bounty
 

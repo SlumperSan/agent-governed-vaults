@@ -30,8 +30,8 @@
 #   the document, so the markup carries none.
 #
 # connect-src 'self'
-#   No third-party origin. The protocol is not deployed on Arc, so this page
-#   makes no chain call: there is no address for it to read and no RPC to call.
+#   No third-party origin. This retired page makes no chain call, although the
+#   protocol is deployed on Arc: it reads no deployment record and has no RPC to call.
 #   This used to name the abandoned chain's public RPC, which made the LIVE
 #   READS panel possible. Widen this only when a live read exists again to
 #   point at, not before.

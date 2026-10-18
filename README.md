@@ -24,8 +24,9 @@ exchanges anywhere in the design.
 
 **Deployed on Arc mainnet since 2026-09-24.** The address book is
 [`contracts/config/deployments/arc-mainnet.json`](contracts/config/deployments/arc-mainnet.json),
-and the first vault exists there. Read [Status](#status) before anything else in this file — a
-deploy does not by itself clear the launch verdict recorded there.
+and the first vault exists there. Read [Status](#status) before anything else in this file: the
+deployment went ahead without a soak or canary re-run on the Arc source commit, and Status records
+what that leaves open.
 
 ## Why it exists
 
@@ -113,16 +114,35 @@ there were fully exited by their sole holder and read `totalShares() == 0`; noth
 remains in them. That chain is no longer a target and its configuration has been removed from this
 repository.
 
-**Launch verdict: NO-GO.** That verdict is unchanged and was not cleared by deploying. The argued
-board is [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md) (nine gates, each with its evidence),
-and it is the authority whenever this section and that document disagree. What is in flight right
-now is [docs/NOW.md](docs/NOW.md); `npm run cc` prints the computed state.
+**Launch verdict: live on Arc mainnet (chain 5042) since 2026-09-24, by owner decision of
+2026-09-23, with the soak (gate 3) and the canary (gate 6) not re-run on the Arc source commit, and
+with the external audit (gate 1) covering tag `v0.4.0-audit`, not the source deployed on Arc.** The
+argued board is [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md) (nine gates, each with its
+evidence), and it is the authority whenever this section and that document disagree. What is in
+flight right now is [docs/NOW.md](docs/NOW.md); `npm run cc` prints the computed state.
 
-**What remains is operational, legal and calendar-bound.** Two gates are open on the board: the
-soak drills (gate 3) and the canary re-run (gate 6), both marked STALE because the evidence behind
-them was earned against contracts that have since changed. Both need a funded testnet key and a
-re-run rather than more code. The testnet lifecycle (gate 2) and the recorded restore drill
-(gate 7) were open until recently and are now GO.
+**Which gates stand, and on what.** Gate 5 (the oracle stack, re-read against Arc mainnet on
+2026-10-18, 13 of 13 checks; re-run `scripts/verify-chainlink-oracle.mjs` to check it) and gate 7 (the restore drill, GO by transfer to Arc) are GO with
+evidence from Arc. Gate 0 is GO as recorded on the Base board and carried over with its qualifier (root vaults
+only). Gate 1 is GO for tag `v0.4.0-audit` on owner attestation and is **not carried to the Arc
+deployment**: the Arc source commit differs from the audited tag in 21 contract source files, and no
+external audit covers those changes (gate 1 of [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md)
+lists them and says what does cover them). Gate 4, live x402 settlement, was recorded on Base Sepolia and is not covered on Arc: no
+facilitator is deployed for chain 5042 (`docs/DEPLOYMENT.md`). Gate 2, the testnet lifecycle, passed
+on Base Sepolia on 2026-09-03 against source that predates #330, which changed the delegated-weight
+and quorum rules in `Governance.sol`, so it was not earned on the Arc source commit. That commit is
+`c8f112be`; on chain, the eight deployed contracts (OperatorRegistry, SubVaultRegistry, FeeEngine,
+Governance, VaultDeployer, VaultFactory, ChainlinkOracle, AggregationRouterAdapter) and the first
+vault's runtime code were byte-compared to a build of it and differ only inside constructor
+immutables; VaultCore's creation code in `VaultDeployer` was not read back.
+
+**What was not re-run, and why that is a risk to depositors.** The soak drills (gate 3) and the
+canary (gate 6) were not re-run on the Arc source commit before the broadcast, because the owner
+dropped them as a precondition. The contracts are immutable. If those drills would have found a
+defect in the governance or exit paths, the first place it can now surface is a live vault holding
+depositors' funds. The Foundry suite, including the `AuditDelegatedQuorum` attack tests that passed
+against the Arc source commit on 2026-10-18, covers the cases someone wrote; it is not a substitute
+for the drills.
 
 **On the external review: read the qualifier.** An external audit was commissioned against the
 launch tree at tag `v0.4.0-audit`. On 2026-08-29 the owner attested, having read the report, that
@@ -130,8 +150,15 @@ it surfaced **no major issues**. The report contains sensitive material and is *
 It is deliberately not reproduced or linked in this repository. That is an **owner attestation**,
 not something a reader here can independently verify, and neither the scope list nor the
 Low/Informational findings have been published. Do not describe this protocol as "audited" without
-that qualifier. Whether that attestation currently stands as the basis for the gate is recorded in
-gate 1 of [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md), not here.
+naming the tag and that qualifier.
+
+**The audited tag is not the source deployed on Arc.** `git diff v0.4.0-audit c8f112be contracts/src`
+lists 26 files changed. Five of them were deleted (the retired multi-source oracle
+stack), leaving 21 contract source files changed or added since the audited tag, among them
+`Governance.sol`, `VaultCore.sol`, `VaultFactory.sol` and `ChainlinkOracle.sol`; test files are
+excluded from that count, and the full list is in gate 1 of
+[docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md). The Foundry suite and independent per-PR review
+cover those changes; no external audit does.
 
 **The lifecycle evidence is Base Sepolia, and only Base Sepolia.** The full lifecycle has been run end to end on testnet:
 create, deposit, activate, propose, commit, reveal, finalize, execute, exit; and gate 2 of the
@@ -266,7 +293,7 @@ sub-README, this table wins.
 | Allocator front end | `apps/web/` ("Vault Atlas") | Not yet assigned | **Not deployed.** No production domain decided. |
 | Metered read API | `apps/api/` | Not yet assigned | **Not deployed.** x402 metering is implemented; no facilitator stood up and no public domain chosen yet. Its chain configuration targets Arc. |
 | Paid vault-snapshot endpoint | ~~`functions/api/vaults.js`~~ (removed from the repo) | `rwally.com/api/vaults` | **Removed from the repo, STILL LIVE in production.** PR #298 (owner-approved) deleted it and `functions/.well-known/x402.js`; the Pages project has not been redeployed, so the route returns **402** and the discovery document returns **200**, read 2026-09-16. **The next deploy of the marketing site removes both** — intended, but not by accident. It duplicated `apps/api` and settled on Base mainnet, conflicting with the single-chain direction. `docs/REVENUE.md` is kept for history, marked superseded. See below the table. |
-| Agent-orientation doc | `llms.txt` (repo root) | Served at `rwally.com/llms.txt` once the marketing site publishes it | Internal-facing (read by integrating agents/devs), documents the NO-GO verdict — distinct from the public marketing narrative, which must stay silent on NO-GO per the current internal decision. |
+| Agent-orientation doc | `llms.txt` (repo root) | Served at `rwally.com/llms.txt` once the marketing site publishes it | Internal-facing (read by integrating agents and devs). It states that the protocol is deployed on Arc mainnet and carries a short launch-status line (live by owner decision, soak and canary not re-run); `docs/LAUNCH-READINESS.md` holds the full verdict and the residual risk. |
 | Status/uptime page | Not yet built | `status.rwally.com` (planned) | **Spec drafted**, not implemented. See `agent-pilot-and-status-spec.md`. |
 | API docs | `docs/api/openapi.yaml` | `docs.rwally.com` (planned, not yet hosted) | Spec exists; no hosting/domain set up yet. |
 

@@ -30,7 +30,7 @@
 > - Remaining Mediums/Lows: dispositioned (accepted design-tradeoffs / off-chain / dormant) in the
 >   report's §1 table.
 >
-> **The BASE mainnet launch is NO-GO on two external gates:** (1) the Base mainnet deploy config must supply
+> **When this handoff was written, the BASE mainnet launch was NO-GO on two external gates:** (1) the Base mainnet deploy config must supply
 > **real, on-chain-verified Base Chainlink feed addresses** (the `chainlinkOracle` block in
 > `base-mainnet.json` is placeholders; `scripts/verify-chainlink-oracle.mjs` gates it; `Deploy.s.sol`
 > refuses a Base-mainnet deploy with an empty oracle allowlist); (2) **this external audit**.
@@ -95,10 +95,11 @@ The adapter warning that used to sit here is retired. The live adapter is
 the #108 scoped refund, established by ancestry against `8a0e1155`, not asserted. The earlier
 adapter at `0xf3e08c8b…`, which predated both and carried a cross-order theft path, is superseded.
 
-**Deployed on Arc, not on Base mainnet or any other mainnet.** The protocol is deployed on Arc
+**Deployed on Arc, not on Base mainnet.** The protocol is deployed on Arc
 (chain id 5042, where USDC is both the settlement token and the native gas asset) since 2026-09-24
-— `contracts/config/deployments/arc-mainnet.json` — with no deployment on Base mainnet or any other
-mainnet. That record postdates the audit tag above: the audit surface is the source at the tag,
+(`contracts/config/deployments/arc-mainnet.json`), with no deployment on Base mainnet. The contracts
+left on Robinhood Chain (4663) are immutable and hold nothing, and that chain is no longer a target
+(`docs/INCIDENTS.md` §0). That record postdates the audit tag above: the audit surface is the source at the tag,
 not this deployment. `docs/evidence/arc-mainnet-survey.json` records what was read off Arc ahead
 of the deploy — the chain binding, the USDC predeploy, and four Chainlink feeds — and is superseded
 by `contracts/config/arc-mainnet.json` and the deployment record where the two disagree. Treat
