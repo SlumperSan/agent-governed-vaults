@@ -216,3 +216,52 @@ test('policy.crank: valid values are accepted, and the default scope is held', (
   assert.equal(cfg.policy.crank.markExpired, true);
   assert.equal(cfg.policy.crank.finalize, true);
 });
+
+// ── the unproven-operator join profile ───────────────────────────────────────
+
+test('the default join policy has no profile and requires a proven operator', () => {
+  const j = loadConfig().policy.join;
+  assert.equal(j.profile, null);
+  assert.equal(j.requireProvenOperator, true);
+  assert.deepEqual(j.disclosedAddresses, []);
+  assert.equal(DEFAULT_CONFIG.policy.exit.onOperatorNetNegative, true);
+});
+
+test('the unproven-operator profile turns requireProvenOperator off and changes nothing else in the join or exit policy', () => {
+  const base = loadConfig();
+  const cfg = loadConfig({ policy: { join: { profile: 'unproven-operator' } } });
+  assert.equal(cfg.policy.join.profile, 'unproven-operator');
+  assert.equal(cfg.policy.join.requireProvenOperator, false);
+  assert.deepEqual({ ...cfg.policy.join, requireProvenOperator: true, profile: null }, base.policy.join);
+  assert.deepEqual(cfg.policy.exit, base.policy.exit);
+  assert.equal(cfg.policy.exit.onOperatorNetNegative, true);
+});
+
+test('a key set beside the profile wins over the profile, the way it does over a chain preset', () => {
+  const cfg = loadConfig({ policy: { join: { profile: 'unproven-operator', requireProvenOperator: true } } });
+  assert.equal(cfg.policy.join.requireProvenOperator, true);
+  assert.equal(loadConfig({ chain: { preset: 'arc-mainnet' }, policy: { join: { profile: 'unproven-operator' } } }).policy.join.depositUsdc, '100', 'the preset deposit still arrives; decideJoin pins it');
+});
+
+test('the profile refuses to start with the exit on a negative operator net turned off', () => {
+  assert.throws(
+    () => loadConfig({ policy: { join: { profile: 'unproven-operator' }, exit: { onOperatorNetNegative: false } } }),
+    (e) => e instanceof ConfigError && /onOperatorNetNegative must stay true/.test(e.message),
+  );
+  assert.doesNotThrow(() => loadConfig({ policy: { exit: { onOperatorNetNegative: false } } }), 'without the profile the knob is the operator own to set');
+});
+
+test('an unknown profile name is refused, including inherited object keys', () => {
+  for (const name of ['proven', 'Unproven-Operator', 'toString', '__proto__', ''])
+    assert.throws(() => loadConfig({ policy: { join: { profile: name } } }), (e) => e instanceof ConfigError && /unknown policy\.join\.profile/.test(e.message), JSON.stringify(name));
+});
+
+test('disclosedAddresses and the log bounds are validated at startup', () => {
+  const ok = '0x' + 'ab'.repeat(20);
+  assert.deepEqual(loadConfig({ policy: { join: { disclosedAddresses: [ok] } } }).policy.join.disclosedAddresses, [ok]);
+  for (const bad of ['x', [ok, 'nope'], [123], ['0x123']])
+    assert.throws(() => loadConfig({ policy: { join: { disclosedAddresses: bad } } }), ConfigError, JSON.stringify(bad));
+  for (const bad of [{ pageBlocks: 0 }, { maxPagesPerTick: 1.5 }, { maxBlocks: -1 }, { pacingMs: -1 }, { pacingMs: 0.5 }])
+    assert.throws(() => loadConfig({ discovery: { logs: bad } }), ConfigError, JSON.stringify(bad));
+  assert.doesNotThrow(() => loadConfig({ discovery: { logs: { pacingMs: 0 } } }));
+});

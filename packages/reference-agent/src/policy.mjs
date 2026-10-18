@@ -21,7 +21,7 @@
  * finalize, execute and mark-expired, the three Governance calls anyone may make).
  */
 
-import { toBaseUnits, fromBaseUnits } from './config.mjs';
+import { toBaseUnits, fromBaseUnits, UNPROVEN_OPERATOR_PROFILE } from './config.mjs';
 import { resolveEvaluator } from './evaluators.mjs';
 
 const BPS = 10000n;
@@ -46,6 +46,70 @@ export function asBigInt(v) {
 }
 
 /**
+ * What the `unproven-operator` profile accepts, in the words the dry-run banner and the join check
+ * both print. The Governance facts behind it, read from contracts/src/Governance.sol:
+ *
+ *  - `finalize` takes the sub-five branch when `p.memberCount < SIGNER_REGIME_BELOW` (5): the proposal
+ *    passes on a strict majority of members-at-creation revealing with the FOR stake clearing quorum
+ *    (`headMajorityWithStake`), OR on FOR stake above half of the snapshot (`forStakeMajority`).
+ *  - A holder who is alone holds all of the snapshot, so its FOR reveal alone clears `forStakeMajority`.
+ *  - A RuleChange passes only when `revealedWeight == snapshotTotal && forWeight >= snapshotTotal`: every
+ *    unit of eligible stake must self-reveal, and all of it in favour.
+ */
+export const UNPROVEN_OPERATOR_RISK = Object.freeze([
+  'An operator with no recorded gain or loss has no track record to judge, and a vault created today starts there.',
+  'Below five holders, the outcome of a Rebalance depends on stake and on how many addresses vote (Governance.finalize).',
+  'While it is the only holder, a depositor holds more than half of eligible stake, so whoever joins first holds the deciding vote on Rebalance proposals.',
+  'A RuleChange needs every unit of eligible stake to reveal in favour, so one holder who does not reveal blocks it.',
+]);
+
+/**
+ * The operator's realizations by members who are NOT on the disclosed list, from the registry's
+ * RealizationRecorded logs (chain.readRealizations). Pure.
+ *
+ * The registry's accumulators (`statsOf`) add up every member's realization, with no mark on the
+ * disclosed addresses, so the leaderboard figure cannot say who made it. This figure can. Moving an
+ * address onto the list only removes its realizations from `included`; nothing is ever added.
+ *
+ * `reconciles` compares the window's total (included plus excluded) with the registry's own
+ * accumulators when the window is complete: a difference means the operator realized somewhere the
+ * window did not read, most likely in a vault older than this one.
+ *
+ * @param {Object} p
+ * @param {{complete:boolean, gap:string|null, creationBlock:number|null, scannedFrom:number|null, scannedTo:number|null, head:number|null, members:Array<{member:string,gain:bigint,loss:bigint}>}|null} p.record
+ * @param {string[]} [p.disclosed]  addresses to leave out
+ * @param {{lifetimeGainUsdc?:any, lifetimeLossUsdc?:any}|null} [p.registryRow]  the operator's leaderboard row
+ */
+export function outsideTrackRecord({ record, disclosed = [], registryRow = null }) {
+  if (!record) return null;
+  const listed = new Set(disclosed.map((a) => String(a).toLowerCase()));
+  const included = { gain: 0n, loss: 0n, net: 0n, members: 0 };
+  const excluded = { gain: 0n, loss: 0n, members: 0 };
+  for (const m of record.members) {
+    const side = listed.has(String(m.member).toLowerCase()) ? excluded : included;
+    side.gain += m.gain;
+    side.loss += m.loss;
+    side.members += 1;
+  }
+  included.net = included.gain - included.loss;
+  const regGain = asBigInt(registryRow?.lifetimeGainUsdc);
+  const regLoss = asBigInt(registryRow?.lifetimeLossUsdc);
+  const reconciles =
+    record.complete && regGain !== null && regLoss !== null ? included.gain + excluded.gain === regGain && included.loss + excluded.loss === regLoss : null;
+  return {
+    complete: record.complete,
+    gap: record.gap,
+    creationBlock: record.creationBlock,
+    scannedFrom: record.scannedFrom,
+    scannedTo: record.scannedTo,
+    head: record.head,
+    included,
+    excluded,
+    reconciles,
+  };
+}
+
+/**
  * Should the agent join this vault?
  *
  * @param {Object} p
@@ -56,11 +120,26 @@ export function asBigInt(v) {
  * @param {{stackedPerfFeeBps:number|null, stackedExitFeeCapBps:number|null, depth:number|null}} [p.fees]
  * @param {number} p.heldVaultCount  how many vaults the agent already holds
  * @param {any} p.config       resolved policy.join config
+ * @param {ReturnType<typeof outsideTrackRecord>} [p.trackRecordExcludingDisclosed]  the operator's realizations by members
+ *   NOT on the disclosed list. null when none was requested; a figure that could not be read in full refuses.
  * @returns {{join:boolean, checks:Array<{name:string,ok:boolean,detail:string}>, depositUsdc:bigint, reason:string}}
  */
-export function decideJoin({ vault, chain, operatorRow, registryOperatorId = null, fees = {}, heldVaultCount = 0, config }) {
+export function decideJoin({ vault, chain, operatorRow, registryOperatorId = null, fees = {}, heldVaultCount = 0, config, trackRecordExcludingDisclosed = null }) {
   const checks = [];
-  const deposit = toBaseUnits(config.depositUsdc);
+  // Under the unproven-operator profile the deposit is the vault's own minimum, whatever
+  // `depositUsdc` says: the profile accepts an operator with no record, so it accepts it with the
+  // least money the vault allows. An unreadable minimum is 0 here and `meets-min-deposit` refuses it.
+  const pinned = config.profile === UNPROVEN_OPERATOR_PROFILE;
+  const minDepositRead = chain?.minDepositUsdc;
+  const deposit = pinned ? (minDepositRead === null || minDepositRead === undefined ? 0n : BigInt(minDepositRead)) : toBaseUnits(config.depositUsdc);
+  if (pinned)
+    checks.push(
+      check(
+        'profile-unproven-operator',
+        true,
+        `profile ${UNPROVEN_OPERATOR_PROFILE} is on; holders now ${vault?.memberCount ?? 'unknown'}. ${UNPROVEN_OPERATOR_RISK.join(' ')}`,
+      ),
+    );
 
   // ── attested operator ──────────────────────────────────────────────────────
   // Operator identity is the REGISTRY key, not the API's display metadata — a spoofed vault can
@@ -98,6 +177,33 @@ export function decideJoin({ vault, chain, operatorRow, registryOperatorId = nul
         `net realized $${fromBaseUnits(net)} (gain $${fromBaseUnits(gain)} / loss $${fromBaseUnits(loss)}), floor $${fromBaseUnits(minNet)}`,
       ),
     );
+
+  // ── outside-member track record ────────────────────────────────────────────
+  // The registry's net above counts every member's realization, disclosed addresses included. When a
+  // figure that leaves the disclosed addresses out was asked for, it is applied on top: it can only
+  // tighten the verdict. A figure that could not be read in full refuses, and names why, rather than
+  // being read as an operator with no realizations.
+  const outside = trackRecordExcludingDisclosed;
+  if (outside) {
+    if (!outside.complete)
+      checks.push(
+        check('outside-track-record', false, `the realizations by outside members were not read in full (${outside.gap}); refusing rather than reading an unread range as none`),
+      );
+    else {
+      const hasRecord = outside.included.gain > 0n || outside.included.loss > 0n;
+      const ok = outside.included.net >= minNet && (!config.requireProvenOperator || hasRecord);
+      checks.push(
+        check(
+          'outside-track-record',
+          ok,
+          `outside members (not on the disclosed list): gain $${fromBaseUnits(outside.included.gain)} / loss $${fromBaseUnits(outside.included.loss)} / net $${fromBaseUnits(outside.included.net)} from ${outside.included.members} address(es); ` +
+            `left out as disclosed: gain $${fromBaseUnits(outside.excluded.gain)} / loss $${fromBaseUnits(outside.excluded.loss)} from ${outside.excluded.members} address(es); ` +
+            `blocks ${outside.scannedFrom} to ${outside.scannedTo}, floor $${fromBaseUnits(minNet)}${config.requireProvenOperator ? '; an outside realization is required' : ''}` +
+            (outside.reconciles === false ? '; the window total differs from the registry accumulators, so this operator realized in blocks the window did not read' : ''),
+        ),
+      );
+    }
+  }
 
   // ── capacity available ─────────────────────────────────────────────────────
   // capacityCapUsdc == 0 means UNCAPPED (ARCHITECTURE §6, and isCapped() exists precisely so this
@@ -158,7 +264,7 @@ export function decideJoin({ vault, chain, operatorRow, registryOperatorId = nul
       minDeposit === null || minDeposit === undefined ? false : deposit >= BigInt(minDeposit),
       minDeposit === null || minDeposit === undefined
         ? 'minDepositUsdc unreadable'
-        : `depositing $${fromBaseUnits(deposit)}, vault minimum $${fromBaseUnits(BigInt(minDeposit))}`,
+        : `depositing $${fromBaseUnits(deposit)}, vault minimum $${fromBaseUnits(BigInt(minDeposit))}${pinned ? `; pinned at the vault minimum by the ${UNPROVEN_OPERATOR_PROFILE} profile (depositUsdc is not used)` : ''}`,
     ),
   );
 

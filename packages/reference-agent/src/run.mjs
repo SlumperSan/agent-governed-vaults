@@ -35,6 +35,11 @@
  *   --cap=<usdc>       per-session x402 spend cap    (default 0.25)
  *   --json             one JSON record per line instead of prose
  *   --config=<path>    JSON file merged over the defaults
+ *   --profile=<name>   a named join profile; the only one is unproven-operator, which lets the agent
+ *                      join a vault whose operator has no realized track record (docs/REFERENCE-AGENT.md,
+ *                      "Joining a vault with no track record")
+ *   --disclosed=<path> a JSON file whose `addresses[].address` are left out of the outside-member
+ *                      track record (docs/seeded-addresses.json has this shape)
  */
 
 import { readFileSync } from 'node:fs';
@@ -67,6 +72,21 @@ function parseArgs(argv) {
   return out;
 }
 
+/**
+ * The `address` of every entry in a seeded-addresses file ({ addresses: [{ address, ... }] }). A
+ * file that is not that shape is an error, never an empty list: an empty list would silently put
+ * every disclosed address back into the track record.
+ * @param {string} path @returns {string[]}
+ */
+function readDisclosedAddresses(path) {
+  const parsed = JSON.parse(readFileSync(path, 'utf8'));
+  if (!Array.isArray(parsed?.addresses)) throw new Error(`--disclosed ${path}: expected an object with an "addresses" array`);
+  return parsed.addresses.map((e, i) => {
+    if (typeof e?.address !== 'string') throw new Error(`--disclosed ${path}: addresses[${i}] has no "address" string`);
+    return e.address.toLowerCase();
+  });
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const log = createLogger({ json: Boolean(args.json) });
@@ -81,6 +101,14 @@ async function main() {
       payments: {
         ...(fileConfig.api?.payments ?? {}),
         ...(args.cap ? { maxSessionSpendUsdc: String(args.cap) } : {}),
+      },
+    },
+    policy: {
+      ...(fileConfig.policy ?? {}),
+      join: {
+        ...(fileConfig.policy?.join ?? {}),
+        ...(args.profile ? { profile: String(args.profile) } : {}),
+        ...(args.disclosed ? { disclosedAddresses: readDisclosedAddresses(String(args.disclosed)) } : {}),
       },
     },
     chain: {

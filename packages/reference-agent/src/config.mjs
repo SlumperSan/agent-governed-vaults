@@ -121,6 +121,15 @@ export const DEFAULT_CONFIG = Object.freeze({
     maxVaults: 25,
     pageSize: 10,
     include: [],
+    /**
+     * The outside-member track record is read from the OperatorRegistry's RealizationRecorded logs
+     * (chain.mjs, readRealizations). Bounds, measured on both Arc RPCs 2026-10-18: `pageBlocks` is
+     * the smaller provider limit (10,000); `maxPagesPerTick` caps the log requests one tick spends
+     * across all vaults (the scan resumes where it stopped, so a vault created 4.2 million blocks ago
+     * is read in a few ticks); `maxBlocks` is how far behind the head a scan will start, and anything
+     * older is a named gap; `pacingMs` spaces requests, because unspaced ones are rate limited.
+     */
+    logs: { pageBlocks: 10000, maxPagesPerTick: 120, maxBlocks: 10000000, pacingMs: 250 },
   },
 
   policy: {
@@ -143,6 +152,20 @@ export const DEFAULT_CONFIG = Object.freeze({
       maxDepth: 0,
       /** Never hold positions in more than this many vaults at once. */
       maxConcurrentVaults: 3,
+      /**
+       * A named override profile, or null. `'unproven-operator'` lets the agent join a vault whose
+       * operator has no realized gain or loss yet (see JOIN_PROFILES below for exactly what it changes
+       * and what it keeps). The default stays null: the agent refuses such a vault.
+       */
+      profile: null,
+      /**
+       * Addresses to leave out of the outside-member track record, lower-case or checksummed: the
+       * `address` fields of docs/seeded-addresses.json, which run.mjs loads with --disclosed=<path>.
+       * The list can only REMOVE realizations from the figure, never add trust, so an agent has
+       * no need to trust whoever maintains it. When the list is not empty (or the profile is on) the
+       * agent reads the operator's RealizationRecorded logs and applies a second check to that figure.
+       */
+      disclosedAddresses: [],
     },
 
     exit: {
@@ -261,9 +284,30 @@ export function presetFragment(name) {
   };
 }
 
+/** The one named join profile. Its name is the value of `policy.join.profile`. */
+export const UNPROVEN_OPERATOR_PROFILE = 'unproven-operator';
+
+/**
+ * Named, opt-in overrides of the join policy. A profile is a config fragment merged BEFORE the
+ * caller's own keys, the way a chain preset is, so a key set beside it wins.
+ *
+ *  - `unproven-operator` sets `requireProvenOperator: false`, so a vault whose operator has no
+ *    realized gain or loss can be joined; that is the state of every new vault. It changes nothing
+ *    else in the gates: the operator must still be attested at the registry, the net must still clear
+ *    its floor, and the fee, capacity, depth and NAV gates all stand. Two more things are NOT in the
+ *    fragment because they are enforced elsewhere: `decideJoin` pins the deposit at the vault's own
+ *    minimum whatever `depositUsdc` says, and `loadConfig` refuses the profile with
+ *    `policy.exit.onOperatorNetNegative` off (the exit trigger that is the agent's way out when an
+ *    unproven operator turns out to lose money).
+ */
+export const JOIN_PROFILES = Object.freeze({
+  [UNPROVEN_OPERATOR_PROFILE]: Object.freeze({ policy: { join: { requireProvenOperator: false } } }),
+});
+
 /** @param {object} [overrides] @returns {any} */
 export function loadConfig(overrides = {}) {
   const presetName = /** @type {any} */ (overrides).chain?.preset;
+  const profileName = /** @type {any} */ (overrides).policy?.join?.profile;
   let base = DEFAULT_CONFIG;
   if (presetName !== undefined && presetName !== null) {
     const fragment = presetFragment(presetName);
@@ -273,6 +317,11 @@ export function loadConfig(overrides = {}) {
     if (chosen !== undefined && Number(chosen) !== fragment.chain.chainId)
       throw new ConfigError(`chain.preset ${presetName} is chain ${fragment.chain.chainId}, but chain.chainId is ${chosen}; drop one of them`);
     base = merge(DEFAULT_CONFIG, fragment);
+  }
+  if (profileName !== undefined && profileName !== null) {
+    if (!Object.hasOwn(JOIN_PROFILES, profileName))
+      throw new ConfigError(`unknown policy.join.profile ${JSON.stringify(profileName)}; the profiles are ${Object.keys(JOIN_PROFILES).join(', ')}`);
+    base = merge(base, JOIN_PROFILES[profileName]);
   }
   let cfg = merge(base, overrides);
   // A preset with no API URL of its own means chain-only discovery. The localhost default belongs
@@ -304,6 +353,18 @@ export function loadConfig(overrides = {}) {
     if (typeof payload !== 'string' || !/^0x(?:[0-9a-fA-F]{2})*$/.test(payload))
       throw new ConfigError(`policy.crank.knownPayloads[${hash}] is not 0x hex bytes`);
   }
+  for (const k of /** @type {const} */ (['pageBlocks', 'maxPagesPerTick', 'maxBlocks']))
+    if (!Number.isInteger(cfg.discovery.logs[k]) || cfg.discovery.logs[k] < 1)
+      throw new ConfigError(`discovery.logs.${k} must be a positive integer, got ${JSON.stringify(cfg.discovery.logs[k])}`);
+  if (!Number.isInteger(cfg.discovery.logs.pacingMs) || cfg.discovery.logs.pacingMs < 0)
+    throw new ConfigError(`discovery.logs.pacingMs must be a non-negative integer, got ${JSON.stringify(cfg.discovery.logs.pacingMs)}`);
+  const disclosed = cfg.policy.join.disclosedAddresses;
+  if (!Array.isArray(disclosed) || !disclosed.every((a) => typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a)))
+    throw new ConfigError('policy.join.disclosedAddresses must be an array of 0x addresses');
+  if (cfg.policy.join.profile === UNPROVEN_OPERATOR_PROFILE && cfg.policy.exit.onOperatorNetNegative !== true)
+    throw new ConfigError(
+      `policy.join.profile ${UNPROVEN_OPERATOR_PROFILE} keeps the exit on a negative operator net as the way out of an operator with no record; policy.exit.onOperatorNetNegative must stay true`,
+    );
   return cfg;
 }
 

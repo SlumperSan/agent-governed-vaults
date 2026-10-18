@@ -200,6 +200,7 @@ export function plan({ world, config, entryMarks = new Map(), log }) {
         fees: o.fees,
         heldVaultCount,
         config: config.policy.join,
+        trackRecordExcludingDisclosed: o.outsideRecord ?? null,
       });
       decisions.push({ vault, kind: 'join', ...join });
       log.checks(`${short} join gates:`, join.checks);

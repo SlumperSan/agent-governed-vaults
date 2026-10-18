@@ -19,7 +19,8 @@ import { createBudget } from './budget.mjs';
 import { createApiClient, discoverySource, perceive } from './perceive.mjs';
 import { plan, partitionDue } from './plan.mjs';
 import { createActor } from './act.mjs';
-import { fromBaseUnits, gateMode, redact } from './config.mjs';
+import { fromBaseUnits, gateMode, redact, UNPROVEN_OPERATOR_PROFILE } from './config.mjs';
+import { UNPROVEN_OPERATOR_RISK } from './policy.mjs';
 
 /**
  * @param {Object} p
@@ -95,6 +96,14 @@ export function createAgent({
         ? `Identity: ${account.address} (account object injected by the operator; no key material is read, stored, or logged by the agent).`
         : 'No account injected — read-only observation.',
       `skipWindow (irreversible): ${config.danger?.allowSkipWindow === true ? 'ENABLED BY CONFIG' : 'disabled'}.`,
+      ...(config.policy.join.profile === UNPROVEN_OPERATOR_PROFILE
+        ? [
+            '',
+            `JOIN PROFILE ${UNPROVEN_OPERATOR_PROFILE} IS ON: a vault whose operator has no track record can be joined.`,
+            'The deposit is pinned at the vault minimum, and the exit on a negative operator net stays on.',
+            ...UNPROVEN_OPERATOR_RISK,
+          ]
+        : []),
     ]);
   }
 

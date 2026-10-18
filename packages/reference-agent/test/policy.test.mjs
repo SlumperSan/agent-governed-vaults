@@ -670,3 +670,85 @@ test('crank: decideCrank is pure (same inputs, same verdict; inputs untouched)',
   assert.deepEqual(decideCrank(args), decideCrank(args));
   assert.equal(JSON.stringify(args, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)), before);
 });
+
+// ── the unproven-operator profile and the outside-member figure ──────────────
+
+const ZERO_OP = () => goodOp({ netRealizedUsdc: '0', lifetimeGainUsdc: '0', lifetimeLossUsdc: '0' });
+const PROFILE_CFG = (over = {}) => loadConfig({ policy: { join: { profile: 'unproven-operator', ...over } } }).policy.join;
+
+test('join: the DEFAULT config refuses a zero-record operator, on the track-record gate and nothing else', () => {
+  const r = join({ operatorRow: ZERO_OP() });
+  assert.equal(r.join, false);
+  assert.deepEqual(failed(r), ['operator-net-positive']);
+  assert.equal(CFG.policy.join.profile, null, 'the profile is opt-in');
+});
+
+test('join: the unproven-operator profile admits a zero-record operator and deposits exactly the vault minimum', () => {
+  const r = join({ operatorRow: ZERO_OP(), config: PROFILE_CFG() });
+  assert.equal(r.join, true, `blocked on ${failed(r).join(', ')}`);
+  assert.equal(r.depositUsdc, 10n * USDC, 'goodChain().minDepositUsdc is 10 USDC, not the configured 25');
+  const risk = r.checks.find((c) => c.name === 'profile-unproven-operator');
+  assert.ok(risk?.ok);
+  assert.match(risk.detail, /holders now 5/, 'the live holder count is printed beside the risk');
+  assert.match(risk.detail, /Below five holders/);
+});
+
+test('join: the profile pins the deposit at the vault minimum whatever depositUsdc says, and the gates use the pinned amount', () => {
+  const big = PROFILE_CFG({ depositUsdc: '500' });
+  const r = join({ operatorRow: ZERO_OP(), config: big, chain: goodChain({ minDepositUsdc: 100n * USDC, capacityCapUsdc: 150n * USDC, totalAssetsUsdc: 0n }) });
+  assert.equal(r.depositUsdc, 100n * USDC);
+  assert.equal(r.checks.find((c) => c.name === 'capacity-available').ok, true, '150 free covers the pinned 100; the configured 500 would not fit');
+  assert.match(r.checks.find((c) => c.name === 'meets-min-deposit').detail, /pinned at the vault minimum by the unproven-operator profile/);
+});
+
+test('join: under the profile an unreadable vault minimum refuses instead of guessing a deposit', () => {
+  const r = join({ operatorRow: ZERO_OP(), config: PROFILE_CFG(), chain: goodChain({ minDepositUsdc: null }) });
+  assert.equal(r.join, false);
+  assert.ok(failed(r).includes('meets-min-deposit'));
+  assert.equal(r.depositUsdc, 0n);
+});
+
+test('join: the profile keeps every other gate, including a negative operator net and an unattested operator', () => {
+  assert.equal(join({ operatorRow: goodOp({ netRealizedUsdc: '-1' }), config: PROFILE_CFG() }).join, false);
+  assert.equal(join({ operatorRow: ZERO_OP(), config: PROFILE_CFG(), vault: { ...goodVault(), operatorId: 0 } }).join, false);
+  assert.equal(join({ operatorRow: null, config: PROFILE_CFG() }).join, false, 'no leaderboard row is still no record to judge');
+});
+
+const outside = (over = {}) => ({
+  complete: true,
+  gap: null,
+  creationBlock: 10,
+  scannedFrom: 10,
+  scannedTo: 99,
+  head: 99,
+  included: { gain: 0n, loss: 0n, net: 0n, members: 0 },
+  excluded: { gain: 40n * USDC, loss: 0n, members: 1 },
+  reconciles: true,
+  ...over,
+});
+
+test('join: exclusion changes a verdict (a record that exists only for a disclosed address stops counting)', () => {
+  assert.equal(join({}).join, true, 'without the figure the registry record admits the operator');
+  const r = join({ trackRecordExcludingDisclosed: outside() });
+  assert.equal(r.join, false);
+  const gate = r.checks.find((c) => c.name === 'outside-track-record');
+  assert.equal(gate.ok, false);
+  assert.match(gate.detail, /an outside realization is required/);
+  assert.match(gate.detail, /left out as disclosed: gain \$40 \/ loss \$0 from 1 address/);
+  const real = outside({ included: { gain: 5n * USDC, loss: 0n, net: 5n * USDC, members: 1 } });
+  assert.equal(join({ trackRecordExcludingDisclosed: real }).join, true, 'one outside realization is enough');
+});
+
+test('join: a figure that was not read in full refuses and names the gap; it is never an operator with no realizations', () => {
+  const unread = outside({ complete: false, gap: 'eth_getLogs 5 to 14 failed: rate limit exceeded', included: { gain: 9n * USDC, loss: 0n, net: 9n * USDC, members: 1 } });
+  const r = join({ trackRecordExcludingDisclosed: unread });
+  assert.equal(r.join, false);
+  assert.match(r.checks.find((c) => c.name === 'outside-track-record').detail, /not read in full \(eth_getLogs 5 to 14 failed: rate limit exceeded\)/);
+  const profiled = join({ operatorRow: ZERO_OP(), config: PROFILE_CFG(), trackRecordExcludingDisclosed: outside({ complete: false, gap: 'x', excluded: { gain: 0n, loss: 0n, members: 0 } }) });
+  assert.equal(profiled.join, false, 'the profile does not turn an unread window into permission');
+});
+
+test('join: a window total that differs from the registry is said so in the check', () => {
+  const r = join({ trackRecordExcludingDisclosed: outside({ reconciles: false, included: { gain: 5n * USDC, loss: 0n, net: 5n * USDC, members: 1 } }) });
+  assert.match(r.checks.find((c) => c.name === 'outside-track-record').detail, /differs from the registry accumulators/);
+});

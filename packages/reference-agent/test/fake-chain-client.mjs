@@ -36,9 +36,25 @@ export const OPERATOR_ADDR = (id) => '0x' + (0xa0 + id).toString(16).repeat(20);
  * @param {Record<string, {pid:bigint, tuple:any[], pending?:boolean}>} [spec.governance]  vault => its latest proposal. Read LIVE on every call, so a test can mutate `tuple` (for example its status) between ticks.
  * @param {number|null|(() => number|null)} [spec.blockTimestamp]  what `getBlock` reports as the latest timestamp (a function is read on every call); null makes `getBlock` throw
  * @param {(call:any)=>void} [spec.onSimulate]  called with each `simulateContract` request; throw from it to simulate a revert
+ * @param {LogsSpec} [spec.logs]  the chain's blocks and logs, for getBlockNumber / getCode / getLogs. Absent ⇒ those calls throw.
+ *
+ * @typedef {Object} LogsSpec
+ * @property {number} head  the latest block
+ * @property {Record<string, number>} created  vault ⇒ the block it was created in (code and VaultAttested appear there)
+ * @property {Array<{block:number, vault:string, opId:number, member:string, gain?:bigint, loss?:bigint}>} [realizations]
+ * @property {number} [maxSpan]  a getLogs with `to - from` above this is refused with the arc.io range error (-32012)
+ * @property {number} [throttleFirst]  the first N getLogs calls answer -32005 "rate limit exceeded"
+ * @property {number} [throttleRealizations]  the first N RealizationRecorded getLogs calls answer -32005 (the creation-block control is not throttled)
+ * @property {string} [alwaysFail]  every RealizationRecorded getLogs throws this message
+ * @property {number} [prunedBefore]  getCode answers "0x" for blocks below this, as a pruning RPC does, instead of throwing
+ * @property {number} [logsPrunedBefore]  getLogs returns [] for a range that ends below this, as a pruning RPC does
  */
-export function createFakeChainClient({ vaults, operators = {}, failing = new Set(), governance = {}, blockTimestamp = 1_700_000_000, onSimulate = () => {} }) {
+export function createFakeChainClient({ vaults, operators = {}, failing = new Set(), governance = {}, blockTimestamp = 1_700_000_000, onSimulate = () => {}, logs = null }) {
   const calls = [];
+  const rpcError = (code, message) => Object.assign(new Error(message), { code, details: message });
+  let logCalls = 0;
+  let realizationCalls = 0;
+  const logRequests = [];
   let inFlight = 0;
   let maxInFlight = 0;
   const byAddress = new Map(vaults.map((v) => [v.address.toLowerCase(), v]));
@@ -129,10 +145,50 @@ export function createFakeChainClient({ vaults, operators = {}, failing = new Se
     return { result: undefined, request };
   }
 
+  async function getBlockNumber() {
+    if (!logs) throw new Error('fake chain: no logs spec');
+    return BigInt(logs.head);
+  }
+  async function getCode({ address, blockNumber }) {
+    if (!logs) throw new Error('fake chain: no logs spec');
+    const created = logs.created[String(address).toLowerCase()];
+    const block = Number(blockNumber);
+    if (created === undefined) return '0x';
+    if (logs.prunedBefore !== undefined && block < logs.prunedBefore) return '0x';
+    return block >= created ? '0x6080604052' : '0x';
+  }
+  async function getLogs({ address, event, args = {}, fromBlock, toBlock }) {
+    if (!logs) throw new Error('fake chain: no logs spec');
+    const from = Number(fromBlock);
+    const to = Number(toBlock);
+    logCalls += 1;
+    logRequests.push({ address: String(address).toLowerCase(), event: event.name, from, to, args });
+    if (logs.throttleFirst !== undefined && logCalls <= logs.throttleFirst) throw rpcError(-32005, 'rate limit exceeded');
+    if (logs.throttleRealizations !== undefined && event.name === 'RealizationRecorded' && (realizationCalls += 1) <= logs.throttleRealizations) throw rpcError(-32005, 'rate limit exceeded');
+    if (logs.maxSpan !== undefined && to - from > logs.maxSpan) throw rpcError(-32012, 'requested range too large');
+    if (event.name === 'RealizationRecorded' && logs.alwaysFail) throw rpcError(-32000, logs.alwaysFail);
+    if (address.toLowerCase() !== REGISTRY.toLowerCase()) return [];
+    if (logs.logsPrunedBefore !== undefined && to < logs.logsPrunedBefore) return [];
+    if (event.name === 'VaultAttested') {
+      const created = logs.created[String(args.vault).toLowerCase()];
+      return created !== undefined && created >= from && created <= to ? [{ blockNumber: BigInt(created), args: { vault: args.vault, opId: 1n } }] : [];
+    }
+    return (logs.realizations ?? [])
+      .filter((r) => r.block >= from && r.block <= to && BigInt(r.opId) === args.opId)
+      .map((r) => ({
+        blockNumber: BigInt(r.block),
+        args: { vault: r.vault, opId: BigInt(r.opId), member: r.member, gainUsdc: r.gain ?? 0n, lossUsdc: r.loss ?? 0n, carryAfter: 0n },
+      }));
+  }
+
   return {
     readContract,
     getBlock,
     simulateContract,
+    getBlockNumber,
+    getCode,
+    getLogs,
+    logRequests,
     calls,
     get maxInFlight() { return maxInFlight; },
     resetPeak() { maxInFlight = 0; },
