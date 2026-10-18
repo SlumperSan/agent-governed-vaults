@@ -87,10 +87,9 @@ npm run build --workspace apps/vaults-ui
 cd apps/vaults-ui && npx wrangler@latest pages deploy dist --project-name=rwally-app --branch=protocol/main
 ```
 
-**THE NEXT DEPLOY AGAINST THAT PROJECT REPLACES THE LIVE VAULT EXPLORER.** The DNS is already
-pointed, so there is no cutover step to forget and no moment where the change is staged — it is live
-the instant the deploy finishes. That is the intended end state and **it is the owner's call, not a
-deployer's.** This repository has already shipped the wrong directory to a live Pages project once.
+**EVERY DEPLOY AGAINST THAT PROJECT IS LIVE ON `app.rwally.com` THE INSTANT IT FINISHES.** The cutover
+from the retired explorer happened in [#396](https://github.com/SlumperSan/agent-governed-vaults/pull/396); the DNS is pointed, so there is no
+staging step and no moment where a change is held back. This repository has already shipped the wrong directory to a live Pages project once.
 
 The rest, unchanged and still worth knowing:
 

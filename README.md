@@ -248,7 +248,7 @@ Chainlink oracle's fail-closed guards, and governance rounds.
 | `apps/web/` | Vault Atlas: the allocator logic modules, each mirroring a contract term for term. Library, not a deployed app. |
 | `apps/vaults-ui/` | React surface over `apps/web`'s modules: vault list, position, open proposal with its votes, holdings. It implements none of the numbers itself. |
 | `apps/site/` | The marketing site source: what this is, how it works, and what can go wrong. Built and tested by `npm run gate` (`scripts/gate.mjs`, steps `site-build` and `site-test`). |
-| `apps/app/` | The vault explorer at `app.rwally.com`: reads protocol facts live in-browser. |
+| `apps/app/` | The retired vault explorer; `app.rwally.com` now serves `apps/vaults-ui/`. Kept for reference, not deployed. |
 | `scripts/` | Operational runners: `smoke-test.mjs` drives the full on-chain lifecycle via `cast`. |
 | `docs/` | Architecture, threat model, security reviews, design specs, deploy + audit handoff. |
 
