@@ -33,7 +33,7 @@ test('--profile=unproven-operator puts the profile and its risk in the startup b
   const r = run(['--profile=unproven-operator', '--ticks=0']);
   assert.equal(r.status, 0, out(r));
   assert.match(r.stdout, /JOIN PROFILE unproven-operator IS ON/);
-  assert.match(r.stdout, /deposit is pinned at the vault minimum, and the exit on a negative operator net stays on/);
+  assert.match(r.stdout, /deposit is the vault minimum, and a vault whose minimum is above depositUsdc is refused. The exit on a negative operator net stays on/);
   assert.match(r.stdout, /Below five holders, the outcome of a Rebalance depends on stake and on how many addresses vote/);
   assert.match(r.stdout, /RuleChange needs every unit of eligible stake to reveal in favour/);
 });

@@ -708,6 +708,65 @@ test('join: under the profile an unreadable vault minimum refuses instead of gue
   assert.equal(r.depositUsdc, 0n);
 });
 
+test('join: the profile keeps depositUsdc as the ceiling, so the deposit equals the vault minimum only up to it', () => {
+  const at = (minDepositUsdc, depositUsdc) => join({ operatorRow: ZERO_OP(), config: PROFILE_CFG({ depositUsdc }), chain: goodChain({ minDepositUsdc, capacityCapUsdc: 0n, isCapped: false }) });
+  const equal = at(100n * USDC, '100');
+  assert.equal(equal.join, true, `blocked on ${failed(equal).join(', ')}`);
+  assert.equal(equal.depositUsdc, 100n * USDC, 'a minimum equal to the ceiling joins');
+  const above = at(100n * USDC + 1n, '100');
+  assert.equal(above.join, false, 'one base unit above the ceiling refuses');
+  assert.deepEqual(failed(above), ['deposit-within-ceiling'], 'and on nothing else: the vault is otherwise joinable');
+  assert.match(above.checks.find((c) => c.name === 'deposit-within-ceiling').detail, /vault minimum \$100\.000001 against the depositUsdc ceiling \$100/);
+  // The probe from the PR 464 review: a vault minimum of 1,000,000 USDC against a ceiling of 100.
+  const hostile = at(1_000_000n * USDC, '100');
+  assert.equal(hostile.join, false);
+  assert.ok(failed(hostile).includes('deposit-within-ceiling'));
+  // The default policy refuses the same vault, on the minimum-deposit gate.
+  const defaults = loadConfig({ policy: { join: { depositUsdc: '100' } } }).policy.join;
+  assert.deepEqual(failed(join({ chain: goodChain({ minDepositUsdc: 1_000_000n * USDC, capacityCapUsdc: 0n, isCapped: false }), config: defaults })), ['meets-min-deposit']);
+});
+
+test('join: under the profile the deposit-within-ceiling check appears only with the profile, and an unreadable minimum fails it', () => {
+  assert.equal(join().checks.some((c) => c.name === 'deposit-within-ceiling'), false);
+  const r = join({ operatorRow: ZERO_OP(), config: PROFILE_CFG(), chain: goodChain({ minDepositUsdc: undefined }) });
+  const c = r.checks.find((x) => x.name === 'deposit-within-ceiling');
+  assert.equal(c.ok, false);
+  assert.match(c.detail, /unreadable/);
+});
+
+test('join: the arc-mainnet preset (depositUsdc 100) still joins the first vault under the profile, whose minimum is 100 USDC', () => {
+  const arc = loadConfig({ chain: { preset: 'arc-mainnet' }, policy: { join: { profile: 'unproven-operator' } } }).policy.join;
+  assert.equal(arc.depositUsdc, '100');
+  const r = join({ operatorRow: ZERO_OP(), config: arc, chain: goodChain({ minDepositUsdc: 100n * USDC, capacityCapUsdc: 0n, isCapped: false }) });
+  assert.equal(r.join, true, `blocked on ${failed(r).join(', ')}`);
+  assert.equal(r.depositUsdc, 100n * USDC);
+});
+
+test('join: a capped vault whose total assets or pending escrow cannot be read refuses and names the read, instead of reading it as empty', () => {
+  const capped = (over) => join({ chain: goodChain({ capacityCapUsdc: 1_000n * USDC, isCapped: true, ...over }) });
+  assert.equal(capped({ totalAssetsUsdc: 0n, totalPendingUsdc: 0n }).join, true, 'readable and nearly empty is still free');
+  for (const [over, name] of [
+    [{ totalAssetsUsdc: null }, 'totalAssetsUsdc'],
+    [{ totalAssetsUsdc: undefined }, 'totalAssetsUsdc'],
+    [{ totalPendingUsdc: null }, 'totalPendingUsdc'],
+    [{ totalPendingUsdc: undefined }, 'totalPendingUsdc'],
+  ]) {
+    const r = capped(over);
+    assert.equal(r.join, false, JSON.stringify(over));
+    assert.deepEqual(failed(r), ['capacity-available']);
+    const detail = r.checks.find((c) => c.name === 'capacity-available').detail;
+    assert.ok(detail.includes(`${name} unreadable`), detail);
+  }
+  const both = capped({ totalAssetsUsdc: null, totalPendingUsdc: null });
+  assert.match(both.checks.find((c) => c.name === 'capacity-available').detail, /totalAssetsUsdc and totalPendingUsdc unreadable/);
+  // Under the profile too, where the amount is the vault's own minimum.
+  const prof = join({ operatorRow: ZERO_OP(), config: PROFILE_CFG(), chain: goodChain({ capacityCapUsdc: 1_000n * USDC, totalAssetsUsdc: null }) });
+  assert.equal(prof.join, false);
+  assert.ok(failed(prof).includes('capacity-available'));
+  // An uncapped vault has no capacity to measure, so the unreadable totals do not matter there.
+  assert.equal(join({ chain: goodChain({ capacityCapUsdc: 0n, isCapped: false, totalAssetsUsdc: null }) }).join, true);
+});
+
 test('join: the profile keeps every other gate, including a negative operator net and an unattested operator', () => {
   assert.equal(join({ operatorRow: goodOp({ netRealizedUsdc: '-1' }), config: PROFILE_CFG() }).join, false);
   assert.equal(join({ operatorRow: ZERO_OP(), config: PROFILE_CFG(), vault: { ...goodVault(), operatorId: 0 } }).join, false);

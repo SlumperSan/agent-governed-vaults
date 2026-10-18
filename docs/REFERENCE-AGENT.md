@@ -155,8 +155,9 @@ There is one named, opt-in override. Set `policy.join.profile` to `"unproven-ope
 `--profile=unproven-operator`) and the agent:
 
 - sets `requireProvenOperator` to `false`, so an operator with no realizations can be joined;
-- deposits exactly the vault's own `minDepositUsdc`, whatever `depositUsdc` says (100 USDC on the
-  first Arc vault);
+- deposits exactly the vault's own `minDepositUsdc` (100 USDC on the first Arc vault), and refuses a
+  vault whose minimum is above `depositUsdc`, which stays the most the agent puts into one vault
+  because a vault's creator sets its minimum (the `deposit-within-ceiling` check);
 - keeps `policy.exit.onOperatorNetNegative` on, and refuses to start with it off, because that exit
   is the way out of an operator who turns out to lose money;
 - keeps every other gate: the operator must be attested at the registry, its net must clear the
@@ -181,7 +182,9 @@ operator and reports a second figure that leaves out the addresses it was given 
 for example `docs/seeded-addresses.json`). Two properties of that list matter. It can only remove
 realizations from the figure and never adds trust, so using it takes no trust in whoever maintains
 it. And an address that is not on it is counted as an outside member, so
-the figure is a ceiling on outside activity, not proof of it.
+the figure is a ceiling on outside activity, not proof of it. While the list is empty (the shipped
+`docs/seeded-addresses.json` has no addresses), every member counts as outside and the figure equals
+the registry's own.
 
 The figure is read when the profile is on or the list is not empty, and only for a vault the agent
 could still join. It adds one check, `outside-track-record`:
@@ -200,8 +203,8 @@ node that has pruned state or logs answers confidently and empty, and the confir
 that from becoming a scan that starts too late. From there the agent reads `RealizationRecorded`
 filtered by operator id, in pages, to the head. Filtering by operator id (not by vault) keeps the
 sum comparable to the registry's accumulators; when the window is complete and the two differ, the
-check says so, because the operator realized somewhere before this vault existed. Gains and losses
-are summed per member. The registry emits the event on every call but moves its accumulators only
+check says so, because the operator realized somewhere before this vault existed. That note is
+information only and never changes the verdict. Gains and losses are summed per member. The registry emits the event on every call but moves its accumulators only
 for a gain or loss above zero, so event counts mean nothing here.
 
 The log-range limits of the two Arc RPCs in the preset, measured on 2026-10-18 with raw

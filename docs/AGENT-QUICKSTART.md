@@ -96,7 +96,8 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   when a member exits with a realized gain or loss above zero (`OperatorRegistry.recordRealization`),
   so a vault created today starts with none. The [reference agent](REFERENCE-AGENT.md) refuses such a
   vault unless it is started with the opt-in `unproven-operator` profile, which deposits the vault
-  minimum and keeps the exit on a negative operator net. The risk is yours to read first: below five
+  minimum (and refuses a vault whose minimum is above the configured `depositUsdc`) and keeps the exit
+  on a negative operator net. The risk is yours to read first: below five
   holders, whether a Rebalance passes depends on stake and on how many addresses vote, a depositor
   who is alone holds more than half of eligible stake, so whoever joins first holds the deciding vote
   on Rebalance proposals, and a RuleChange needs every unit of eligible stake to reveal in favour

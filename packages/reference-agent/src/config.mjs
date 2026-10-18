@@ -296,8 +296,9 @@ export const UNPROVEN_OPERATOR_PROFILE = 'unproven-operator';
  *    realized gain or loss can be joined; that is the state of every new vault. It changes nothing
  *    else in the gates: the operator must still be attested at the registry, the net must still clear
  *    its floor, and the fee, capacity, depth and NAV gates all stand. Two more things are NOT in the
- *    fragment because they are enforced elsewhere: `decideJoin` pins the deposit at the vault's own
- *    minimum whatever `depositUsdc` says, and `loadConfig` refuses the profile with
+ *    fragment because they are enforced elsewhere: `decideJoin` deposits the vault's own minimum and
+ *    refuses a vault whose minimum is above `depositUsdc` (the vault's creator sets that minimum, so
+ *    `depositUsdc` stays the ceiling), and `loadConfig` refuses the profile with
  *    `policy.exit.onOperatorNetNegative` off (the exit trigger that is the agent's way out when an
  *    unproven operator turns out to lose money).
  */

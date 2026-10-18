@@ -100,7 +100,7 @@ export function createAgent({
         ? [
             '',
             `JOIN PROFILE ${UNPROVEN_OPERATOR_PROFILE} IS ON: a vault whose operator has no track record can be joined.`,
-            'The deposit is pinned at the vault minimum, and the exit on a negative operator net stays on.',
+            'The deposit is the vault minimum, and a vault whose minimum is above depositUsdc is refused. The exit on a negative operator net stays on.',
             ...UNPROVEN_OPERATOR_RISK,
           ]
         : []),

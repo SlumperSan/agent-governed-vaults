@@ -247,8 +247,8 @@ test('exclusion also catches outside losses hidden behind a disclosed gain, even
   ];
   const row = { operatorId: OPERATOR_ID, netRealizedUsdc: String(30n * USDC), lifetimeGainUsdc: String(50n * USDC), lifetimeLossUsdc: String(20n * USDC) };
   const record = await read(readerFor(clientFor({ realizations: masked })));
-  assert.equal(joinWith({ outside: null, profile: true, row }).join, true, 'the registry net is positive');
-  const verdict = joinWith({ outside: outsideTrackRecord({ record, disclosed: [SEEDED], registryRow: row }), profile: true, row });
+  assert.equal(joinWith({ outside: null, profile: true, row, join: { depositUsdc: '100' } }).join, true, 'the registry net is positive');
+  const verdict = joinWith({ outside: outsideTrackRecord({ record, disclosed: [SEEDED], registryRow: row }), profile: true, row, join: { depositUsdc: '100' } });
   assert.equal(verdict.join, false);
   assert.ok(verdict.checks.some((c) => c.name === 'outside-track-record' && !c.ok && /net \$-20/.test(c.detail)));
 });
@@ -258,8 +258,8 @@ test('under the profile an operator with no outside realization at all is admitt
   const row = { operatorId: OPERATOR_ID, netRealizedUsdc: '0', lifetimeGainUsdc: '0', lifetimeLossUsdc: '0' };
   const outside = outsideTrackRecord({ record, disclosed: [], registryRow: row });
   assert.equal(outside?.complete, true);
-  assert.equal(joinWith({ outside, profile: true, row }).join, true);
-  assert.equal(joinWith({ outside, profile: false, row }).join, false, 'without the profile the same operator is refused');
+  assert.equal(joinWith({ outside, profile: true, row, join: { depositUsdc: '100' } }).join, true);
+  assert.equal(joinWith({ outside, profile: false, row, join: { depositUsdc: '100' } }).join, false, 'without the profile the same operator is refused');
 });
 
 // ── perception and planning ──────────────────────────────────────────────────

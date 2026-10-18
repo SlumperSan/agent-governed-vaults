@@ -126,9 +126,12 @@ export function outsideTrackRecord({ record, disclosed = [], registryRow = null 
  */
 export function decideJoin({ vault, chain, operatorRow, registryOperatorId = null, fees = {}, heldVaultCount = 0, config, trackRecordExcludingDisclosed = null }) {
   const checks = [];
-  // Under the unproven-operator profile the deposit is the vault's own minimum, whatever
-  // `depositUsdc` says: the profile accepts an operator with no record, so it accepts it with the
-  // least money the vault allows. An unreadable minimum is 0 here and `meets-min-deposit` refuses it.
+  // Under the unproven-operator profile the deposit is the vault's own minimum: the profile accepts
+  // an operator with no record, so it accepts it with the least money the vault allows. That minimum
+  // is set by whoever created the vault (createVault is permissionless), so it is never trusted as
+  // the amount on its own: `deposit-within-ceiling` below refuses a vault whose minimum exceeds the
+  // configured `depositUsdc`, which stays the most this agent will put into one vault. An unreadable
+  // minimum is 0 here and both that check and `meets-min-deposit` refuse it.
   const pinned = config.profile === UNPROVEN_OPERATOR_PROFILE;
   const minDepositRead = chain?.minDepositUsdc;
   const deposit = pinned ? (minDepositRead === null || minDepositRead === undefined ? 0n : BigInt(minDepositRead)) : toBaseUnits(config.depositUsdc);
@@ -140,6 +143,19 @@ export function decideJoin({ vault, chain, operatorRow, registryOperatorId = nul
         `profile ${UNPROVEN_OPERATOR_PROFILE} is on; holders now ${vault?.memberCount ?? 'unknown'}. ${UNPROVEN_OPERATOR_RISK.join(' ')}`,
       ),
     );
+  if (pinned) {
+    const ceiling = toBaseUnits(config.depositUsdc);
+    if (minDepositRead === null || minDepositRead === undefined)
+      checks.push(check('deposit-within-ceiling', false, 'the vault minimum is unreadable, so the deposit cannot be checked against the depositUsdc ceiling'));
+    else
+      checks.push(
+        check(
+          'deposit-within-ceiling',
+          BigInt(minDepositRead) <= ceiling,
+          `vault minimum $${fromBaseUnits(BigInt(minDepositRead))} against the depositUsdc ceiling $${fromBaseUnits(ceiling)}; the vault's creator chose that minimum, so a vault asking more than the ceiling is refused`,
+        ),
+      );
+  }
 
   // ── attested operator ──────────────────────────────────────────────────────
   // Operator identity is the REGISTRY key, not the API's display metadata — a spoofed vault can
@@ -214,15 +230,22 @@ export function decideJoin({ vault, chain, operatorRow, registryOperatorId = nul
   else if (BigInt(cap) === 0n) checks.push(check('capacity-available', true, 'vault is uncapped (capacityCapUsdc == 0)'));
   else {
     // Capacity is measured against NAV + escrowed pending, mirroring VaultCore.deposit.
-    const used = (chain?.totalAssetsUsdc ?? 0n) + (chain?.totalPendingUsdc ?? 0n);
-    const free = BigInt(cap) > used ? BigInt(cap) - used : 0n;
-    checks.push(
-      check(
-        'capacity-available',
-        free >= deposit && free >= minFree,
-        `$${fromBaseUnits(free)} free of $${fromBaseUnits(BigInt(cap))} cap; need $${fromBaseUnits(deposit)} (floor $${fromBaseUnits(minFree)})`,
-      ),
-    );
+    // An unreadable total is not zero: reading it as zero shows a full vault as empty and lets the
+    // join through, so it refuses and names which read failed.
+    const unread = [chain?.totalAssetsUsdc == null ? 'totalAssetsUsdc' : null, chain?.totalPendingUsdc == null ? 'totalPendingUsdc' : null].filter(Boolean);
+    if (unread.length > 0)
+      checks.push(check('capacity-available', false, `${unread.join(' and ')} unreadable, so the free capacity cannot be measured; refusing rather than reading it as zero used`));
+    else {
+      const used = BigInt(chain.totalAssetsUsdc) + BigInt(chain.totalPendingUsdc);
+      const free = BigInt(cap) > used ? BigInt(cap) - used : 0n;
+      checks.push(
+        check(
+          'capacity-available',
+          free >= deposit && free >= minFree,
+          `$${fromBaseUnits(free)} free of $${fromBaseUnits(BigInt(cap))} cap; need $${fromBaseUnits(deposit)} (floor $${fromBaseUnits(minFree)})`,
+        ),
+      );
+    }
   }
 
   // ── fees within bounds ─────────────────────────────────────────────────────
@@ -264,7 +287,7 @@ export function decideJoin({ vault, chain, operatorRow, registryOperatorId = nul
       minDeposit === null || minDeposit === undefined ? false : deposit >= BigInt(minDeposit),
       minDeposit === null || minDeposit === undefined
         ? 'minDepositUsdc unreadable'
-        : `depositing $${fromBaseUnits(deposit)}, vault minimum $${fromBaseUnits(BigInt(minDeposit))}${pinned ? `; pinned at the vault minimum by the ${UNPROVEN_OPERATOR_PROFILE} profile (depositUsdc is not used)` : ''}`,
+        : `depositing $${fromBaseUnits(deposit)}, vault minimum $${fromBaseUnits(BigInt(minDeposit))}${pinned ? `; pinned at the vault minimum by the ${UNPROVEN_OPERATOR_PROFILE} profile, which is held to the depositUsdc ceiling` : ''}`,
     ),
   );
 

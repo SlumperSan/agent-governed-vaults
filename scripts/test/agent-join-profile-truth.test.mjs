@@ -66,10 +66,13 @@ test('the profile is exactly requireProvenOperator: false; the deposit pin and t
   assert.equal(DEFAULT_CONFIG.policy.exit.onOperatorNetNegative, true);
   const section = reference.slice(reference.indexOf('### Joining a vault with no track record'), reference.indexOf('### `policy.exit`'));
   assert.ok(section.length > 500, 'the REFERENCE-AGENT section is missing');
+  assert.doesNotMatch(section, /whatever `depositUsdc` says/, 'the deposit is bounded by depositUsdc, so "whatever depositUsdc says" would be false');
   for (const claim of [
     '`"unproven-operator"`',
     'sets `requireProvenOperator` to `false`',
     "deposits exactly the vault's own `minDepositUsdc`",
+    'refuses a\n  vault whose minimum is above `depositUsdc`',
+    '`deposit-within-ceiling`',
     'keeps `policy.exit.onOperatorNetNegative` on',
     'prints the risk below in the dry-run banner',
     '`outside-track-record`',
