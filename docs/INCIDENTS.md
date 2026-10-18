@@ -6,14 +6,21 @@ pressure.**
 ## 0. What cannot be done: the honest line, first
 
 This protocol is **immutable**: no proxies, no pause switch, no upgrade path, no parameter that
-anyone can change after deployment. **There is exactly one privileged key, and it is spent at
-wiring:** `OperatorRegistry.wire`, `SubVaultRegistry.wire` and `Governance.wireSubVaultRegistry` are
-each `onlyDeployer` and each revert once their slot is set (`AlreadyWired`,
-`AlreadyWiredSubRegistry`), four registry-pointer slots in total. That was a deliberate trade
-(THREAT-MODEL, accepted risks): members never have to trust an operator's key hygiene, because there
-is no key whose compromise can move their funds — a wired deployment has nothing left for that key
-to reach, and an unwired one has no members yet — and the price is that **no incident below has a
-"fix the contract" step.** There is nothing to pause, nobody to call who can freeze an attacker, and
+anyone can change after deployment. **There is exactly one privileged key, and every call it has is
+one-shot.** On the Arc deployment live today (the first set, plain CREATE) those calls were three:
+`OperatorRegistry.wire`, `SubVaultRegistry.wire` and `Governance.wireSubVaultRegistry`, each
+`onlyDeployer` and each reverting once its slot is set (`AlreadyWired`, `AlreadyWiredSubRegistry`),
+four registry-pointer slots in total, and all three have been made. The same-address deployment built
+from the current source adds a fourth, `VaultFactory.initialize(address[])`, gated on the same key
+(`OnlyInitializer`, then `AlreadyInitialized`): it sets the oracle allowlist, and an empty list
+leaves the allowlist off for good on that chain. That fourth call is the one choice the key makes that
+a later vault depends on, so the factory creates nothing until it has run (`NotInitialized`), and a
+chain whose factory was initialised wrongly is recovered with a new salt, never a fix
+(DEPLOYMENT.md section 10). That was a deliberate trade (THREAT-MODEL, accepted risks): once a chain's
+calls have landed each of them reverts, and there is no key whose compromise can move members'
+funds; before bring-up, a compromised key can choose that chain's allowlist, which is why the
+initialisation is read back before any vault is created or address announced. The price is that
+**no incident below has a "fix the contract" step.** There is nothing to pause, nobody to call who can freeze an attacker, and
 no hotfix to ship.
 
 Every incident response therefore reduces to some combination of exactly four levers:
