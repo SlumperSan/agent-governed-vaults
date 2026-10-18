@@ -180,6 +180,16 @@ contract RWAllyAgentRegistryMirrorTest is RegistryTestBase {
         r.mintMirrored(a, URI, hex"");
     }
 
+    function test_beforeInitialize_reverts_notInitialized() public {
+        RWAllyAgentRegistry r = new RWAllyAgentRegistry();
+        RWAllyAgentRegistry.MirrorAttestation memory a = RWAllyAgentRegistry.MirrorAttestation(
+            ORIGIN, address(r), 7, alice, keccak256(bytes(URI)), block.timestamp + 1 hours, 1
+        );
+        _expect(RWAllyAgentRegistry.NotInitialized.selector);
+        vm.prank(alice);
+        r.mintMirrored(a, URI, hex"");
+    }
+
     function test_attestorZero_afterOwnerSwitchesOff() public {
         RWAllyAgentRegistry.MirrorAttestation memory a = _att(7, alice, URI);
         bytes memory sig = _sign(ATT_PK, a);

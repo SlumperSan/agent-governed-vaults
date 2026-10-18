@@ -583,6 +583,7 @@ contract RWAllyAgentRegistry {
     /// attestor's ERC-1271 `isValidSignature` expects (a bridge receiver can accept an empty blob).
     function mintMirrored(MirrorAttestation calldata a, string calldata agentURI, bytes calldata sig)
         external
+        whenInitialized
         returns (uint256 localId)
     {
         address signer = attestor;
