@@ -202,7 +202,7 @@ so an agent can finish a round it did not propose. They differ in what they are 
 | Call | When it is allowed (`block.timestamp`) | Needs | Why it matters |
 | --- | --- | --- | --- |
 | `finalize(pid)` | Active, and `now >= revealDeadline` | the proposal id | Until it runs, every exit on the vault is Mode F and `settleQueuedExit` is blocked, so the agent's own exit waits on it. On Arc the timelock is 0, so the execution window starts when `finalize` is mined |
-| `execute(pid, payload)` | Passed, and `executableAt <= now <= expiresAt` | the payload bytes | Does what the vote approved and releases Mode F exits at post-vote NAV |
+| `execute(pid, payload)` | Passed, and `executableAt <= now <= expiresAt` | the payload bytes | Does what the vote approved. Once it is mined, `hasPendingExecution` reads false, so queued Mode F exits can settle (`settleQueuedExit`) at post-vote NAV |
 | `markExpired(pid)` | Passed, and `now > expiresAt` (strict) | the proposal id | A clean status for interfaces and the indexer. `hasPendingExecution` already reads false past expiry |
 
 Four things to know:
@@ -215,7 +215,8 @@ Four things to know:
   only the id.
 - **The clock is the chain's.** All three gates compare `block.timestamp`, so each tick reads the
   latest block's timestamp and decides on it, whatever the local clock says. When that read fails
-  the local clock stands in, less `policy.timing.activateGraceSec`, so a call is never sent early.
+  the local clock stands in, less `policy.timing.activateGraceSec` on the side that would act early.
+  The simulation below, not the margin, is what stops a call the chain would refuse.
 - **Every crank write is simulated before it is sent.** An `eth_call` of the exact calldata runs
   first, in dry-run too (it signs nothing). A revert, such as `WrongPhase` after someone else
   finalized first, drops the intent with its reason and spends no gas. A simulation that cannot run
