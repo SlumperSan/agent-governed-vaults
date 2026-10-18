@@ -342,12 +342,11 @@ transaction this agent constructs had ever been mined. The first two are false. 
 and the protocol has been deployed to Base Sepolia, where the agent ran its full loop in execute
 mode: join, a freeze-safety `cancelPending` detour, activate, commit, reveal, a Mode-F exit it
 priced on its own, and settle, every phase with a transaction hash. See
-[SOAK-REPORT.md](SOAK-REPORT.md) §5. The protocol is built for Arc (chain id 5042) but has not been
-deployed there, or on Base mainnet, or on any other mainnet, so there is currently no live factory
-or vault this agent could be pointed at.
+[SOAK-REPORT.md](SOAK-REPORT.md) §5. The protocol is deployed on Arc mainnet (chain id 5042) since 2026-09-24
+(`contracts/config/deployments/arc-mainnet.json`), so there is a live factory and vault this agent
+could be pointed at.
 
-That will change the moment a mainnet deployment lands, and the warning below is written for that
-day. The guard below is about the key, not about the vault: a key configured against any mainnet
+The warning below applies now. The guard below is about the key, not about the vault: a key configured against any mainnet
 chain signs whatever it is asked to sign, and on Arc that chain's USDC is both the settlement asset
 and the native gas asset, so a compromised key there can drain gas funds as well as vault funds from
 one balance. Note the one guard that already exists and its exact limit: `--demo-wallet` is refused
