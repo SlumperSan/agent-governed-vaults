@@ -826,7 +826,7 @@ function renderOracle(x) {
     </div>`).join('')}
   </div>
   <p style="font-size:12.5px;color:var(--muted);margin-top:10px">Every asset must be priceable for the
-    vault to value itself. One stale feed freezes the whole vault${o.culprits.length ? `: here, ${esc(o.culprits.join(' and '))}` : ''}.
+    vault to value itself. One stale feed${o.culprits.length ? ` (here, ${esc(o.culprits.join(' and '))})` : ''} freezes every call that prices the vault, exits included. Cancelling a pending deposit reads no price and still works.
     That is the design: it is cheaper to stop than to price something wrong.</p>`;
 }
 

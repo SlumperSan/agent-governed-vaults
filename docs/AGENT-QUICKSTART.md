@@ -73,7 +73,7 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   asset** (`ChainlinkOracle`). On Arc the basket has one non-stable asset, cirBTC, priced by one
   Chainlink BTC / USD feed; USDC is pinned. If that feed breaches its heartbeat or the sane-price
   band, or (on a chain that has one) the sequencer is down or inside its post-recovery grace
-  period, `priceWad` reverts and **everything freezes, including exits**, by design, and with **no
+  period, `priceWad` reverts and **every call that reads NAV freezes, including exits**, by design, and with **no
   fallback source**. Chainlink publishes no L2 sequencer uptime feed for Arc, which is an L1, so the
   Arc oracle's `sequencerUptimeFeed` is the zero address, `_requireSequencerUp` returns early, and
   that trigger cannot fire on Arc; the feed heartbeat and the sane-price band remain. The oracle's

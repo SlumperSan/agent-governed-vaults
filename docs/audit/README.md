@@ -36,7 +36,7 @@ that closes the exit-before-rebalance free option, and pay a 10% performance fee
 profit netted against a cross-vault per-(member, operator) loss carryforward. Pricing is
 **one genuine Chainlink Data Feed per asset** (`ChainlinkOracle`, guarded by an L2 sequencer uptime
 gate, a per-feed heartbeat and a sane-price band) that fails **closed** — deliberately freezing
-everything, including exits, when it cannot produce a trustworthy price. *(This sentence originally
+every call that reads NAV, including exits, when it cannot produce a trustworthy price. *(This sentence originally
 read "a multi-source median oracle with a staleness circuit breaker"; see the banner — that design
 is retired.)* The protocol *supports* child vaults (depth ≤ 3) with
 recursive look-through NAV, but **sub-vaults are DISABLED at launch** (`VaultFactory` deployed with
