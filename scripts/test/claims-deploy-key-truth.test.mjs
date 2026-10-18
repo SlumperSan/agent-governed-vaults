@@ -87,11 +87,11 @@ const report = (hits) => hits.map((h) => `  ${h.file}: "${h.quote.trim()}"`).joi
 // The sentences as they read before this fix, one per place the review found, plus the two
 // disclaimer sentences the PR itself introduced.
 const FALSE_COPY_TS =
-  'One deploy key exists and its entire power is pointing the registries at each other — three one-shot calls writing four address slots, each reverting the second time it is tried. That is the whole list of what any key can do here, and none of it is a path to your money.';
+  'One deploy key exists and its entire power is pointing the registries at each other, three one-shot calls writing four address slots, each reverting the second time it is tried. That is the whole list of what any key can do here, and none of it is a path to your money.';
 const FALSE_DISCLAIMER =
-  'One privileged caller exists — the deploy key — and its entire power is wiring: three one-shot calls that write four registry-pointer slots and revert the second time each is tried. None of the four is a path to member funds.';
+  'One privileged caller exists, the deploy key, and its entire power is wiring: three one-shot calls that write four registry-pointer slots and revert the second time each is tried. None of the four is a path to member funds.';
 const FALSE_INDEX_HTML =
-  'One deploy key exists and its whole power is wiring — three one-shot calls writing four address slots, none of them a path to your money.';
+  'One deploy key exists and its whole power is wiring, three one-shot calls writing four address slots, none of them a path to your money.';
 const FALSE_INCIDENTS =
   'There is exactly one privileged key, and it is spent at wiring: OperatorRegistry.wire, SubVaultRegistry.wire and Governance.wireSubVaultRegistry are each onlyDeployer and each revert once their slot is set, four registry-pointer slots in total.';
 const FALSE_LAUNCH_ROW =
@@ -158,6 +158,8 @@ test('probe: a key sentence with the fourth call but no deployment qualifier, or
   assert.ok(deployKeyPowerHits(flat(noQualifier)).length > 0, 'initialize without saying which deployment');
   const noFourth = 'One deploy key exists and its entire power is three one-shot wirings on the Arc deployment live today.';
   assert.ok(deployKeyPowerHits(flat(noFourth)).length > 0, 'a live/today qualifier without the fourth call');
+  const looseLive = 'The deploy key\'s whole power is wiring. Vaults are live on Arc today; the initialize call is in the next paragraph.';
+  assert.ok(deployKeyPowerHits(flat(looseLive)).length > 0, '"live" or "today" alone is not a deployment qualifier');
 });
 
 test('probe: "a fourth call" counts as the fourth call in copy that names no function, "a fourth" alone does not', () => {

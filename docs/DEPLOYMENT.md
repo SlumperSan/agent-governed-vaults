@@ -93,11 +93,11 @@ allowlist. So the oracle is deployed **before** the factory:
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
-> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive). The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); on a factory brought up through `initialize`, `scripts/protocol-initialize-preflight.mjs` reads `initialized()`, `oracleAllowlistEnforced()` and `isAllowedOracle(...)` back on-chain from the deployed factory address (section 10). The live Arc deployment is recorded in `contracts/config/deployments/arc-mainnet.json`.
+> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`): an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive). The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); on a factory brought up through `initialize`, `scripts/protocol-initialize-preflight.mjs` reads `initialized()`, `oracleAllowlistEnforced()` and `isAllowedOracle(...)` back on-chain from the deployed factory address (section 10). The live Arc deployment is recorded in `contracts/config/deployments/arc-mainnet.json`.
 
 ### Arc — the sequencer-uptime-feed exemption
 
-**This weakens a security gate, so it was an owner decision, and it has been made (2026-09-18, recorded in `contracts/config/arc-mainnet.json`; chain 5042 is on the exempt allowlist below).** Chainlink
+**This weakens a security gate, so it was an owner decision, and it has been made (owner decision 2026-09-19, because Arc is an L1 and no uptime feed exists, recorded in `DeployChainlinkOracle.s.sol`; chain 5042 is on the exempt allowlist below).** Chainlink
 publishes no L2 Sequencer Uptime Feed for Arc, and would not be expected to: Arc is an L1, not a
 rollup, so there is no sequencer whose liveness the feed would report. `ChainlinkOracle`'s
 `_requireSequencerUp` returns early on a zero address, so the gate is skipped at price time rather

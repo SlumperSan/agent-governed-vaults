@@ -351,7 +351,7 @@ export const DEPLOY_KEY_BOUNDED =
 /** What an honest sentence of this kind must carry within its window: the fourth call (by name, or
  * as "a fourth call" in copy that names no function), and which deployment each count describes. */
 export const DEPLOY_KEY_FOURTH_CALL = /\binitiali[sz]e\b|\bfourth\s+(?:one-shot\s+)?call\b/i;
-export const DEPLOY_KEY_VERSION_QUALIFIER = /\b(?:live|today|first set|v1|plain CREATE)\b/i;
+export const DEPLOY_KEY_VERSION_QUALIFIER = /\b(?:live today|live Arc|first set|v1|plain CREATE|same-address|current source)\b/i;
 
 /**
  * Sentences that bound the deploy key's power but do not carry the fourth call and the v1/v2
