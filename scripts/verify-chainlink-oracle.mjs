@@ -140,6 +140,14 @@ export const SEQUENCER_EXEMPT_REASONS = new Map([
     5042,
     'Arc — an L1, not a rollup, so there is no sequencer whose uptime could be reported and no feed to supply; Chainlink publishes none for arc-mainnet, established by enumerating all 32 feeds it DOES publish for the chain rather than by failing to find one. NOT the same kind of entry as 4663: that one weakened a guard that applied, this one records that the guard does not apply. Owner decision 2026-09-19. Two guards survive a zero uptime feed, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:328) and the sane-price band (ChainlinkOracle.sol:333). The residual this accepts: at a 90,000 s heartbeat a stalled FEED is caught within a day and a stalled CHAIN is not distinguishable from a quiet one',
   ],
+  [
+    1,
+    'Ethereum mainnet — the L1 the rollups settle to, not a rollup, so there is no sequencer whose uptime could be reported and no feed to supply; the Chainlink L2 Sequencer Uptime Feed page lists rollups only, none for Ethereum. Same kind of entry as 5042: the guard does not apply, it was not weakened. Owner decision 2026-10-18. Two guards survive a zero uptime feed, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:328) and the sane-price band (ChainlinkOracle.sol:333), which is mandatory on every mainnet. The residual this accepts: a stalled CHAIN is not distinguishable from a quiet one',
+  ],
+  [
+    137,
+    'Polygon PoS — a validator-set sidechain, not a rollup with a single sequencer, and not on the Chainlink L2 Sequencer Uptime Feed list, so there is no address to supply. Owner decision 2026-10-18. Two guards survive a zero uptime feed, not one: the per-asset heartbeat/staleness bound (ChainlinkOracle.sol:328) and the sane-price band (ChainlinkOracle.sol:333), which is mandatory on every mainnet. The residual this accepts is the sharper one: Polygon block production can pause without any feed saying so, and the tightest staleness bound the oracle accepts (600 s) is many times the cadence of the feed itself',
+  ],
 ]);
 export const SEQUENCER_EXEMPT_CHAIN_IDS = new Set(SEQUENCER_EXEMPT_REASONS.keys());
 const SEQUENCER_REQUIRED = !SEQUENCER_EXEMPT_CHAIN_IDS.has(CFG.chainId);

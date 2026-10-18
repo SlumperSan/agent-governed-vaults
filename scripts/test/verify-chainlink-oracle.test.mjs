@@ -645,10 +645,10 @@ test('the revert string names EVERY exempt chain, so a fifth cannot be added sil
   );
 });
 
-test('the sequencer-exempt set is exactly {31337, 84532, 4663, 5042}', () => {
+test('the sequencer-exempt set is exactly {1, 137, 4663, 5042, 31337, 84532}', () => {
   assert.deepEqual(
     [...SEQUENCER_EXEMPT_CHAIN_IDS].sort((a, b) => a - b),
-    [4663, 5042, 31337, 84532].sort((a, b) => a - b),
+    [1, 137, 4663, 5042, 31337, 84532].sort((a, b) => a - b),
     'an id was added to or removed from the exempt set; the deploy-script allowlist must match',
   );
 });
@@ -709,6 +709,29 @@ test('the 5042 exemption reason names both surviving guards, and says the guard 
   assertGuardCites(5042, heartbeat[1], band[1]);
 });
 
+/**
+ * THE 1 AND 137 REASONS ARE PRINTED TOO, and they were added on the same standard as 5042's: both
+ * surviving guards named with cites that land on the lines that perform them, no single-guard
+ * undercount, and the entry says WHY no feed exists. Owner decision 2026-10-18.
+ */
+for (const [id, why] of [
+  [1, /L1|not a rollup/i],
+  [137, /sidechain|not a rollup/i],
+]) {
+  test(`the ${id} exemption reason names both surviving guards, says why no feed exists, and both cites land on their lines`, () => {
+    const reason = SEQUENCER_EXEMPT_REASONS.get(id);
+    assert.ok(reason, `${id} is not in SEQUENCER_EXEMPT_REASONS; the printed row would have no reason to state`);
+    const heartbeat = reason.match(/heartbeat[^()]*\(ChainlinkOracle\.sol:(\d+)\)/);
+    assert.ok(heartbeat, `the ${id} reason no longer names the per-asset heartbeat/staleness bound with a line cite`);
+    const band = reason.match(/sane-price band[^()]*\(ChainlinkOracle\.sol:(\d+)\)/);
+    assert.ok(band, `the ${id} reason no longer names the sane-price band with a line cite`);
+    assert.doesNotMatch(reason, /only guard|as the only|only remaining|heartbeat alone|sole guard/i);
+    assert.match(reason, why, `the ${id} reason must say why there is no sequencer feed`);
+    assert.match(reason, /Owner decision 2026-10-18/, `the ${id} reason must record the owner decision`);
+    assertGuardCites(id, heartbeat[1], band[1]);
+  });
+}
+
 test('the 4663 exemption reason names BOTH surviving guards, and both cites land inside priceWad', () => {
   const reason = SEQUENCER_EXEMPT_REASONS.get(4663);
   assert.ok(reason, '4663 is no longer in SEQUENCER_EXEMPT_REASONS; the printed row has no reason to state');
@@ -731,7 +754,7 @@ test('the 4663 exemption reason names BOTH surviving guards, and both cites land
   assertGuardCites(4663, heartbeat[1], band[1]);
 });
 
-test('the deploy script exempts the same four ids, so the two lists cannot drift apart', () => {
+test('the deploy script exempts the same six ids, so the two lists cannot drift apart', () => {
   const src = fs.readFileSync(path.join(REPO, 'contracts', 'script', 'DeployChainlinkOracle.s.sol'), 'utf8');
   // NAMED constants, not every `*_CHAIN_ID` in the file. A sweep would also collect a constant that
   // has nothing to do with this guard -- `runWithSequencer`'s Base-mainnet band rule still compares
@@ -739,7 +762,14 @@ test('the deploy script exempts the same four ids, so the two lists cannot drift
   // correct refactor that touches nothing here. Under a sweep that refactor would go red saying the
   // exempt sets disagree, which would be false: a guard that fails with the wrong explanation costs
   // more than one that does not fire.
-  const EXEMPT_CONSTANTS = ['LOCAL_CHAIN_ID', 'BASE_SEPOLIA_CHAIN_ID', 'ROBINHOOD_CHAIN_ID', 'ARC_CHAIN_ID'];
+  const EXEMPT_CONSTANTS = [
+    'LOCAL_CHAIN_ID',
+    'BASE_SEPOLIA_CHAIN_ID',
+    'ROBINHOOD_CHAIN_ID',
+    'ARC_CHAIN_ID',
+    'ETHEREUM_CHAIN_ID',
+    'POLYGON_CHAIN_ID',
+  ];
   // Extracted BEFORE the loop, because the two assertions below need two different haystacks. The
   // constants are declared at contract scope, OUTSIDE this function, so the declaration check has to
   // read the whole file; the wiring check must read only the function body, or a constant named in a
