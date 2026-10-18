@@ -40,8 +40,10 @@ reader can run. Never state a recovery time you cannot evidence.
 > status.** A remediation pass on 2026-08-27 closed twelve findings, including **C-3 (#31) and
 > C-5 (#34)**, and removed C-4 (#32)'s trigger. **C-1
 > ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is closed at launch by
-> root-only**, C-6 is resolved by the Chainlink-direct pivot, and the external audit is complete on
-> owner attestation, so gates 0 and 1 are **GO**. The soak and canary (gates 3 and 6) were not
+> root-only**, C-6 is resolved by the Chainlink-direct pivot, and the external audit of tag `v0.4.0-audit` is complete on
+> owner attestation, so gates 0 and 1 were **GO** for the Base board. Gate 1 is not carried to the
+> Arc deployment: the Arc source differs from that tag in 21 contract source files
+> ([LAUNCH-READINESS.md](LAUNCH-READINESS.md)). The soak and canary (gates 3 and 6) were not
 > re-run on the Arc source commit before the Arc mainnet deployment of 2026-09-24, by owner decision of
 > 2026-09-23; the residual risk that leaves is stated in
 > [LAUNCH-READINESS.md](LAUNCH-READINESS.md).

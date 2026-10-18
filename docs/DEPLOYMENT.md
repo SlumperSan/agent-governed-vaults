@@ -2,8 +2,8 @@
 
 Sprint 9. Covers testnet bring-up (Base Sepolia) and the mandatory wiring order, post-deploy
 verification, and canary monitoring, written for the Arc (chain 5042) mainnet deploy that landed
-2026-09-24 — see [`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
-for what actually shipped. Contracts are immutable — there is no upgrade path, so
+2026-09-24; see [`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
+for what actually shipped. Contracts are immutable, so there is no upgrade path and
 **getting the constructor args and wiring right is the whole game** (a bad `maxStaleness` or an
 unwired registry cannot be fixed after the fact).
 
@@ -293,8 +293,9 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and [INCIDENTS.md](INCIDENTS.md) §8. The
 > Arc mainnet deployment (2026-09-24) went ahead by owner decision of 2026-09-23 without re-running
 > the operational gates, soak and canary, on the Arc source commit; [LAUNCH-READINESS.md](LAUNCH-READINESS.md)
-> carries the verdict and the residual risk to depositors. The external audit is complete on owner
-> attestation. Enabling sub-vaults is additionally gated on the post-launch look-through mechanism
+> carries the verdict and the residual risk to depositors. The external audit of tag `v0.4.0-audit` is complete on owner
+> attestation; it does not cover the Arc source commit, which differs from that tag in 21 contract
+> source files (see gate 1 in LAUNCH-READINESS.md). Enabling sub-vaults is additionally gated on the post-launch look-through mechanism
 > shipping and being audited.
 >
 > **This is not a ban on testnet sub-vault drills** — the Base Sepolia drills already run

@@ -115,20 +115,26 @@ remains in them. That chain is no longer a target and its configuration has been
 repository.
 
 **Launch verdict: live on Arc mainnet (chain 5042) since 2026-09-24, by owner decision of
-2026-09-23, with the soak (gate 3) and the canary (gate 6) not re-run on the Arc source commit.** The
+2026-09-23, with the soak (gate 3) and the canary (gate 6) not re-run on the Arc source commit, and
+with the external audit (gate 1) covering tag `v0.4.0-audit`, not the source deployed on Arc.** The
 argued board is [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md) (nine gates, each with its
 evidence), and it is the authority whenever this section and that document disagree. What is in
 flight right now is [docs/NOW.md](docs/NOW.md); `npm run cc` prints the computed state.
 
 **Which gates stand, and on what.** Gate 5 (the oracle stack, re-read against Arc mainnet on
 2026-10-18, 13 of 13 checks; re-run `scripts/verify-chainlink-oracle.mjs` to check it) and gate 7 (the restore drill, GO by transfer to Arc) are GO with
-evidence from Arc. Gates 0 and 1 are GO as recorded on the Base board and carried over with their
-qualifiers. Gate 4, live x402 settlement, was recorded on Base Sepolia and is not covered on Arc: no
+evidence from Arc. Gate 0 is GO as recorded on the Base board and carried over with its qualifier (root vaults
+only). Gate 1 is GO for tag `v0.4.0-audit` on owner attestation and is **not carried to the Arc
+deployment**: the Arc source commit differs from the audited tag in 21 contract source files, and no
+external audit covers those changes (the next paragraph on the external review lists them and says
+what does cover them). Gate 4, live x402 settlement, was recorded on Base Sepolia and is not covered on Arc: no
 facilitator is deployed for chain 5042 (`docs/DEPLOYMENT.md`). Gate 2, the testnet lifecycle, passed
 on Base Sepolia on 2026-09-03 against source that predates #330, which changed the delegated-weight
 and quorum rules in `Governance.sol`, so it was not earned on the Arc source commit. That commit is
-`c8f112be`; on chain, only OperatorRegistry, Governance and VaultFactory were byte-compared to it,
-and VaultCore's creation code was not read back.
+`c8f112be`; on chain, the eight deployed contracts (OperatorRegistry, SubVaultRegistry, FeeEngine,
+Governance, VaultDeployer, VaultFactory, ChainlinkOracle, AggregationRouterAdapter) and the first
+vault's runtime code were byte-compared to a build of it and differ only inside constructor
+immutables; VaultCore's creation code in `VaultDeployer` was not read back.
 
 **What was not re-run, and why that is a risk to depositors.** The soak drills (gate 3) and the
 canary (gate 6) were not re-run on the Arc source commit before the broadcast, because the owner
@@ -144,8 +150,15 @@ it surfaced **no major issues**. The report contains sensitive material and is *
 It is deliberately not reproduced or linked in this repository. That is an **owner attestation**,
 not something a reader here can independently verify, and neither the scope list nor the
 Low/Informational findings have been published. Do not describe this protocol as "audited" without
-that qualifier. Whether that attestation currently stands as the basis for the gate is recorded in
-gate 1 of [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md), not here.
+naming the tag and that qualifier.
+
+**The audited tag is not the source deployed on Arc.** `git diff v0.4.0-audit c8f112be contracts/src`
+lists 26 files changed. Five of them were deleted (the retired multi-source oracle
+stack), leaving 21 contract source files changed or added since the audited tag, among them
+`Governance.sol`, `VaultCore.sol`, `VaultFactory.sol` and `ChainlinkOracle.sol`; test files are
+excluded from that count, and the full list is in gate 1 of
+[docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md). The Foundry suite and independent per-PR review
+cover those changes; no external audit does.
 
 **The lifecycle evidence is Base Sepolia, and only Base Sepolia.** The full lifecycle has been run end to end on testnet:
 create, deposit, activate, propose, commit, reveal, finalize, execute, exit; and gate 2 of the

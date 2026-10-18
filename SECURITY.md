@@ -31,8 +31,9 @@ In scope:
 
 - `contracts/` — `VaultCore`, `Governance`, `FeeEngine`, `OperatorRegistry`, `ChainlinkOracle`, the
   execution adapters, `SubVaultRegistry`, `VaultFactory`/`VaultDeployer`, and their deployed
-  bytecode on Base Sepolia testnet and on chain 4663, where the contracts remain deployed and
-  immutable although no vault there holds value.
+  bytecode on Arc mainnet (chain 5042; the address book is
+  `contracts/config/deployments/arc-mainnet.json`), on Base Sepolia testnet and on chain 4663, where
+  the contracts remain deployed and immutable although no vault there holds value.
 - `apps/api/` — the metered read API (x402 payment gate, facilitator integration, rate limiting).
   This is the one paid API surface going forward; a duplicate paid endpoint that previously lived
   under `apps/site-next` (settling on Base mainnet) has been removed as part of a parallel cleanup
@@ -74,7 +75,11 @@ authority if the two ever disagree.
   `v0.4.0-audit`. On 2026-08-29 the owner attested, having read the report, that it surfaced **no
   major issues**. **The report itself is held privately** and is deliberately not reproduced or
   linked in this repository. That is an owner attestation, not something independently verifiable
-  from this repo — do not describe the protocol as "audited" without that qualifier. The
+  from this repo. Do not describe the protocol as "audited" without naming the tag and that
+  qualifier. The audited tag is not the source deployed on Arc: that source (`c8f112be`) differs from
+  `v0.4.0-audit` in 21 contract source files, listed in gate 1 of
+  [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md), and no external audit covers those changes.
+  The
   audit-firm-facing entry point and scope notes live at
   [`docs/audit/README.md`](docs/audit/README.md); note its own banner that scope moved after
   Critical **C-6** (the oracle was replaced, not patched — see below).
