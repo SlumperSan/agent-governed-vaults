@@ -27,6 +27,7 @@
 
 import { createProtocolClient } from '../../agent-sdk/src/index.mjs';
 import { toBaseUnits } from './config.mjs';
+import { verifyKnownPayloads } from './payloads.mjs';
 
 /**
  * Build the SDK client with the budget wired into its signer.
@@ -228,7 +229,7 @@ async function discoverFromApi({ client, budget, config, log, gaps }) {
  * @param {any} p.config
  * @param {string|null} p.member    the agent's on-chain address (null in a keyless dry run)
  * @param {any} p.log
- * @param {number} p.nowSec
+ * @param {number} p.nowSec          the local clock; `world.chainNowSec` is the chain's, for the crank
  * @returns {Promise<any>} the world state the decide phase consumes
  */
 export async function perceive({ client, chainReader, budget, config, member, log, nowSec }) {
@@ -309,8 +310,23 @@ export async function perceive({ client, chainReader, budget, config, member, lo
 
   const heldVaults = observed.filter((o) => o.chain?.self?.shares != null && BigInt(o.chain.self.shares) > 0n);
 
+  // Cranking: the three Governance gates compare block.timestamp, so read it, and check each
+  // payload the operator handed over against its hash. Both are skipped when cranking is off.
+  let chainNowSec = null;
+  let crankPayloads = {};
+  if (config.policy.crank.scope !== 'off') {
+    chainNowSec = await chainReader.readBlockTimestamp();
+    if (chainNowSec === null)
+      gaps.push(`latest block timestamp unreadable; the crank falls back to the local clock less the ${config.policy.timing.activateGraceSec}s margin`);
+    const checked = await verifyKnownPayloads(config.policy.crank.knownPayloads);
+    crankPayloads = checked.verified;
+    for (const r of checked.rejected) gaps.push(`crank payload ${r.actionHash} ignored: ${r.reason}`);
+  }
+
   return {
     nowSec,
+    chainNowSec,
+    crankPayloads,
     member,
     source,
     discovery,

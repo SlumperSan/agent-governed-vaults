@@ -17,11 +17,20 @@
  *  - **skipWindow is refused unless explicitly enabled.** Even with an intent in hand, the actor
  *    re-checks `danger.allowSkipWindow`. Two independent gates on the one irreversible action.
  *  - **The salt is never logged**, only previewed (log.hexPreview).
+ *  - **A crank write is simulated before it is sent** (`finalize`, `execute`, `mark-expired`): an
+ *    `eth_call` of the exact calldata through the chain reader. A revert, such as a lost race
+ *    (`WrongPhase` once someone else has finalized), drops the intent with its reason instead of
+ *    spending gas. The simulation is read-only, so dry-run runs it too, and still signs nothing.
+ *    A simulation that cannot run drops the intent as well: what was not checked is not sent.
+ *  - **`execute` is refused unless its payload hashes to the proposal's `actionHash`** and the
+ *    proposal is a Rebalance, checked here again after the planner's own check.
  */
 
 import { commitmentFor, recoverVote, buildVote, assertDeterministicSigner } from './salt.mjs';
 import { hexPreview } from './log.mjs';
 import { fromBaseUnits } from './config.mjs';
+import { CRANK_EXECUTE_PTYPE } from './policy.mjs';
+import { payloadHash } from './payloads.mjs';
 
 /** Write fragments for the state-changing calls this app's writers (the agent, and
  * apps/vaults-ui/src/lib/chain-actions.ts, which BORROWS this table — see that file's header)
@@ -61,7 +70,21 @@ export const GOVERNANCE_WRITE_ABI = Object.freeze([
     outputs: [],
     stateMutability: 'nonpayable',
   },
+  // The crank: anyone may call these three. finalize and markExpired take the proposal id alone;
+  // execute also takes the payload, whose keccak256 must equal the proposal's actionHash.
+  { type: 'function', name: 'finalize', inputs: [{ name: 'pid', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'execute', inputs: [{ name: 'pid', type: 'uint256' }, { name: 'payload', type: 'bytes' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'markExpired', inputs: [{ name: 'pid', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
 ]);
+
+/** The reverts a crank write can hit, so a failed simulation names its cause. Not a write fragment:
+ * test/act-crank.test.mjs checks each against the compiled Governance ABI. */
+export const GOVERNANCE_CRANK_ERROR_ABI = Object.freeze(
+  ['WrongPhase', 'NotPassed', 'TimelockActive', 'ExecutionWindowOver', 'BadPayload'].map((name) => ({ type: 'error', name, inputs: [] })),
+);
+
+/** The intent kinds whose write is simulated before it is sent. */
+export const CRANK_KINDS = Object.freeze(['finalize', 'execute', 'mark-expired']);
 
 export class ActionRefused extends Error {
   constructor(message) {
@@ -221,9 +244,65 @@ export function createActor({ mode, config, account, chainReader, log, walletCli
         };
       }
 
+      case 'finalize':
+      case 'mark-expired': {
+        if (!governance) throw new ActionRefused(`${intent.kind} needs chain.governance to be configured`);
+        const pid = crankPid(intent);
+        const finalize = intent.kind === 'finalize';
+        return {
+          to: governance,
+          contract: 'Governance',
+          abi: GOVERNANCE_WRITE_ABI,
+          simulateAbi: GOVERNANCE_SIM_ABI,
+          functionName: finalize ? 'finalize' : 'markExpired',
+          args: [pid],
+          human: finalize
+            ? `Governance.finalize(pid=${pid})  [reveal window ended; anyone may call it]`
+            : `Governance.markExpired(pid=${pid})  [execution window ended; anyone may call it]`,
+        };
+      }
+
+      case 'execute': {
+        if (!governance) throw new ActionRefused('execute needs chain.governance to be configured');
+        const pid = crankPid(intent);
+        const { payload, actionHash, ptype } = intent.args;
+        // Second gate, mirroring skip-window: the planner already required all of this.
+        if (ptype !== CRANK_EXECUTE_PTYPE)
+          throw new ActionRefused(`refusing execute for proposal ${pid}: proposal type ${ptype} is not a Rebalance, and only a Rebalance is executed here`);
+        if (typeof payload !== 'string' || !/^0x(?:[0-9a-fA-F]{2})*$/.test(payload))
+          throw new ActionRefused(`refusing execute for proposal ${pid}: no payload bytes were supplied`);
+        if (typeof actionHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(actionHash))
+          throw new ActionRefused(`refusing execute for proposal ${pid}: no actionHash to check the payload against`);
+        const actual = await payloadHash(payload);
+        if (actual !== actionHash.toLowerCase())
+          throw new ActionRefused(`refusing execute for proposal ${pid}: the payload hashes to ${actual}, not to the proposal's actionHash ${actionHash}; the call would revert BadPayload`);
+        return {
+          to: governance,
+          contract: 'Governance',
+          abi: GOVERNANCE_WRITE_ABI,
+          simulateAbi: GOVERNANCE_SIM_ABI,
+          functionName: 'execute',
+          args: [pid, payload],
+          human: `Governance.execute(pid=${pid}, payload=${hexPreview(payload)} ${(payload.length - 2) / 2} bytes)  [Rebalance; payload hash matches actionHash; anyone may call it]`,
+        };
+      }
+
       default:
         throw new ActionRefused(`unknown intent kind: ${intent.kind}`);
     }
+  }
+
+  /**
+   * An `eth_call` of the exact write, through the chain reader. Never throws.
+   * @returns {Promise<{ok:true}|{ok:false, reverted:boolean, error:string}>}
+   */
+  async function simulate(call) {
+    if (typeof chainReader?.simulateCall !== 'function')
+      return { ok: false, reverted: false, error: 'this chain reader cannot simulate, so the call was not checked' };
+    return chainReader.simulateCall(
+      { to: call.to, abi: call.simulateAbi ?? call.abi, functionName: call.functionName, args: call.args },
+      { from: account?.address ?? null },
+    );
   }
 
   /**
@@ -240,6 +319,19 @@ export function createActor({ mode, config, account, chainReader, log, walletCli
       return { intent: intent.kind, vault: intent.vault, sent: false, refused: true, error: String(err?.message ?? err) };
     }
 
+    // A crank write is checked before anything is sent or described as sendable. A lost race is
+    // routine (someone else finalized first), so a revert is an info line; a simulation that could
+    // not run is a warning, because nothing was checked.
+    let simulation = null;
+    if (CRANK_KINDS.includes(intent.kind)) {
+      simulation = await simulate(call);
+      if (!simulation.ok) {
+        const why = simulation.reverted ? `simulation reverted (${simulation.error})` : `simulation unavailable (${simulation.error})`;
+        (simulation.reverted ? log.info : log.warn)(`DROPPED ${intent.kind} on ${intent.vault}: ${why}; not sent`);
+        return { intent: intent.kind, vault: intent.vault, sent: false, dropped: true, error: why, simulation };
+      }
+    }
+
     if (mode === 'dry-run') {
       if (call.approvalFirst) log.act(`[DRY-RUN] would send: ${call.approvalFirst.human}`);
       log.act(`[DRY-RUN] would send: ${call.human}`);
@@ -247,6 +339,7 @@ export function createActor({ mode, config, account, chainReader, log, walletCli
       return {
         intent: intent.kind, vault: intent.vault, sent: false, dryRun: true,
         call: describe(call),
+        ...(simulation ? { simulation } : {}),
         ...(call.approvalFirst ? { approval: describe(call.approvalFirst) } : {}),
       };
     }
@@ -288,7 +381,7 @@ export function createActor({ mode, config, account, chainReader, log, walletCli
         chain: null,
       });
       log.act(`[EXECUTE] sent ${call.human}  tx=${hash}`);
-      return { intent: intent.kind, vault: intent.vault, sent: true, hash, call: describe(call), ...(approvalHash ? { approvalHash } : {}) };
+      return { intent: intent.kind, vault: intent.vault, sent: true, hash, call: describe(call), ...(approvalHash ? { approvalHash } : {}), ...(simulation ? { simulation } : {}) };
     } catch (err) {
       log.error(`[EXECUTE] ${intent.kind} on ${intent.vault} FAILED — ${String(err?.shortMessage ?? err?.message ?? err)}`);
       return { intent: intent.kind, vault: intent.vault, sent: false, error: String(err?.message ?? err) };
@@ -298,12 +391,23 @@ export function createActor({ mode, config, account, chainReader, log, walletCli
   return { run, resolveCall };
 }
 
+/** What a crank simulation decodes revert names against: the write fragments plus the errors. */
+const GOVERNANCE_SIM_ABI = Object.freeze([...GOVERNANCE_WRITE_ABI, ...GOVERNANCE_CRANK_ERROR_ABI]);
+
+/** The proposal id an intent carries, as a bigint; a missing one is a refusal, never a guess. */
+function crankPid(intent) {
+  const raw = intent.args?.pid;
+  if (raw === undefined || raw === null || !/^\d+$/.test(String(raw)))
+    throw new ActionRefused(`${intent.kind} needs a proposal id in args.pid`);
+  return BigInt(raw);
+}
+
 /** A log-safe view of a resolved call: no salt, no signature, arguments stringified. */
 function describe(call) {
   return {
     to: call.to,
     contract: call.contract,
     functionName: call.functionName,
-    args: call.args.map((a) => (typeof a === 'bigint' ? a.toString() : typeof a === 'string' && /^0x[0-9a-fA-F]{64}$/.test(a) ? hexPreview(a) : a)),
+    args: call.args.map((a) => (typeof a === 'bigint' ? a.toString() : typeof a === 'string' && /^0x[0-9a-fA-F]{64,}$/.test(a) ? hexPreview(a) : a)),
   };
 }
