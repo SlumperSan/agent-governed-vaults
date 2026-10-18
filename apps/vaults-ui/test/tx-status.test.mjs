@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { confirmTx, replacedLine, submittedLine, unconfirmedLine } from '../src/lib/tx-status.ts';
+import { confirmTx, requireConfirmed, replacedLine, submittedLine, unconfirmedLine } from '../src/lib/tx-status.ts';
 
 const APP = fileURLToPath(new URL('..', import.meta.url));
 const ESCROW = readFileSync(join(APP, 'src/components/EscrowClaims.tsx'), 'utf8');
@@ -185,4 +185,60 @@ test('MemberActions: deposit, exit, commit and reveal all settle through settleF
   assert.match(MEMBER, /outcome\.state === 'replaced'[\s\S]*replacedLine/, 'MemberActions does not route a replaced tx to replacedLine');
   assert.match(ESCROW, /outcome\.state === 'replaced'[\s\S]*replacedLine/, 'EscrowClaims does not route a replaced tx to replacedLine');
   assert.match(MEMBER, /USDC approval from the first step still stands/, 'deposit revert copy lost the approval note');
+});
+
+test('MemberActions: every success line is built from the MINED hash, never the broadcast hash', () => {
+  assert.match(MEMBER, /message: done\(outcome\.hash\)/, 'settleFlow no longer passes the mined hash to done');
+  for (const [name, broadcast] of [['Deposited', 'r.depositHash'], ['Exit requested', 'r.exitHash'], ['Committed', 'r.commitHash'], ['Revealed', 'r.revealHash']]) {
+    const line = MEMBER.split(String.fromCharCode(10)).find((l) => l.includes('await settleFlow(') && l.includes(name));
+    assert.ok(line, `${name} success line not found`);
+    const start = line.indexOf('(h) => `');
+    assert.ok(start !== -1, `${name} success line is not a function of the mined hash`);
+    const tmpl = line.slice(start, line.indexOf('`', start + 8) + 1);
+    assert.ok(tmpl.includes('${h}'), `${name} success line does not print the mined hash`);
+    assert.ok(!tmpl.includes('${' + broadcast + '}'), `${name} success line prints the broadcast hash`);
+  }
+});
+
+// ───── the approval is waited on with confirmTx semantics before the deposit is signed ─────
+
+test('requireConfirmed: a confirmed approval returns the hash that mined', async () => {
+  const client = { waitForTransactionReceipt: async () => ({ status: 'success', transactionHash: HASH }) };
+  assert.equal(await requireConfirmed(client, HASH, 'USDC approval', 'deposit'), HASH);
+  const sped = { ...orig, hash: NEW_HASH };
+  assert.equal(await requireConfirmed(replacing('repriced', sped), HASH, 'USDC approval', 'deposit'), NEW_HASH);
+});
+
+test('requireConfirmed: a reverted approval throws and says no deposit was sent', async () => {
+  const client = { waitForTransactionReceipt: async () => ({ status: 'reverted', transactionHash: HASH }) };
+  await assert.rejects(requireConfirmed(client, HASH, 'USDC approval', 'deposit'), /USDC approval reverted on chain .* no deposit was sent/);
+});
+
+test('requireConfirmed: a cancelled or replaced approval throws, it never proceeds', async () => {
+  const cancel = { hash: NEW_HASH, from: ME, to: ME, value: 0n, input: '0x' };
+  await assert.rejects(requireConfirmed(replacing('cancelled', cancel), HASH, 'USDC approval', 'deposit'), /replaced from your wallet.* no deposit was sent/);
+  const noReport = { waitForTransactionReceipt: async () => ({ status: 'success', transactionHash: NEW_HASH }) };
+  await assert.rejects(requireConfirmed(noReport, HASH, 'USDC approval', 'deposit'), /replaced from your wallet/);
+});
+
+test('requireConfirmed: an approval receipt wait that fails throws without claiming a revert', async () => {
+  const client = { waitForTransactionReceipt: async () => { throw new Error('rpc down'); } };
+  await assert.rejects(requireConfirmed(client, HASH, 'USDC approval', 'deposit'), (e) => {
+    assert.match(e.message, /Could not confirm the USDC approval yet \(rpc down\)\. No deposit was sent/);
+    assert.doesNotMatch(e.message, /reverted/);
+    return true;
+  });
+});
+
+test('sendDeposit: the approve receipt goes through requireConfirmed before the deposit is simulated', () => {
+  const src = readFileSync(join(APP, 'src/lib/chain-actions.ts'), 'utf8');
+  const fn = /export async function sendDeposit[\s\S]*?\n\}\r?\n/.exec(src);
+  assert.ok(fn, 'sendDeposit not found');
+  const body = fn[0];
+  const wait = body.indexOf("requireConfirmed(publicClient, approvalHash, 'USDC approval', 'deposit')");
+  const dep = body.indexOf("functionName: 'deposit'");
+  assert.ok(wait !== -1, 'sendDeposit no longer checks the approve outcome with requireConfirmed');
+  assert.ok(wait < dep, 'the approve check must come before the deposit write');
+  assert.doesNotMatch(body, /await publicClient\.waitForTransactionReceipt/, 'a bare receipt wait that ignores status and replacement is back');
+  assert.match(body, /approvalHash: minedApprovalHash/, 'sendDeposit returns the broadcast approval hash, not the mined one');
 });
