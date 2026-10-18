@@ -55,12 +55,6 @@ test('deposit/exit loops measure only the time held', () => {
   assert.equal(secs(once, A), 100n * USDC * 1750n);
 });
 
-test('a queued exit keeps counting until the exit settles', () => {
-  // Only ExitSettled changes the ledger; a queued request emits a different event the reducer ignores.
-  const r = reduce([dep(A, 100n * USDC, 100n, 0), exit(A, 100n, 5000)], W);
-  assert.equal(secs(r, A), 100n * USDC * 5000n);
-});
-
 test('positions in several vaults of one address are summed', () => {
   const v2 = addr(0xaa02);
   const e2 = { ...dep(A, 50n * USDC, 50n, 0), vault: v2 };

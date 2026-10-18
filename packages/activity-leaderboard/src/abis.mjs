@@ -26,5 +26,6 @@ export const VAULT_EVENTS = Object.freeze([
 export const VAULT_READ_ABI = Object.freeze([
   { type: 'function', name: 'sharesOf', stateMutability: 'view', inputs: [addr('')], outputs: [u256('')] },
   { type: 'function', name: 'costBasisUsdc', stateMutability: 'view', inputs: [addr('')], outputs: [u256('')] },
+  { type: 'function', name: 'totalShares', stateMutability: 'view', inputs: [], outputs: [u256('')] },
   { type: 'function', name: 'creator', stateMutability: 'view', inputs: [], outputs: [addr('')] },
 ]);

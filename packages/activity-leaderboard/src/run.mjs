@@ -2,7 +2,7 @@
 import { SETTLE_SECONDS } from './constants.mjs';
 import { epochBounds } from './epoch.mjs';
 import { reduce } from './ledger.mjs';
-import { assertHeadState } from './consistency.mjs';
+import { assertHeadState, assertSameChainView } from './consistency.mjs';
 import { buildTeamSet } from './team.mjs';
 import { buildBoard } from './board.mjs';
 
@@ -16,7 +16,8 @@ import { buildBoard } from './board.mjs';
  *   chainId:number, name:string,
  *   vaults: Array<{address:string, fromBlock:number}>,
  *   deployers: string[],
- *   reader: ReturnType<typeof import('./source.mjs').createChainReader>
+ *   reader: ReturnType<typeof import('./source.mjs').createChainReader>,
+ *   crossReader?: ReturnType<typeof import('./source.mjs').createChainReader> | null
  * }>} p.chains
  * @param {number} p.anchor          unix seconds the epochs are counted from (first agent vault's deploy block)
  * @param {number} p.epochNumber
@@ -35,6 +36,7 @@ export async function runEpoch({ chains, anchor, epochNumber, nowSec, seededDoc,
   const deployers = [];
   for (const c of chains) {
     await c.reader.assertBoundToDeclaredChain();
+    if (c.crossReader) await c.crossReader.assertBoundToDeclaredChain();
     deployers.push(...c.deployers);
     for (const v of c.vaults) creators.push(await c.reader.creatorOf(v.address));
   }
@@ -57,12 +59,17 @@ export async function runEpoch({ chains, anchor, epochNumber, nowSec, seededDoc,
     }
 
     const { usdcSeconds, positions } = reduce(events, { windowStart: start, windowEnd });
-    const check = await assertHeadState({ positions, readPosition: c.reader.readPosition, blockNumber: head.number });
+    const vaultAddresses = c.vaults.map((v) => v.address.toLowerCase());
+    const check = await assertHeadState({
+      vaults: vaultAddresses, positions, readPosition: c.reader.readPosition, readTotalShares: c.reader.readTotalShares, blockNumber: head.number,
+    });
+    // A second endpoint, when one is given, must agree on the head block hash and each vault's totalShares.
+    if (c.crossReader) await assertSameChainView({ primary: c.reader, secondary: c.crossReader, vaults: vaultAddresses, blockNumber: head.number });
 
     const codeHashes = new Map();
     for (const addr of [...usdcSeconds.keys()].sort()) codeHashes.set(addr, await c.reader.codeHash(addr));
 
-    diagnostics.push({ chain: c.name, headBlock: head.number, eventsRead: events.length, positionsChecked: check.checked });
+    diagnostics.push({ chain: c.name, headBlock: head.number, eventsRead: events.length, positionsChecked: check.checked, vaultsChecked: check.vaultsChecked, secondEndpointChecked: Boolean(c.crossReader) });
     perChain.push({
       chainId: c.chainId,
       name: c.name,

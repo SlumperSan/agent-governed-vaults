@@ -30,10 +30,11 @@ function history({ extra = false } = {}) {
 const seededDoc = { addresses: [] };
 const now = (ch) => ch.ts + SETTLE_SECONDS + EPOCH_SECONDS; // comfortably after epoch 0 settled
 
-function run(ch, { windowBlocks = 10_000, nowSec = now(ch), epochNumber = 0, chainId = 5042, vaults = [{ address: VAULT, fromBlock: 100 }], doc = seededDoc } = {}) {
+function run(ch, { windowBlocks = 10_000, nowSec = now(ch), epochNumber = 0, chainId = 5042, vaults = [{ address: VAULT, fromBlock: 100 }], doc = seededDoc, crossClient = null } = {}) {
   const reader = createChainReader({ client: ch.client, chainId: 5042, windowBlocks, confirmations: 0 });
+  const crossReader = crossClient ? createChainReader({ client: crossClient, chainId: 5042, windowBlocks, confirmations: 0 }) : null;
   return runEpoch({
-    chains: [{ chainId, name: 'arc', vaults, deployers: [DEPLOYER], reader }],
+    chains: [{ chainId, name: 'arc', vaults, deployers: [DEPLOYER], reader, crossReader }],
     anchor: ANCHOR, epochNumber, nowSec, seededDoc: doc, seededSha256: 'aa', codeCommit: 'deadbeef',
   });
 }
@@ -115,12 +116,56 @@ test('the head-state check aborts the run when the chain disagrees with the ledg
   }
 });
 
-test('starting the log read too late is an error, not a quiet undercount', async () => {
+test('a read that starts between the deposit and the exit of one member fails in the reducer, because the exit has nothing to burn', async () => {
   const ch = fakeChain({ startTs: ANCHOR, creator: CREATOR });
   const bA = ch.deposit(A, 100n * USDC, ANCHOR + DAY);
   ch.exit(A, 100n * USDC * 10n ** 12n / 2n, ANCHOR + 2 * DAY);
   ch.advanceTo(ANCHOR + 8 * DAY);
   await assert.rejects(run(ch, { vaults: [{ address: VAULT, fromBlock: bA + 1 }] }), /burns 5[0-9]+ of 0 shares; a log is missing/);
+});
+
+/** A holds 100 USDC from day 1 and never acts again; B deposits 50 USDC on day 2. Returns B's block. */
+function memberWithNoLaterActivity() {
+  const ch = fakeChain({ startTs: ANCHOR, creator: CREATOR });
+  ch.deposit(A, 100n * USDC, ANCHOR + DAY);
+  const bB = ch.deposit(B, 50n * USDC, ANCHOR + 2 * DAY);
+  ch.advanceTo(ANCHOR + 8 * DAY);
+  return { ch, bB };
+}
+
+test('a member whose logs were all missed is caught by the share total (the read starts after their only deposit)', async () => {
+  const { ch, bB } = memberWithNoLaterActivity();
+  // The whole history read is sound.
+  const ok = (await run(ch)).board.chains[0].rows.map((r) => r.address).sort();
+  assert.deepEqual(ok, [A, B].sort());
+  // Starting at B's block leaves A out of the ledger entirely; A's shares are still in totalShares.
+  await assert.rejects(run(ch, { vaults: [{ address: VAULT, fromBlock: bB }] }), (e) => e instanceof ConsistencyError && /totalShares/.test(e.message) && /missed/.test(e.message));
+});
+
+test('an endpoint that answers every log query with an empty list is caught by the share total', async () => {
+  const { ch } = memberWithNoLaterActivity();
+  ch.client.getLogs = async () => [];
+  await assert.rejects(run(ch), (e) => e instanceof ConsistencyError && /totalShares/.test(e.message));
+});
+
+test('a second endpoint that agrees is recorded in the diagnostics', async () => {
+  const ch = history();
+  const { diagnostics } = await run(ch, { crossClient: ch.client });
+  assert.equal(diagnostics[0].secondEndpointChecked, true);
+  assert.equal(diagnostics[0].vaultsChecked, 1);
+  assert.equal((await run(ch)).diagnostics[0].secondEndpointChecked, false);
+});
+
+test('a second endpoint that disagrees on the head hash, on a vault total, or is behind aborts the run', async () => {
+  const ch = history();
+  const other = (patch) => ({ ...ch.client, ...patch });
+  const getBlock = async (a) => ({ ...(await ch.client.getBlock(a)), hash: `0x${'ab'.repeat(32)}` });
+  await assert.rejects(run(ch, { crossClient: other({ getBlock }) }), (e) => e instanceof ConsistencyError && /hash/.test(e.message));
+  const readContract = async (q) => { const v = await ch.client.readContract(q); return q.functionName === 'totalShares' ? v + 1n : v; };
+  await assert.rejects(run(ch, { crossClient: other({ readContract }) }), (e) => e instanceof ConsistencyError && /totalShares/.test(e.message));
+  const behind = async () => { throw new Error('block not found'); };
+  await assert.rejects(run(ch, { crossClient: other({ getBlock: behind }) }), /block not found/);
+  await assert.rejects(run(ch, { crossClient: other({ getChainId: async () => 1 }) }), /WRONG CHAIN/);
 });
 
 test('refuses the wrong chain, an empty vault list, and an endpoint that is behind', async () => {

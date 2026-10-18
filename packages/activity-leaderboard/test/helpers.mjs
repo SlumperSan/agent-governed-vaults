@@ -112,6 +112,10 @@ export function fakeChain({ chainId = 5042, vault = VAULT, creator = addr(0xc0de
     },
     async readContract({ functionName, args }) {
       if (functionName === 'creator') return creator;
+      if (functionName === 'totalShares') {
+        const total = [...shares.values()].reduce((a, b) => a + b, 0n);
+        return api.lie ? api.lie('totalShares', undefined, total) : total;
+      }
       const m = args[0];
       const v = functionName === 'sharesOf' ? api.sharesOf(m) : api.basisOf(m);
       return api.lie ? api.lie(functionName, m, v) : v;

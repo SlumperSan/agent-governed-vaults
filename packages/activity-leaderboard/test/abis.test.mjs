@@ -42,7 +42,24 @@ test('cost basis and shares change in no other place', () => {
   assert.equal(writes.length, 4, `unexpected writes to sharesOf/costBasisUsdc: ${writes.join(' | ')}`);
 });
 
+test('only the two settled events are read, so a queued exit counts until it settles', () => {
+  // Queue requests emit a different event. Shares and basis leave `sharesOf` only in `_settleExit`
+  // (the write-count pin above), for instant and queued exits alike, so reading ExitSettled alone matches the contract.
+  assert.deepEqual(VAULT_EVENTS.map((e) => e.name), ['DepositActivated', 'ExitSettled']);
+  assert.equal([...SRC.matchAll(/emit\s+ExitSettled\s*\(/g)].length, 1, 'ExitSettled should be emitted from one place');
+  assert.match(SRC, /function\s+_settleExit\s*\(/);
+});
+
+test('total shares change only at the mint and the burn, the two places sharesOf changes', () => {
+  const writes = [...SRC.matchAll(/\btotalShares\s*[-+]?=[^=]/g)].map((m) => m[0].replace(/\s+/g, ' ').trim());
+  assert.equal(writes.length, 2, `unexpected writes to totalShares: ${writes.join(' | ')}`);
+  assert.match(SRC, /totalShares\s*=\s*ts\s*\+\s*minted\s*;/);
+  assert.match(SRC, /totalShares\s*=\s*ts\s*-\s*burnShares\s*;/);
+  assert.match(SRC, /uint256\s+public\s+totalShares\s*;/);
+});
+
 test('the read ABI names the public getters the head check relies on', () => {
+  assert.ok(VAULT_READ_ABI.some((f) => f.name === 'totalShares' && f.inputs.length === 0));
   for (const fn of ['sharesOf', 'costBasisUsdc']) {
     assert.match(SRC, new RegExp(`mapping\\(address\\s*=>\\s*uint256\\)\\s+public\\s+${fn}\\b`));
     assert.ok(VAULT_READ_ABI.some((f) => f.name === fn));

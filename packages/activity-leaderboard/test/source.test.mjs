@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { keccak256 } from 'viem';
 import { createChainReader } from '../src/source.mjs';
-import { assertHeadState, ConsistencyError } from '../src/consistency.mjs';
+import { assertHeadState, assertSameChainView, ConsistencyError } from '../src/consistency.mjs';
 import { USDC, A, B, VAULT, addr, fakeChain } from './helpers.mjs';
 
 const T0 = 1_000_000;
@@ -79,9 +79,37 @@ test('head-state check passes on equal state and names every mismatch otherwise'
     [`${VAULT}|${B}`, { vault: VAULT, member: B, shares: 0n, basis: 0n }],
   ]);
   const same = async (_v, m) => (m === A ? { shares: 5n, basis: 7n } : { shares: 0n, basis: 0n });
-  assert.deepEqual(await assertHeadState({ positions, readPosition: same, blockNumber: 1 }), { checked: 2 });
+  const total = async () => 5n;
+  const base = { vaults: [VAULT], positions, readTotalShares: total, blockNumber: 1 };
+  assert.deepEqual(await assertHeadState({ ...base, readPosition: same }), { checked: 2, vaultsChecked: 1 });
   const off = async (_v, m) => (m === A ? { shares: 5n, basis: 8n } : { shares: 1n, basis: 0n });
-  await assert.rejects(assertHeadState({ positions, readPosition: off, blockNumber: 1 }), (e) => e instanceof ConsistencyError && e.mismatches.length === 2);
+  await assert.rejects(assertHeadState({ ...base, readPosition: off }), (e) => e instanceof ConsistencyError && e.mismatches.length === 2);
+});
+
+test('the share total is checked per vault, including a vault the ledger holds nothing for', async () => {
+  const V2 = addr(0xaa02);
+  const positions = new Map([[`${VAULT}|${A}`, { vault: VAULT, member: A, shares: 5n, basis: 7n }]]);
+  const readPosition = async () => ({ shares: 5n, basis: 7n });
+  const totals = { [VAULT]: 5n, [V2]: 0n };
+  const readTotalShares = async (v) => totals[v];
+  const base = { vaults: [VAULT, V2], positions, readPosition, readTotalShares, blockNumber: 1 };
+  assert.deepEqual(await assertHeadState(base), { checked: 1, vaultsChecked: 2 });
+  totals[V2] = 9n; // shares exist in a vault the ledger saw no event for
+  await assert.rejects(assertHeadState(base), (e) => e instanceof ConsistencyError && e.mismatches.length === 1 && e.mismatches[0].includes(V2) && /missed/.test(e.mismatches[0]));
+  totals[V2] = 0n;
+  totals[VAULT] = 4n; // the ledger holds more than the chain
+  await assert.rejects(assertHeadState(base), (e) => e instanceof ConsistencyError && /ledger holds shares the chain does not/.test(e.mismatches[0]));
+  await assert.rejects(assertHeadState({ ...base, vaults: [V2] }), /unconfigured vault/);
+  await assert.rejects(assertHeadState({ ...base, vaults: [] }), /no vaults/);
+});
+
+test('the second endpoint must agree on the head block hash and on every vault total', async () => {
+  const one = { blockInfo: async () => ({ hash: '0xaa' }), readTotalShares: async () => 5n };
+  const base = { primary: one, vaults: [VAULT], blockNumber: 3 };
+  await assertSameChainView({ ...base, secondary: { ...one } });
+  await assert.rejects(assertSameChainView({ ...base, secondary: { ...one, blockInfo: async () => ({ hash: '0xbb' }) } }), (e) => e instanceof ConsistencyError && /hash/.test(e.mismatches[0]));
+  await assert.rejects(assertSameChainView({ ...base, secondary: { ...one, readTotalShares: async () => 6n } }), (e) => e instanceof ConsistencyError && /totalShares/.test(e.mismatches[0]));
+  await assert.rejects(assertSameChainView({ ...base, secondary: { ...one, blockInfo: async () => { throw new Error('block not found'); } } }), /block not found/);
 });
 
 test('the other chains are configured by id only', async () => {

@@ -4,7 +4,7 @@
  * Compute one epoch's activity leaderboard from chain logs.
  *
  *   node packages/activity-leaderboard/src/cli.mjs --chain arc --epoch 0 \
- *        [--rpc <url>] [--vault <address>@<fromBlock>]... [--anchor <unixSeconds>] \
+ *        [--rpc <url>] [--rpc2 <url>] [--vault <address>@<fromBlock>]... [--anchor <unixSeconds>] \
  *        [--epoch current] [--now <unixSeconds>] [--out <dir>] [--window <blocks>] [--confirmations <n>]
  *
  * It reads the chain and writes nothing unless `--out` is given. It hands the result to the
@@ -61,16 +61,19 @@ async function main() {
     const vaults = o.vault.length
       ? o.vault.map((s) => { const [address, fromBlock] = s.split('@'); return { address: address.toLowerCase(), fromBlock: Number(fromBlock) }; })
       : cfg.vaults;
-    const rpcUrl = o.rpc ?? cfg.rpcs[0];
+    // The first endpoint is read; a second, when one exists, only has to agree on the head block hash
+    // and each vault's totalShares (assertSameChainView). With one endpoint the run is single-source.
+    const [rpcUrl, crossUrl] = o.rpc ? [o.rpc, o.rpc2 ?? cfg.rpcs.find((r) => r !== o.rpc)] : [cfg.rpcs[0], o.rpc2 ?? cfg.rpcs[1]];
     if (!rpcUrl) throw new Error(`no RPC endpoint recorded for ${key}; pass --rpc`);
-    const reader = createChainReader({
-      rpcUrl,
+    const make = (url) => createChainReader({
+      rpcUrl: url,
       chainId: cfg.chainId,
       ...(o.window ? { windowBlocks: Number(o.window) } : {}),
       ...(o.confirmations ? { confirmations: Number(o.confirmations) } : {}),
     });
+    const reader = make(rpcUrl);
     await reader.assertBoundToDeclaredChain();
-    chains.push({ chainId: cfg.chainId, name: cfg.name, vaults, deployers: cfg.deployer ? [cfg.deployer] : [], reader });
+    chains.push({ chainId: cfg.chainId, name: cfg.name, vaults, deployers: cfg.deployer ? [cfg.deployer] : [], reader, crossReader: crossUrl ? make(crossUrl) : null });
   }
 
   const codeCommit = o['code-commit'] ?? execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();

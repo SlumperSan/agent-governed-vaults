@@ -175,6 +175,12 @@ export function createChainReader({
     return { shares: BigInt(shares), basis: BigInt(basis) };
   }
 
+  /** @returns {Promise<bigint>} the vault's `totalShares()` at the block */
+  async function readTotalShares(vault, blockNumber) {
+    const c = await getClient();
+    return BigInt(await c.readContract({ address: vault, abi: VAULT_READ_ABI, functionName: 'totalShares', blockNumber: BigInt(blockNumber) }));
+  }
+
   /** @returns {Promise<string>} */
   async function creatorOf(vault) {
     const c = await getClient();
@@ -188,5 +194,5 @@ export function createChainReader({
     return keccak256(code ?? '0x');
   }
 
-  return { chainId, assertBoundToDeclaredChain, confirmedHead, blockInfo, lastBlockBefore, vaultEvents, readPosition, creatorOf, codeHash };
+  return { chainId, assertBoundToDeclaredChain, confirmedHead, blockInfo, lastBlockBefore, vaultEvents, readPosition, readTotalShares, creatorOf, codeHash };
 }
