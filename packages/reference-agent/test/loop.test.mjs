@@ -579,5 +579,5 @@ test('CHAIN-ONLY: the startup declaration promises no x402 payment even when a p
   agent.declareScope();
   assert.equal(agent.budget.enabled, false);
   assert.ok(!lines.some((l) => /WILL sign x402/.test(l)));
-  assert.ok(lines.some((l) => /WILL NOT sign any x402 payment/.test(l)));
+  assert.ok(lines.some((l) => /WILL NOT sign any x402 payment/.test(l) && /no API is contacted/.test(l)), 'the chain-only wording, not the generic no-payer one');
 });

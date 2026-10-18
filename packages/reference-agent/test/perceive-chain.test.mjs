@@ -168,6 +168,7 @@ test('readOperatorRecord: unattested, unknown and unreadable operators are a mis
   const client = createFakeChainClient({ vaults: vaultsN(1), operators: { 1: {} } });
   const reader = readerFor(client);
   assert.equal(await reader.readOperatorRecord(REGISTRY, 0), null, 'operatorId 0 is unattested');
+  assert.equal(client.count('leaderboardEntry'), 0, 'and costs no read');
   assert.equal(await reader.readOperatorRecord(REGISTRY, 9), null, 'an id with no operator address has no record');
   assert.equal(await reader.readOperatorRecord(null, 1), null);
   const failing = createFakeChainClient({ vaults: vaultsN(1), operators: { 1: {} }, failing: new Set(['leaderboardEntry']) });
@@ -335,9 +336,9 @@ test('perceive on the chain source: an operator with no realizations is listed a
 });
 
 test('perceive on the chain source: a vault pointing at a different registry is unattested, with the reason named', async () => {
-  // operatorOf is answered by the configured registry alone, and says operatorId 1 for this vault.
-  // The vault's own pointer is some other contract, so the attestation must not be believed.
-  const client = createFakeChainClient({ vaults: [{ address: addr(0x3000), operatorId: 1, registry: addr(0xdead) }], operators: { 1: { gain: 9n * USDC } } });
+  // The vault points at some other contract that claims operatorId 1 for it; the configured
+  // registry has never attested it. The pointer's claim must not be believed.
+  const client = createFakeChainClient({ vaults: [{ address: addr(0x3000), operatorId: 1, realOperatorId: 0, registry: addr(0xdead) }], operators: { 1: { gain: 9n * USDC } } });
   const { log } = quiet();
   const config = chainConfig();
   const world = await perceive({ client: noApi, chainReader: readerFor(client), budget: budget(), config, member: null, log, nowSec: NOW });
@@ -345,7 +346,20 @@ test('perceive on the chain source: a vault pointing at a different registry is 
   assert.equal(intents.length, 0);
   assert.equal(world.vaults[0].summary.attested, false);
   assert.equal(world.vaults[0].summary.operatorId, 0);
+  assert.equal(world.vaults[0].registryOperatorId, 0, 'the attestation is read from the configured registry, not from the vault pointer');
   assert.ok(world.gaps.some((g) => /reports operator registry 0x0+dead.*treated as unattested/.test(g)), world.gaps.join('; '));
+});
+
+test('perceive on the chain source makes no paid read even when payments are enabled', async () => {
+  const client = createFakeChainClient({ vaults: [{ address: addr(0x3000), operatorId: 1 }], operators: { 1: { gain: 1n } } });
+  const paid = [];
+  const spy = new Proxy({}, { get: (_t, k) => async () => { paid.push(String(k)); return { data: {} }; } });
+  const { log } = quiet();
+  const b = budget(true);
+  const world = await perceive({ client: spy, chainReader: readerFor(client), budget: b, config: chainConfig(), member: null, log, nowSec: NOW });
+  assert.deepEqual(paid, [], 'no API method is called, in particular getVault');
+  assert.equal(world.vaults.length, 1);
+  assert.equal(b.summary().paidReads, 0);
 });
 
 test('perceive with an API URL still uses the API (the chain source is not a replacement)', async () => {

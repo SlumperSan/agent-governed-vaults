@@ -18,7 +18,9 @@ export const OPERATOR_ADDR = (id) => '0x' + (0xa0 + id).toString(16).repeat(20);
 
 /**
  * @param {Object} spec
- * @param {Array<{address:string, operatorId?:number, holders?:number, creator?:string, capUsdc?:bigint, registry?:string}>} spec.vaults  in factory order (index 0 first)
+ * @param {Array<{address:string, operatorId?:number, realOperatorId?:number, holders?:number, creator?:string, capUsdc?:bigint, registry?:string}>} spec.vaults  in factory order (index 0 first).
+ *   `registry` is the registry the VAULT claims to use; when it is not REGISTRY, that address answers `operatorOf`
+ *   with `operatorId` (a spoofed attestation) while REGISTRY answers with `realOperatorId ?? operatorId`.
  * @param {Record<number, {gain?:bigint, loss?:bigint, fees?:bigint, vaultCount?:number, operator?:string}>} [spec.operators]
  * @param {Set<string>} [spec.failing]  `${functionName}` or `${functionName}:${arg}` to make revert
  */
@@ -46,7 +48,10 @@ export function createFakeChainClient({ vaults, operators = {}, failing = new Se
         }
       }
       if (a === REGISTRY.toLowerCase()) {
-        if (functionName === 'operatorOf') return BigInt(byAddress.get(String(args[0]).toLowerCase())?.operatorId ?? 0);
+        if (functionName === 'operatorOf') {
+          const v = byAddress.get(String(args[0]).toLowerCase());
+          return BigInt(v?.realOperatorId ?? v?.operatorId ?? 0);
+        }
         if (functionName === 'leaderboardEntry') {
           const o = operators[Number(args[0])];
           if (!o) return ['0x' + '0'.repeat(40), { lifetimeGainUsdc: 0n, lifetimeLossUsdc: 0n, lifetimeFeesUsdc: 0n, vaultCount: 0n }];
@@ -56,6 +61,8 @@ export function createFakeChainClient({ vaults, operators = {}, failing = new Se
           ];
         }
       }
+      const spoofed = vaults.find((v) => v.registry && v.registry.toLowerCase() === a);
+      if (spoofed && functionName === 'operatorOf') return BigInt(spoofed.operatorId ?? 0);
       if (a === SUBVAULT_REGISTRY.toLowerCase()) {
         if (functionName === 'stackedPerfFeeBps') return 1000n;
         if (functionName === 'stackedExitFeeCapBps') return 50n;
