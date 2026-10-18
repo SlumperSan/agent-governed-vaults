@@ -127,9 +127,10 @@ export const DEFAULT_CONFIG = Object.freeze({
      * the smaller provider limit (10,000); `maxPagesPerTick` caps the log requests one tick spends
      * across all vaults (the scan resumes where it stopped, so a vault created 4.2 million blocks ago
      * is read in a few ticks); `maxBlocks` is how far behind the head a scan will start, and anything
-     * older is a named gap; `pacingMs` spaces requests, because unspaced ones are rate limited.
+     * older is a named gap (about 117 days of Arc blocks at 0.51 s); `pacingMs` spaces requests,
+     * because unspaced ones are rate limited, and 1,000 ms is the pause arc.io sustained.
      */
-    logs: { pageBlocks: 10000, maxPagesPerTick: 120, maxBlocks: 10000000, pacingMs: 250 },
+    logs: { pageBlocks: 10000, maxPagesPerTick: 120, maxBlocks: 20000000, pacingMs: 1000 },
   },
 
   policy: {

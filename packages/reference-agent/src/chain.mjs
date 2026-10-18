@@ -69,6 +69,11 @@
  *                            block: `VaultCreated` and `VaultAttested` came back from block 22,443,745
  *                            on both, and `eth_getCode` answered at that block on both.
  *
+ * A burst is not a sustained rate, and the first measurement was a burst. Sustained, 160 sequential
+ * pages of 10,000 blocks on arc.io: at 250 ms spacing 44 were refused, the first at request 59; at
+ * 500 ms 43, the first at request 60; at 1,000 ms none. tenderly served a full 420-page scan at 250
+ * ms. So the default pause is 1,000 ms, and a rate limit widens it for the rest of the session.
+ *
  * So the page defaults to 10,000 blocks (the smaller limit), requests are spaced, a rate limit is
  * retried with backoff, and a range refusal halves the page. Whatever cannot be read is a NAMED GAP
  * on the returned record. It is never folded into "zero realizations": a pruning RPC answers `[]`
@@ -259,6 +264,9 @@ export function decodeProposal(raw) {
 
 export const ZERO_BYTES32 = '0x' + '0'.repeat(64);
 
+/** The longest pause a rate limit can teach the reader. */
+export const MAX_LEARNED_PACE_MS = 8000;
+
 /** The narrowest getLogs page the reader will fall back to when a provider refuses its range. */
 export const MIN_LOG_PAGE_BLOCKS = 500;
 
@@ -288,7 +296,7 @@ export function classifyRpcError(err) {
  * `VaultAttested` log for this vault, which the factory triggers inside the creating transaction, must
  * be in exactly that block. If it is not, the creation block is unconfirmed and the scan does not start.
  */
-async function findCreationBlock({ c, retrying, sleep, pacingMs, registry, vault, head }) {
+async function findCreationBlock({ c, retrying, sleep, paceMs, registry, vault, head }) {
   const codeAt = async (block) => {
     const code = await retrying(() => c.getCode({ address: vault, blockNumber: BigInt(block) }));
     return typeof code === 'string' && code.length > 2;
@@ -299,7 +307,7 @@ async function findCreationBlock({ c, retrying, sleep, pacingMs, registry, vault
     let hi = head;
     while (lo < hi) {
       const mid = Math.floor((lo + hi) / 2);
-      if (pacingMs > 0) await sleep(pacingMs);
+      if (paceMs() > 0) await sleep(paceMs());
       if (await codeAt(mid)) hi = mid;
       else lo = mid + 1;
     }
@@ -355,6 +363,8 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
    * @type {Map<string, {creationBlock:number|null, scanFrom:number, scannedTo:number, windowGap:string|null, pageBlocks:number, byMember:Map<string,{gain:bigint,loss:bigint,events:number}>, pages:number}>}
    */
   const realizationScans = new Map();
+  /** The pause a rate limit has taught this reader, ms. Only ever widened, and kept across calls. */
+  let learnedPaceMs = 0;
 
   async function getClient() {
     if (_client) return _client;
@@ -596,11 +606,11 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
      * @param {string} p.registry @param {string} p.vault @param {number} p.opId
      * @param {number} [p.pageBlocks]  blocks per getLogs request (the smaller measured limit is 10,000)
      * @param {number} [p.maxBlocks]   never start a scan more than this many blocks behind the head
-     * @param {number} [p.pacingMs]    pause between requests; unspaced requests are rate limited
+     * @param {number} [p.pacingMs]    least pause between requests; a rate limit widens it (to 8 s at most) for the session
      * @param {{pages:number}} [p.budget]  mutable: log requests left this tick, decremented here
      * @returns {Promise<{complete:boolean, gap:string|null, creationBlock:number|null, scannedFrom:number|null, scannedTo:number|null, head:number|null, pageBlocks:number, members:Array<{member:string,gain:bigint,loss:bigint,events:number}>}>}
      */
-    async readRealizations({ registry, vault, opId, pageBlocks = 10_000, maxBlocks = 10_000_000, pacingMs = 250, budget = { pages: Infinity } }) {
+    async readRealizations({ registry, vault, opId, pageBlocks = 10_000, maxBlocks = 20_000_000, pacingMs = 1000, budget = { pages: Infinity } }) {
       assert(Number.isInteger(pageBlocks) && pageBlocks > 0, 'chain: pageBlocks must be a positive integer');
       assert(Number.isInteger(opId) && opId > 0, 'chain: readRealizations needs an attested operator id');
       const reg = lc(registry);
@@ -629,13 +639,19 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
         };
       };
       const describe = (err) => String(err?.shortMessage ?? err?.message ?? err);
-      /** Retry a rate-limited call with backoff; anything else, or the last failure, is rethrown. */
+      const paceMs = () => Math.max(pacingMs, learnedPaceMs);
+      /**
+       * Retry a rate-limited call with backoff (1, 2, 4, 8 s); anything else, or the last failure, is
+       * rethrown. Each rate limit also doubles the pause between requests for the rest of the session,
+       * because a sustained scan that keeps hitting the limit only spends its retries.
+       */
       const retrying = async (call) => {
         for (let attempt = 0; ; attempt++) {
           try {
             return await call();
           } catch (err) {
-            if (classifyRpcError(err) !== 'throttled' || attempt >= 3) throw err;
+            if (classifyRpcError(err) !== 'throttled' || attempt >= 4) throw err;
+            learnedPaceMs = Math.min(MAX_LEARNED_PACE_MS, Math.max(paceMs(), 500) * 2);
             await sleep(1000 * 2 ** attempt);
           }
         }
@@ -646,7 +662,7 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
         head = Number(await retrying(() => c.getBlockNumber()));
 
         if (st.creationBlock === null) {
-          const found = await findCreationBlock({ c, retrying, sleep, pacingMs, registry: reg, vault: v, head });
+          const found = await findCreationBlock({ c, retrying, sleep, paceMs, registry: reg, vault: v, head });
           if (!found.ok) {
             gap = found.gap;
             return snapshot();
@@ -702,7 +718,7 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
             st.byMember.set(member, t);
           }
           st.scannedTo = to;
-          if (st.scannedTo < head && pacingMs > 0) await sleep(pacingMs);
+          if (st.scannedTo < head && paceMs() > 0) await sleep(paceMs());
         }
       } catch (err) {
         gap = `realization logs unreadable: ${describe(err)}`;

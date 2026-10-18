@@ -10,7 +10,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MIN_LOG_PAGE_BLOCKS, REALIZATION_EVENT, VAULT_ATTESTED_EVENT, classifyRpcError, createChainReader } from '../src/chain.mjs';
+import { MAX_LEARNED_PACE_MS, MIN_LOG_PAGE_BLOCKS, REALIZATION_EVENT, VAULT_ATTESTED_EVENT, classifyRpcError, createChainReader } from '../src/chain.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { createLogger } from '../src/log.mjs';
 import { createBudget } from '../src/budget.mjs';
@@ -341,4 +341,25 @@ test('the event fragments match OperatorRegistry in contracts/out: name, order, 
     assert.ok(real, `OperatorRegistry has no ${frag.name} event`);
     assert.equal(shape(frag), shape(real), `${frag.name} drifted from the compiled event`);
   }
+});
+
+test('a rate limit widens the pause between requests for the rest of the session, and the pause is capped', async () => {
+  const sleeps = [];
+  const reader = createChainReader({ client: clientFor({ throttleRealizations: 1 }), sleep: async (ms) => void sleeps.push(ms) });
+  const first = await read(reader);
+  assert.equal(first.complete, true, first.gap ?? '');
+  // pacingMs is 0 in read(): every pause after the first throttle was taught by the throttle.
+  const afterBackoff = sleeps.slice(sleeps.indexOf(1000) + 1);
+  assert.ok(afterBackoff.length >= 2, 'the scan paused between its remaining pages');
+  assert.ok(afterBackoff.every((ms) => ms === 1000), `pauses after one rate limit are 1,000 ms: ${afterBackoff}`);
+  // A reader that keeps being limited never waits longer than the cap: six limits in a row exhaust
+  // the first call (five tries) and hit the second again, which would double the pause past 8 s.
+  const capped = [];
+  const hammered = createChainReader({ client: clientFor({ throttleRealizations: 6 }), sleep: async (ms) => void capped.push(ms) });
+  const gapped = await read(hammered);
+  assert.equal(gapped.complete, false);
+  const resumed = await read(hammered);
+  assert.equal(resumed.complete, true, resumed.gap ?? '');
+  assert.ok(Math.max(...capped) <= MAX_LEARNED_PACE_MS, `no pause above ${MAX_LEARNED_PACE_MS} ms: ${capped}`);
+  assert.ok(capped.filter((ms) => ms === MAX_LEARNED_PACE_MS).length >= 2, 'repeated limits widened the pause to the cap and held it there');
 });

@@ -213,16 +213,21 @@ The log-range limits of the two Arc RPCs in the preset, measured on 2026-10-18 w
 | `https://arc.gateway.tenderly.co` | 100,000 blocks | `-32602 "query exceeds max block range 100000"` | `-32005 "rate limit exceeded"` |
 
 Both served history from the first vault's creation block. Back-to-back requests are rate limited on
-both whatever their span (40 unspaced pages of 10,000 blocks drew the error 31 times on the first and
-11 on the second; 40 spaced 250 ms apart drew it never). So the defaults page at the smaller limit,
-space requests, retry a rate limit with backoff, and narrow the page if a provider still refuses it.
+both whatever their span: 40 unspaced pages of 10,000 blocks drew the error 31 times on the first and
+11 on the second, and 40 spaced 250 ms apart drew it never. That was a burst, and a scan is not one.
+Sustained, 160 sequential pages on `rpc.mainnet.arc.io` drew it 44 times at 250 ms spacing (the first
+at request 59), 43 times at 500 ms (the first at request 60) and never at 1,000 ms; a full scan of the
+first vault, about 420 pages, was served at 250 ms by `arc.gateway.tenderly.co`. So the defaults page
+at the smaller limit and pause 1,000 ms between requests, a rate limit is retried with backoff (1, 2,
+4, then 8 seconds) and also doubles the pause for the rest of the session (to 8 seconds at most),
+and a page a provider still refuses is narrowed.
 
 | `discovery.logs` knob | Default | What it means |
 | --- | --- | --- |
 | `pageBlocks` | `10000` | Blocks per `eth_getLogs` request |
-| `maxPagesPerTick` | `120` | Log requests one tick may spend across all vaults. A scan resumes where it stopped, so the first vault (about 4.2 million blocks old when this was written) takes a few ticks to read, and the join is refused with the gap named until it is complete |
-| `maxBlocks` | `10000000` | Never start a scan further than this behind the head; an older vault is a permanent, named gap |
-| `pacingMs` | `250` | Pause between requests |
+| `maxPagesPerTick` | `120` | Log requests one tick may spend across all vaults. A scan resumes where it stopped, so the first vault (about 4.2 million blocks old on 2026-10-18, about 420 pages) takes four ticks or more to read at the default pause, and the join is refused with the gap named until it is complete |
+| `maxBlocks` | `20000000` | Never start a scan further than this behind the head; an older vault is a permanent, named gap. Arc made a block every 0.51 s between 2026-09-24 and 2026-10-18, so this is about 117 days, and the first Arc vault (created at block 22,443,745) passes it near 2027-01-19 |
+| `pacingMs` | `1000` | Least pause between requests; a rate limit widens it for the session |
 
 The scan lives in memory for the session, like the entry marks: a restarted agent reads it again.
 
