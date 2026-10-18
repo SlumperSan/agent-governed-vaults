@@ -513,6 +513,27 @@ contract RWAllyAgentRegistryTest is Test {
         assertEq(reg.tokenURI(id), "ipfs://a");
     }
 
+    /// An unset approval is stored as address(0), so without a guard the zero address would read as
+    /// approved for every identity that has no approval.
+    function test_isAuthorizedOrOwner_zeroAddressIsNeverAuthorized() public {
+        uint256 id = _alice();
+        assertEq(reg.getApproved(id), address(0), "precondition: no approval is set");
+        assertFalse(reg.isAuthorizedOrOwner(address(0), id), "address(0) must not read as approved");
+        // The real answers are unchanged.
+        assertTrue(reg.isAuthorizedOrOwner(alice, id));
+        assertFalse(reg.isAuthorizedOrOwner(bob, id));
+        vm.prank(alice);
+        reg.approve(bob, id);
+        assertTrue(reg.isAuthorizedOrOwner(bob, id));
+        assertFalse(reg.isAuthorizedOrOwner(address(0), id));
+        vm.prank(alice);
+        reg.setApprovalForAll(carol, true);
+        assertTrue(reg.isAuthorizedOrOwner(carol, id));
+        // A nonexistent id still reverts rather than answering false.
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721NonexistentToken.selector, 99));
+        reg.isAuthorizedOrOwner(address(0), 99);
+    }
+
     /// There is no function on the registry that removes an identity: the old `revoke` selector is
     /// gone, and so is every other selector that could burn a token.
     function test_noRemovalFunctionExists() public {
@@ -790,6 +811,39 @@ contract ShapedToken {
         if (s == Shape.ReturnsTwo) return abi.encode(uint256(2));
         if (s == Shape.ReturnsShort) return abi.encodePacked(bytes1(0x01));
         return abi.encode(true);
+    }
+}
+
+/// A USDC-shaped fee token with a blocklist: `transferFrom` reverts when the sender, the recipient or
+/// the caller is blocked, as Circle's USDC does. Balances and allowances are real.
+contract BlocklistToken {
+    uint8 public decimals = 6;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    mapping(address => bool) public isBlocklisted;
+
+    function setBlocked(address who, bool blocked) external {
+        isBlocklisted[who] = blocked;
+    }
+
+    function mint(address to, uint256 a) external {
+        balanceOf[to] += a;
+    }
+
+    function approve(address s, uint256 a) external returns (bool) {
+        allowance[msg.sender][s] = a;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(
+            !isBlocklisted[msg.sender] && !isBlocklisted[from] && !isBlocklisted[to], "Blocklistable: blocked"
+        );
+        require(allowance[from][msg.sender] >= amount && balanceOf[from] >= amount, "no funds");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
     }
 }
 
@@ -1214,6 +1268,151 @@ contract RWAllyAgentRegistryFeeTest is RegistryTestBase {
         vm.prank(r.INITIALIZER());
         vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.FeeTooHigh.selector, fee_));
         r.initialize(multisig, address(usdc), treasury, fee_, address(0), 0);
+    }
+
+    /// A call to an address without code succeeds and returns nothing, which the token-shape rules
+    /// accept as a paid fee. The registry re-checks that the fee token still has code when it pulls.
+    function test_register_feeTokenWithoutCodeAtPullTime_isRefused() public {
+        (RWAllyAgentRegistry r, ShapedToken t) = _shaped(ShapedToken.Shape.ReturnsNothing);
+        vm.prank(alice);
+        assertEq(r.register(), 0, "precondition: the token works while it has code");
+        vm.etch(address(t), "");
+        assertEq(address(t).code.length, 0);
+        vm.startPrank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        r.register();
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        r.register("ipfs://x");
+        vm.stopPrank();
+        assertEq(r.balanceOf(alice), 1, "no identity was minted without a fee");
+        // A zero fee never calls the token, so it is unaffected.
+        vm.prank(multisig);
+        r.setFee(0);
+        vm.prank(alice);
+        r.register();
+        assertEq(r.balanceOf(alice), 2);
+    }
+}
+
+// ───────────────────────────── a treasury the fee token refuses ──────────
+
+/// The owner cannot pause registration, but `setTreasury` accepts any nonzero address, so pointing it
+/// at an address the fee token refuses (a USDC-blocklisted address) makes every paid `register`
+/// revert. These tests pin that behaviour, what it leaves untouched, and how it ends.
+contract RWAllyAgentRegistryRefusedTreasuryTest is RegistryTestBase {
+    RWAllyAgentRegistry reg;
+    BlocklistToken token;
+    OutsideRegistryMock outside;
+    address blocked = makeAddr("blocklisted treasury");
+
+    function setUp() public {
+        vm.warp(1_800_000_000);
+        token = new BlocklistToken();
+        outside = new OutsideRegistryMock();
+        reg = new RWAllyAgentRegistry();
+        vm.prank(reg.INITIALIZER());
+        reg.initialize(multisig, address(token), treasury, USDC_1, address(outside), 100);
+        outside.set(5, bob, bob, address(0));
+        for (uint256 i; i < 3; ++i) {
+            address who = i == 0 ? alice : i == 1 ? bob : carol;
+            token.mint(who, 100 * USDC_1);
+            vm.prank(who);
+            token.approve(address(reg), type(uint256).max);
+        }
+        token.setBlocked(blocked, true);
+    }
+
+    function _refuseTreasury() internal {
+        vm.prank(multisig);
+        reg.setTreasury(blocked);
+        assertEq(reg.treasury(), blocked);
+    }
+
+    function _assertEveryRegisterOverloadReverts(address who) internal {
+        RWAllyAgentRegistry.MetadataEntry[] memory m = new RWAllyAgentRegistry.MetadataEntry[](0);
+        vm.startPrank(who);
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        reg.register();
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        reg.register("ipfs://x");
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        reg.register("ipfs://x", m);
+        vm.stopPrank();
+    }
+
+    function test_treasuryTheFeeTokenRefuses_haltsEveryPaidRegister_untilChangedAgain() public {
+        vm.prank(alice);
+        uint256 first = reg.register(); // works while the treasury is accepted
+        _refuseTreasury();
+
+        _assertEveryRegisterOverloadReverts(carol);
+        assertEq(reg.balanceOf(carol), 0, "nothing was minted");
+        assertEq(token.balanceOf(carol), 100 * USDC_1, "nothing was charged");
+
+        // The owner puts an accepted treasury back and paid registration resumes.
+        vm.prank(multisig);
+        reg.setTreasury(treasury);
+        vm.prank(carol);
+        assertEq(reg.register(), first + 1);
+        assertEq(token.balanceOf(treasury), 2 * USDC_1);
+    }
+
+    function test_refusedTreasury_leavesImportTransfersAndIdentityWritesUnaffected() public {
+        vm.prank(alice);
+        uint256 id = reg.register();
+        _refuseTreasury();
+        _assertEveryRegisterOverloadReverts(carol);
+
+        // Import is free and never touches the treasury.
+        vm.prank(bob);
+        uint256 imported = reg.importAgent(5, "ipfs://imported");
+        assertEq(reg.ownerOf(imported), bob);
+        assertEq(token.balanceOf(blocked), 0);
+
+        // Transfers, approvals, URI and metadata writes work.
+        vm.startPrank(alice);
+        reg.setAgentURI(id, "ipfs://new");
+        reg.setMetadata(id, "k", hex"01");
+        reg.approve(carol, id);
+        reg.transferFrom(alice, bob, id);
+        vm.stopPrank();
+        assertEq(reg.ownerOf(id), bob);
+        assertEq(reg.tokenURI(id), "ipfs://new");
+        // The fee token was never asked to move anything to the refused treasury.
+        assertEq(token.balanceOf(blocked), 0);
+    }
+
+    function test_refusedTreasury_aZeroFeeIsUnaffected() public {
+        _refuseTreasury();
+        vm.prank(multisig);
+        reg.setFee(0);
+        vm.prank(carol);
+        reg.register();
+        assertEq(reg.balanceOf(carol), 1);
+    }
+
+    function test_refusedTreasury_afterRenounce_paidRegistrationStaysHalted() public {
+        _refuseTreasury();
+        vm.startPrank(multisig);
+        reg.renounceOwnership();
+        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+        reg.setTreasury(treasury);
+        vm.stopPrank();
+        _assertEveryRegisterOverloadReverts(alice);
+        // Import still works after renounce, and so do the identities already held.
+        vm.prank(bob);
+        reg.importAgent(5, "");
+        assertEq(reg.balanceOf(bob), 1);
+    }
+
+    function test_refusedSender_isTheTokensBlocklistNotTheRegistrys() public {
+        token.setBlocked(carol, true);
+        vm.prank(carol);
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        reg.register();
+        vm.prank(alice);
+        reg.register(); // someone else is not affected
+        assertEq(reg.balanceOf(alice), 1);
     }
 }
 

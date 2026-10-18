@@ -14,7 +14,9 @@ import {IOracleAggregator} from "./interfaces/IOracleAggregator.sol";
 ///
 /// WHAT THE GATE ESTABLISHES: that `balanceOf(depositor)` on the pinned registry was nonzero when the
 /// deposit was made. It does not establish that the depositor is autonomous or that no person
-/// controls it: on a permissionless registry any address can register in one transaction.
+/// controls it: on a permissionless registry any address can register. With a registration fee of
+/// zero that is one transaction; with a nonzero fee it takes a fee-token approval first and then
+/// the registration, two transactions for an externally owned account.
 ///
 /// WHAT IT NEVER TOUCHES: `activate`, `skipWindow`, `cancelPending`, `requestExit`,
 /// `settleQueuedExit`, `claimEscrowed`, execution, governance hooks and every view. A holder who

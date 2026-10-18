@@ -36,8 +36,11 @@ interface IERC20Decimals {
 ///
 /// IMPORT WINDOW. For `IMPORT_WINDOW` (30 days) after `initialize`, a holder of an identity on the
 /// outside ERC-8004 registry named at initialization can claim one free identity here per outside
-/// id with `importAgent`, only for outside ids below `importIdCeiling` (so ids minted on the free
-/// outside registry after the ceiling was read do not qualify). The check is a gas-bounded
+/// id with `importAgent`, only for outside ids below `importIdCeiling`. The ceiling is a value
+/// snapshotted per chain at a block recorded before the deploy is announced
+/// (`contracts/config/agent-registry-create2.json`, `importCeilings`), so ids minted on the free
+/// outside registry after that block do not qualify; ids minted before it are not excluded. The
+/// check is a gas-bounded
 /// `ownerOf(externalAgentId)` static call that must return `msg.sender` exactly (never an agent
 /// wallet or an approved operator). After the window closes the outside registry is never called.
 /// Each import records its origin (chain id, outside registry, outside id), readable with
@@ -60,16 +63,33 @@ interface IERC20Decimals {
 /// complete list of what the owner address can do through this contract is:
 ///   1. `setFee(newFee)`: set the registration fee, at most `MAX_FEE`; emits `FeeChanged(old, new)`.
 ///   2. `setTreasury(newTreasury)`: set the address that receives fees, nonzero and not this
-///      contract; emits `TreasuryChanged(old, new)`.
+///      contract; emits `TreasuryChanged(old, new)`. The registry does not check that the fee
+///      token will accept a transfer to the new treasury (see the paragraph after this list).
 ///   3. `transferOwnership(newOwner)` then the nominee's `acceptOwnership()`: two-step handover. The
 ///      nomination can be replaced or cleared (nominate address(0)) by the owner before acceptance.
 ///   4. `renounceOwnership()`: set the owner to address(0), which freezes the fee and the treasury
 ///      at their current values for good.
 /// There is no function by which the owner removes, registers, transfers, approves, re-points or
-/// edits any identity, URI, metadata or agent wallet, pauses or gates registration, changes the
-/// name, symbol or version, upgrades or replaces code, or receives or moves any asset (the
-/// contract holds none and has no payable function). The owner's address is public in `owner()`;
-/// changing the multisig's signers or threshold happens inside the multisig and is invisible here.
+/// edits any identity, URI, metadata or agent wallet, changes the name, symbol or version,
+/// upgrades or replaces code, or receives or moves any asset (the contract holds none and has no
+/// payable function). The owner's address is public in `owner()`; changing the multisig's signers
+/// or threshold happens inside the multisig and is invisible here.
+///
+/// THE OWNER CANNOT PAUSE REGISTRATION DIRECTLY, BUT CAN HALT PAID REGISTRATION INDIRECTLY. There is
+/// no pause switch. However `setTreasury` accepts any nonzero address other than this contract, and
+/// `register` pulls the fee to the treasury with `transferFrom(msg.sender, treasury, fee)`. If the
+/// owner sets the treasury to an address the fee token refuses (for example an address on USDC's
+/// blocklist), every `register` overload reverts with `FeeNotPaid` while the fee is nonzero, until
+/// the treasury is changed again. `importAgent`, identity transfers, metadata and agent-wallet
+/// writes, and every vault exit do not touch the treasury and are unaffected; with a fee of zero
+/// the token is never called. After `renounceOwnership` the treasury is fixed for good: if it was
+/// refused at that moment, paid registration stays halted permanently, and if it was accepted it
+/// stays accepted unless the fee token later refuses it. The owner can also raise the fee to
+/// `MAX_FEE` in one transaction.
+///
+/// KNOWN LIMITATION, NO MAX-FEE ARGUMENT. `register` takes no maximum-fee argument, so a registrant
+/// is charged whatever the fee is when the transaction lands, up to `MAX_FEE` (10 USDC). Approve the
+/// exact current fee, not more, and read `fee()` immediately before registering.
 ///
 /// Ids start at 0 and increase by one, as in the reference registry.
 contract RWAllyAgentRegistry {
@@ -217,8 +237,9 @@ contract RWAllyAgentRegistry {
     /// @param outsideRegistry_ the outside ERC-8004 registry to import from, or zero for no import
     /// window; if nonzero it must have code.
     /// @param importIdCeiling_ outside ids strictly below this qualify for import. Typed by the
-    /// initializer: the outside registry has no next-id view, so it is read off-chain (see the
-    /// finding note); it must be zero when there is no outside registry.
+    /// initializer: the outside registry has no next-id view, so it is the value snapshotted for
+    /// this chain at the recorded block (`importCeilings` in the CREATE2 record), not a fresh read at
+    /// initialize time; it must be zero when there is no outside registry.
     function initialize(
         address owner_,
         address feeToken_,
@@ -380,10 +401,14 @@ contract RWAllyAgentRegistry {
 
     /// @dev Pulls `fee` from the registrant straight to the treasury. A token that returns nothing
     /// counts as success only if the call succeeded; a token that returns data must return true.
+    /// The fee token must still have code at pull time: a call to an address without code succeeds
+    /// with no returndata, which would otherwise read as a paid fee.
     function _collectFee() private {
         uint256 f = fee;
         if (f == 0) return;
-        (bool ok, uint256 word, uint256 retSize) = feeToken.boundedCall(
+        address token = feeToken;
+        require(token.code.length > 0, FeeNotPaid());
+        (bool ok, uint256 word, uint256 retSize) = token.boundedCall(
             abi.encodeWithSelector(0x23b872dd, msg.sender, treasury, f),
             gasleft() // transferFrom
         );
@@ -438,6 +463,10 @@ contract RWAllyAgentRegistry {
     /// @notice Designate `newWallet` as the agent wallet. `signature` is a 65-byte EIP-712 signature
     /// by `newWallet` (EOA) or an ERC-1271 signature accepted by it (contract wallet), over
     /// AgentWalletSet(agentId, newWallet, owner, deadline), valid for at most five minutes.
+    /// KNOWN LIMITATION: the ERC-1271 call to a contract `newWallet` has no gas allowance and no
+    /// returndata bound. The caller (an authorized holder, operator or approved address) chooses
+    /// `newWallet`, so a wallet that burns gas or returns a large payload costs only that caller;
+    /// the call is a static call and cannot change state, and no other party is affected.
     function setAgentWallet(uint256 agentId, address newWallet, uint256 deadline, bytes calldata signature)
         external
     {
@@ -477,8 +506,12 @@ contract RWAllyAgentRegistry {
         emit MetadataSet(agentId, "agentWallet", "agentWallet", "");
     }
 
+    /// @notice Whether `spender` is the holder, an operator of the holder, or approved for `agentId`.
+    /// Reverts for a nonexistent id. `address(0)` is never authorized: an unset approval is stored
+    /// as address(0), so without this guard the zero address would read as approved.
     function isAuthorizedOrOwner(address spender, uint256 agentId) external view returns (bool) {
-        return _isAuthorized(_requireOwned(agentId), spender, agentId);
+        address holder = _requireOwned(agentId);
+        return spender != address(0) && _isAuthorized(holder, spender, agentId);
     }
 
     function getVersion() external pure returns (string memory) {
