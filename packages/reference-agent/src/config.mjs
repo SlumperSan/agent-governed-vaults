@@ -19,6 +19,9 @@
  * `scripts/build-agent-preset.mjs`. Anything you set beside the preset wins over it, except a
  * `chainId` that disagrees with the preset, which is refused.
  *
+ * With a preset and no `api.baseUrl`, the vault list and the operator track record come from the
+ * chain alone (`discovery` below); setting `api.baseUrl` beside the preset keeps the API source.
+ *
  * Policy knobs are plain data so they can be diffed, committed, and reasoned about without
  * reading code. See docs/REFERENCE-AGENT.md for what each one means in protocol terms.
  */
@@ -101,6 +104,20 @@ export const DEFAULT_CONFIG = Object.freeze({
      */
     usdcName: 'USDC',
     usdcVersion: '2',
+  },
+
+  /**
+   * Chain-only discovery (no API). Used when `chain.preset` is set and `api.baseUrl` is not: the
+   * vault list is read from the factory. The factory's array only grows, so the agent looks at a
+   * window of the NEWEST `maxVaults` entries, `pageSize` reads at a time, and says when the window
+   * is smaller than the list. Each vault costs well over a dozen reads a tick, so keep `maxVaults`
+   * modest against `policy.timing.tickIntervalSec`. `include` names vaults that are always read, whether or
+   * not they fall in the window: put every vault the agent holds there once the factory outgrows it.
+   */
+  discovery: {
+    maxVaults: 25,
+    pageSize: 10,
+    include: [],
   },
 
   policy: {
@@ -231,7 +248,11 @@ export function loadConfig(overrides = {}) {
       throw new ConfigError(`chain.preset ${presetName} is chain ${fragment.chain.chainId}, but chain.chainId is ${chosen}; drop one of them`);
     base = merge(DEFAULT_CONFIG, fragment);
   }
-  const cfg = merge(base, overrides);
+  let cfg = merge(base, overrides);
+  // A preset with no API URL of its own means chain-only discovery. The localhost default belongs
+  // to the Base Sepolia demo; keeping it beside a preset would aim the agent at a port nobody opened.
+  if (presetName !== undefined && presetName !== null && !(/** @type {any} */ (overrides).api?.baseUrl))
+    cfg = { ...cfg, api: { ...cfg.api, baseUrl: null } };
   if (cfg.mode !== 'dry-run' && cfg.mode !== 'execute')
     throw new ConfigError(`mode must be 'dry-run' or 'execute', got ${JSON.stringify(cfg.mode)}`);
   // Validate the money knobs eagerly so a typo fails at startup, not at the first paid read.
@@ -240,6 +261,11 @@ export function loadConfig(overrides = {}) {
   toBaseUnits(cfg.policy.join.depositUsdc);
   toBaseUnits(cfg.policy.join.minFreeCapacityUsdc);
   toBaseUnits(cfg.policy.join.minOperatorNetRealizedUsdc);
+  for (const k of /** @type {const} */ (['maxVaults', 'pageSize']))
+    if (!Number.isInteger(cfg.discovery[k]) || cfg.discovery[k] < 1)
+      throw new ConfigError(`discovery.${k} must be a positive integer, got ${JSON.stringify(cfg.discovery[k])}`);
+  if (!Array.isArray(cfg.discovery.include) || !cfg.discovery.include.every((a) => /^0x[0-9a-fA-F]{40}$/.test(a)))
+    throw new ConfigError('discovery.include must be an array of 0x vault addresses');
   return cfg;
 }
 

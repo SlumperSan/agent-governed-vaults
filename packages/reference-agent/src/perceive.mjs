@@ -2,12 +2,22 @@
 /**
  * Perception — the metered API (via the agent SDK) plus direct chain reads, both under budget.
  *
- * Two sources, deliberately not interchangeable:
+ * Two sources, deliberately not interchangeable (and a third way to find the vault set, below):
  *
  *   the API   is an event projection: the vault set, member counts, attestation flags, and the
  *             operator leaderboard. It costs USDC per read, so every call goes through the budget.
  *   the chain is the only source of NAV, fee schedules, pending-deposit timers and governance
  *             deadlines — events do not carry them. Free, but only as available as the RPC.
+ *
+ * Where the vault set and the track record come from is chosen by `discoverySource(config)`:
+ *
+ *   'api'    the metered API's vault list and leaderboard (the default).
+ *   'chain'  a chain preset is set and no API URL is: the vault list is the factory's array and
+ *            each operator's record is the registry's `leaderboardEntry`, both read directly. No
+ *            API is contacted and no x402 payment is signed. Rows come out in the shape the policy
+ *            already consumes, so `decideJoin` and `decideExit` are unchanged. The chain's member
+ *            count is `holderCount`, which differs from the API's event-derived count, and its
+ *            record has no loss history beyond the registry's two accumulators.
  *
  * Degradation is a first-class outcome. An exhausted spend cap, an unreachable API, or a failing
  * RPC each produce a partial world with the gaps NAMED, and the policy layer decides what a
@@ -84,22 +94,85 @@ export async function paidRead({ call, price, label, budget, log }) {
 }
 
 /**
- * Full perception pass.
+ * Which source supplies the vault set and the track record. A preset is the proof that the
+ * contract addresses are known; an API URL is the operator saying to use the API instead.
+ * @param {any} config @returns {'api'|'chain'}
+ */
+export function discoverySource(config) {
+  return config.chain?.preset && !config.api?.baseUrl ? 'chain' : 'api';
+}
+
+/**
+ * Chain-only discovery: the vault list and the operator records, from the factory and the registry.
+ * Never throws; every unreadable piece becomes a named gap.
  *
  * @param {Object} p
- * @param {any} p.client            SDK client
- * @param {any} p.chainReader       createChainReader / createStubChainReader
- * @param {ReturnType<import('./budget.mjs').createBudget>} p.budget
- * @param {any} p.config
- * @param {string|null} p.member    the agent's on-chain address (null in a keyless dry run)
- * @param {any} p.log
- * @param {number} p.nowSec
- * @returns {Promise<any>} the world state the decide phase consumes
+ * @param {any} p.chainReader @param {any} p.config @param {any} p.log @param {string[]} p.gaps
+ * @returns {Promise<{vaults:any[], leaderboard:any[]}>}
  */
-export async function perceive({ client, chainReader, budget, config, member, log, nowSec }) {
-  /** @type {string[]} */
-  const gaps = [];
+export async function discoverFromChain({ chainReader, config, log, gaps }) {
+  const { factory, operatorRegistry } = config.chain;
+  if (!factory || !operatorRegistry) {
+    gaps.push('chain discovery needs chain.factory and chain.operatorRegistry (set chain.preset)');
+    return { vaults: [], leaderboard: [] };
+  }
+  const { maxVaults, pageSize, include } = config.discovery;
+  const listing = await chainReader.listFactoryVaults(factory, { maxVaults, pageSize });
+  if (listing.total === null) {
+    gaps.push('vault list unavailable (factory vaultCount unreadable)');
+    return { vaults: [], leaderboard: [] };
+  }
+  if (listing.failedIndexes.length)
+    gaps.push(`vault list incomplete: allVaults read failed at index ${listing.failedIndexes.join(', ')}`);
+  if (listing.truncated)
+    gaps.push(`vault list is a window: the newest ${maxVaults} of ${listing.total} factory vaults (discovery.maxVaults); list older ones to watch in discovery.include`);
+  log.perceive(`factory: ${listing.total} vault(s), reading ${listing.addresses.length}${listing.truncated ? ` (newest ${maxVaults})` : ''}`);
 
+  // Pinned vaults first, then the window, each address once.
+  const addresses = [...new Set([...include.map((a) => a.toLowerCase()), ...listing.addresses])];
+  const vaults = [];
+  for (const vault of addresses) {
+    const [identity, answered] = await Promise.all([
+      chainReader.readVaultIdentity(vault),
+      chainReader.readOperatorId(operatorRegistry, vault),
+    ]);
+    // The attestation is only worth something if it came from the registry this config trusts AND
+    // the vault is wired to that same registry. A vault pointing elsewhere (an address pinned in
+    // `include` can be anything) keeps whatever it claims to itself: it is unattested here.
+    const sameRegistry = identity.operatorRegistry === operatorRegistry.toLowerCase();
+    if (!sameRegistry) gaps.push(`${vault} reports operator registry ${identity.operatorRegistry ?? 'unreadable'}, not the configured one; treated as unattested`);
+    // An unreadable answer is 0, not a guess: 0 is the unattested value the join gate refuses.
+    const operatorId = sameRegistry ? answered ?? 0 : 0;
+    if (sameRegistry && answered === null) gaps.push(`operator id unreadable for ${vault}`);
+    vaults.push({
+      vault,
+      operatorId,
+      memberCount: identity.holderCount,
+      depth: 0, // the stacked-fee read below overrides this with SubVaultRegistry.depthOf
+      parent: null,
+      capacityCapUsdc: null, // filled from the per-vault read below
+      attested: operatorId !== 0,
+      creator: identity.creator,
+    });
+  }
+
+  const opIds = [...new Set(vaults.map((v) => v.operatorId).filter((id) => id > 0))];
+  const records = await Promise.all(opIds.map((id) => chainReader.readOperatorRecord(operatorRegistry, id)));
+  const leaderboard = records.filter(Boolean);
+  for (const id of opIds) if (!leaderboard.some((r) => r.operatorId === id)) gaps.push(`operator record unreadable for operatorId ${id}`);
+  log.perceive(`registry: ${leaderboard.length} operator record(s) for ${vaults.length} vault(s)`);
+  return { vaults, leaderboard };
+}
+
+/**
+ * API discovery: the free price and health probes, then the two paid reads (vault list and
+ * leaderboard). Never throws; every failure becomes a named gap.
+ *
+ * @param {Object} p
+ * @param {any} p.client @param {ReturnType<import('./budget.mjs').createBudget>} p.budget
+ * @param {any} p.config @param {any} p.log @param {string[]} p.gaps
+ */
+async function discoverFromApi({ client, budget, config, log, gaps }) {
   // ── free: discovery tells us the real price before we commit to paying it ──
   let discovery = null;
   try {
@@ -141,6 +214,39 @@ export async function perceive({ client, chainReader, budget, config, member, lo
   const leaderboard = lbRes.ok ? lbRes.data.leaderboard ?? [] : [];
   if (!lbRes.ok) gaps.push(`leaderboard unavailable (${lbRes.reason})`);
   else log.perceive(`leaderboard: ${leaderboard.length} operator(s) with realized history`);
+
+  return { discovery, health, price, vaults, leaderboard };
+}
+
+/**
+ * Full perception pass.
+ *
+ * @param {Object} p
+ * @param {any} p.client            SDK client
+ * @param {any} p.chainReader       createChainReader / createStubChainReader
+ * @param {ReturnType<import('./budget.mjs').createBudget>} p.budget
+ * @param {any} p.config
+ * @param {string|null} p.member    the agent's on-chain address (null in a keyless dry run)
+ * @param {any} p.log
+ * @param {number} p.nowSec
+ * @returns {Promise<any>} the world state the decide phase consumes
+ */
+export async function perceive({ client, chainReader, budget, config, member, log, nowSec }) {
+  /** @type {string[]} */
+  const gaps = [];
+
+  const source = discoverySource(config);
+  let discovery = null;
+  let health = null;
+  let price = 0n;
+  let vaults;
+  let leaderboard;
+  if (source === 'chain') {
+    log.perceive(`discovery: chain-only (factory ${config.chain.factory}); no API is contacted and no x402 payment is signed`);
+    ({ vaults, leaderboard } = await discoverFromChain({ chainReader, config, log, gaps }));
+  } else {
+    ({ discovery, health, price, vaults, leaderboard } = await discoverFromApi({ client, budget, config, log, gaps }));
+  }
   const operatorById = new Map(leaderboard.map((r) => [Number(r.operatorId), r]));
 
   // ── per-vault detail: paid API view + free chain reads ────────────────────
@@ -148,11 +254,16 @@ export async function perceive({ client, chainReader, budget, config, member, lo
   for (const v of vaults) {
     const address = String(v.vault).toLowerCase();
 
-    const detail = await paidRead({ call: () => client.getVault(address), price, label: `getVault ${address.slice(0, 10)}`, budget, log });
-    if (!detail.ok) gaps.push(`vault detail unavailable for ${address}`);
+    // The chain source has no API detail view; its facts come from the reads below.
+    const detail =
+      source === 'chain'
+        ? { ok: false, skipped: true, reason: 'chain-only discovery' }
+        : await paidRead({ call: () => client.getVault(address), price, label: `getVault ${address.slice(0, 10)}`, budget, log });
+    if (!detail.ok && source !== 'chain') gaps.push(`vault detail unavailable for ${address}`);
 
     const chain = await chainReader.readVault(address, member);
-    const registryOperatorId = await chainReader.readOperatorId(chain.operatorRegistry, address);
+    // The chain source trusts the registry the config names, not whichever one the vault points at.
+    const registryOperatorId = await chainReader.readOperatorId(source === 'chain' ? config.chain.operatorRegistry : chain.operatorRegistry, address);
     const fees = await chainReader.readStackedFees(config.chain.subvaultRegistry ?? null, address);
     const governance = await chainReader.readGovernance(address, member);
 
@@ -163,8 +274,12 @@ export async function perceive({ client, chainReader, budget, config, member, lo
       : null;
 
     const opId = registryOperatorId ?? Number(v.operatorId ?? 0);
+    // A chain row cannot know the cap until the vault itself is read; the policy reads it from
+    // `chain` regardless, so this only keeps the row's field honest.
+    const summary =
+      source === 'chain' ? { ...v, capacityCapUsdc: chain.capacityCapUsdc == null ? null : chain.capacityCapUsdc.toString() } : v;
     observed.push({
-      summary: v,
+      summary,
       detail: detail.ok ? detail.data : null,
       chain,
       fees,
@@ -191,6 +306,7 @@ export async function perceive({ client, chainReader, budget, config, member, lo
   return {
     nowSec,
     member,
+    source,
     discovery,
     health,
     priceBaseUnits: price,

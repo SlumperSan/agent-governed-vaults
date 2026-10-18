@@ -10,11 +10,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { createAgent } from '../src/agent.mjs';
-import { createStubChainReader } from '../src/chain.mjs';
+import { createChainReader, createStubChainReader } from '../src/chain.mjs';
 import { loadConfig, EXECUTE_ENV_VAR } from '../src/config.mjs';
 import { createLogger } from '../src/log.mjs';
 import { buildVote } from '../src/salt.mjs';
 import { plan } from '../src/plan.mjs';
+import { FACTORY, GOVERNANCE, REGISTRY, SUBVAULT_REGISTRY, addr, createFakeChainClient } from './fake-chain-client.mjs';
 
 const USDC = 10n ** 6n;
 const WAD = 10n ** 18n;
@@ -511,4 +512,72 @@ test('END TO END: with snapshot weight, the commit is cast', async () => {
   assert.ok(commit, 'drift of 3000bps is above the band, so the evaluator supports it');
   assert.equal(commit.call.functionName, 'commitVote');
   assert.equal(commit.sent, false, 'still a dry run');
+});
+
+// ── chain-only discovery: a full tick with no API configured ────────────────
+
+test('CHAIN-ONLY: a full tick with a preset and no API URL finds the vault on the chain and decides, with no HTTP at all', async () => {
+  const V_GOOD = addr(0x4001);
+  const V_NEW = addr(0x4002);
+  const fake = createFakeChainClient({
+    vaults: [
+      { address: V_GOOD, operatorId: 1, holders: 5, capUsdc: 500_000n * USDC },
+      { address: V_NEW, operatorId: 2, holders: 0 },
+    ],
+    operators: { 1: { gain: 8_000n * USDC, loss: 1_000n * USDC }, 2: {} },
+  });
+  const fetched = [];
+  const fetchImpl = async (url) => {
+    fetched.push(String(url));
+    throw new Error('no HTTP is allowed in chain-only discovery');
+  };
+  const { log, lines } = silentLogger();
+  const config = loadConfig({
+    chain: { preset: 'arc-mainnet', factory: FACTORY, operatorRegistry: REGISTRY, subvaultRegistry: SUBVAULT_REGISTRY, governance: GOVERNANCE },
+  });
+  assert.equal(config.api.baseUrl, null, 'no API URL anywhere in this config');
+  const agent = createAgent({
+    config,
+    chainReader: createChainReader({ client: fake, governance: GOVERNANCE }),
+    log,
+    fetchImpl,
+    nowSec: () => NOW,
+  });
+
+  const r = await agent.tick();
+
+  assert.deepEqual(fetched, [], 'not one HTTP request');
+  assert.equal(r.world.source, 'chain');
+  assert.equal(r.world.vaults.length, 2, 'both factory vaults are listed');
+  assert.deepEqual(r.world.gaps, []);
+  assert.equal(r.budget.spentUsdc, '0');
+  const joins = Object.fromEntries(r.decisions.filter((d) => d.kind === 'join').map((d) => [d.vault, d.join]));
+  assert.equal(joins[V_GOOD], true, 'an attested operator with a positive record is joined');
+  assert.equal(joins[V_NEW], false, 'an operator with no realizations is refused by the existing gate');
+  const deposit = r.intents.find((i) => i.kind === 'deposit');
+  assert.equal(deposit.vault, V_GOOD);
+  assert.equal(deposit.args.amountUsdc, 100n * USDC, 'the preset deposit, which meets the vault minimum');
+  assert.equal(r.results.every((x) => x.sent === false && x.dryRun === true), true, 'dry-run sends nothing');
+  assert.ok(lines.some((l) => l.includes('discovery: chain-only')));
+  assert.ok(lines.some((l) => l.includes('no API is contacted')), 'the startup declaration says no API is read');
+});
+
+test('CHAIN-ONLY: the startup declaration promises no x402 payment even when a payer is injected', async () => {
+  const acct = privateKeyToAccount(generatePrivateKey());
+  const { log, lines } = silentLogger();
+  const config = loadConfig({ chain: { preset: 'arc-mainnet', factory: FACTORY, operatorRegistry: REGISTRY } });
+  const agent = createAgent({
+    config,
+    payer: payerFor(acct),
+    chainReader: createChainReader({ client: createFakeChainClient({ vaults: [] }) }),
+    log,
+    fetchImpl: async () => {
+      throw new Error('no HTTP');
+    },
+    nowSec: () => NOW,
+  });
+  agent.declareScope();
+  assert.equal(agent.budget.enabled, false);
+  assert.ok(!lines.some((l) => /WILL sign x402/.test(l)));
+  assert.ok(lines.some((l) => /WILL NOT sign any x402 payment/.test(l)));
 });
