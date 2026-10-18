@@ -65,15 +65,20 @@ async function main() {
     // and each vault's totalShares (assertSameChainView). With one endpoint the run is single-source.
     const [rpcUrl, crossUrl] = o.rpc ? [o.rpc, o.rpc2 ?? cfg.rpcs.find((r) => r !== o.rpc)] : [cfg.rpcs[0], o.rpc2 ?? cfg.rpcs[1]];
     if (!rpcUrl) throw new Error(`no RPC endpoint recorded for ${key}; pass --rpc`);
-    const make = (url) => createChainReader({
-      rpcUrl: url,
+    const readerOpts = {
       chainId: cfg.chainId,
       ...(o.window ? { windowBlocks: Number(o.window) } : {}),
       ...(o.confirmations ? { confirmations: Number(o.confirmations) } : {}),
-    });
-    const reader = make(rpcUrl);
+    };
+    const reader = createChainReader({ rpcUrl, ...readerOpts });
     await reader.assertBoundToDeclaredChain();
-    chains.push({ chainId: cfg.chainId, name: cfg.name, vaults, deployers: cfg.deployer ? [cfg.deployer] : [], reader, crossReader: crossUrl ? make(crossUrl) : null });
+    let cross = null;
+    if (crossUrl) {
+      const crossReader = createChainReader({ rpcUrl: crossUrl, ...readerOpts });
+      await crossReader.assertBoundToDeclaredChain();
+      cross = crossReader;
+    }
+    chains.push({ chainId: cfg.chainId, name: cfg.name, vaults, deployers: cfg.deployer ? [cfg.deployer] : [], reader, crossReader: cross });
   }
 
   const codeCommit = o['code-commit'] ?? execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
