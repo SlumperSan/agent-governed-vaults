@@ -34,7 +34,8 @@ PRICE_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e PRICE_PAYTO=0x00000000000
 
 | Flag | Meaning |
 | --- | --- |
-| `--api=<url>` | metered API base URL |
+| `--api=<url>` | metered API base URL. With `--preset` and no `--api` there is no API: see [chain-only discovery](#chain-only-discovery) |
+| `--preset=<name>` | fill the chain block (chain id, addresses, RPC list, USDC domain, default deposit) from `presets/<name>.json`; `arc-mainnet` ships. Explicit flags beside it win, except a `--chain-id` that disagrees with the preset, which is refused |
 | `--rpc=<url>` | JSON-RPC for chain reads. **Omitted ⇒ a stub reader**, and every value it produces is marked `[stub-chain]` |
 | `--governance=<addr>` `--subvault-registry=<addr>` `--usdc=<addr>` `--chain-id=<n>` | on-chain wiring |
 | `--demo-wallet` | generate a throwaway in-memory key used as the x402 payer *and* the agent's identity. Testnet chain ids only. Does **not** enable execute mode |
@@ -77,6 +78,25 @@ The two data sources are not interchangeable. The API is an event projection; it
 books, member counts and the leaderboard. Events carry no post-swap balances and no oracle prices,
 so NAV, fee schedules, pending-deposit timers, and governance deadlines are **only** knowable by
 calling the contracts.
+
+### Chain-only discovery
+
+With `--preset` and no `--api` the agent reads no API. The vault list is `VaultFactory.vaultCount`
+and `allVaults(i)`, each vault's operator is `OperatorRegistry.operatorOf`, and the operator's record
+is `OperatorRegistry.leaderboardEntry`. They are turned into the same rows the policy already reads,
+and no x402 payment is signed. Two things differ from the API source:
+
+- `memberCount` is `VaultCore.holderCount`, the addresses holding shares, creator included. The
+  API counts members from events.
+- The list is a window. The factory's array only grows, so the agent reads the newest
+  `discovery.maxVaults` entries (default 25), `discovery.pageSize` at a time (default 10), and
+  reports a window smaller than the factory as a perception gap. A vault you hold that falls out of
+  the window must be named in `discovery.include`, which is always read, or the agent stops seeing
+  it.
+
+The join gates are unchanged. A vault whose operator has no realized gain or loss is listed and then
+refused by `requireProvenOperator`, which is what a new vault looks like. A vault whose own
+`operatorRegistry` is not the configured one is treated as unattested.
 
 Every policy verdict is returned with its full check list, and the log prints it:
 
