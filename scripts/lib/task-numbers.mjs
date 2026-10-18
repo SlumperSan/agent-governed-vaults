@@ -21,10 +21,12 @@
  * atomic; see withDirLock). A file records its owner (pid, host, a random token). The lock passes
  * to a new generation only when the holder's owner process is gone, or when it is older than
  * LIVE_OWNER_STALE_MS (ten minutes, for a recycled pid or an owner on another machine); a file with
- * no readable owner (a crash between create and write) is passed over after STALE_LOCK_MS. A mere
+ * no readable owner (a file made by an older version, or by the no-hard-link fallback) is passed over
+ * after STALE_LOCK_MS. A mere
  * 30 s mtime is not enough on its own: it let a second process into the section while the first
- * still held it. Nothing ever deletes a lock file it did not create, so a takeover is a single
- * atomic `wx` and no stale judgement can destroy a live lock. Unnumbered files are re-read inside
+ * still held it. Nothing ever deletes a lock file, and a lock file is published already complete (see
+ * createExclusive), so a takeover is a single atomic create and no stale judgement can destroy a live
+ * lock. Unnumbered files are re-read inside
  * the lock, immediately before each write, so a number is never given to a file another process
  * has already numbered.
  *
@@ -39,7 +41,7 @@
  */
 
 import {
-  readdirSync, readFileSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, statSync, writeSync,
+  readdirSync, readFileSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, statSync, writeSync, linkSync, existsSync,
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
@@ -148,11 +150,13 @@ function lockBreakable(owner, ageMs) {
  * a number or the mark must rise (see assignNumbers), which is human-paced.
  *
  * RESIDUAL, STATED: the judgement itself can be wrong in one case, an owner that is alive yet far
- * past LIVE_OWNER_STALE_MS (ten minutes), or an owner file whose text was never written. The wait
+ * past LIVE_OWNER_STALE_MS (ten minutes), or, only on a volume without hard links, an owner file whose text was never written. The wait
  * for a lock is capped at LOCK_TIMEOUT_MS (ten seconds), so a waiter gives up long before it would
  * judge a live section stale.
  */
 const LOCK_PREFIX = `${LOCK_FILE}.`;
+/** Private temp names for createExclusive. Deliberately NOT under LOCK_PREFIX, so no reader sees one as a generation. */
+const TMP_PREFIX = '_task-numbers.tmp-';
 const RELEASED_TEXT = JSON.stringify({ released: true });
 
 /** Highest generation number among the lock files in `dir`, or 0 when there are none. */
@@ -166,8 +170,45 @@ function topLockGeneration(dir) {
   return top;
 }
 
-/** Create `file` exclusively with `text`. False when the name already exists. */
+/**
+ * Create `file` exclusively with `text`, so that no observer ever sees it empty. False when the name
+ * already exists.
+ *
+ * WHY NOT `wx` THEN WRITE. That is two syscalls, and a SIGKILL between them leaves an EMPTY
+ * generation file at the top. An ownerless file is breakable only after STALE_LOCK_MS (30 s) while a
+ * waiter gives up at LOCK_TIMEOUT_MS (10 s), so every waiter would fail until it aged out (measured
+ * by the round-3 review: 5 failed workers in 150 SIGKILL rounds at 8 processes).
+ *
+ * HOW. The full text is written to a private temp name that no reader treats as a lock (it does not
+ * start with the generation prefix), then hard-linked into place. `link` is atomic and fails with
+ * EEXIST when the name is taken, exactly like `wx`, and the file appears already complete. A kill
+ * before the link leaves an orphan temp file and no generation file at all. The temp name is unique
+ * to this call (pid plus random), so removing it afterwards can never touch a lock file; no
+ * generation file is ever deleted, renamed or overwritten.
+ *
+ * WINDOWS. NTFS supports hard links. On a volume that does not (or when `link` fails for any
+ * reason other than EEXIST) the name is checked: if it exists the create lost the race (EPERM can
+ * also mean delete-pending, as in the `wx` case below), otherwise this falls back to the old
+ * `wx` then write, which keeps the lock working at the cost of the narrow empty-file window.
+ */
 function createExclusive(file, text) {
+  const tmp = path.join(path.dirname(file), `${TMP_PREFIX}${process.pid}-${randomBytes(6).toString('hex')}`);
+  try {
+    writeFileSync(tmp, text, 'utf8');
+    try {
+      linkSync(tmp, file);
+      return true;
+    } catch (e) {
+      if (e.code === 'EEXIST' || existsSync(file)) return false;
+      // link unsupported here: fall through to wx
+    }
+  } finally {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* never created, or already gone: it is only our private temp name */
+    }
+  }
   let fd;
   try {
     fd = openSync(file, 'wx');
