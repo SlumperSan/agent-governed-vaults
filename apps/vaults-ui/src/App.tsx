@@ -9,6 +9,7 @@ import { VaultList } from './components/VaultList';
 import { WalletConnect } from './components/WalletConnect';
 import { organicMemberBound, SEEDED_ADDRESSES, shortAddress, wadExact } from './lib/atlas';
 import { useLiveVaults } from './lib/live-vaults';
+import { depositsClosedNotice } from './lib/vault-policy';
 import { WalletProvider } from './lib/wallet';
 
 /**
@@ -148,6 +149,11 @@ function AppShell() {
                       : null}
                   </dd>
                 </dl>
+                {depositsClosedNotice(vault.address) !== null ? (
+                  // Owner decision 2026-10-18 (lib/vault-policy.ts): said once here, at the top of the
+                  // vault, because the Act panel with the same line sits far below the fold.
+                  <p className="note tag-warn" data-testid="deposits-closed-summary">{depositsClosedNotice(vault.address)}</p>
+                ) : null}
                 <p className="note">
                   Operatorship confers no authority to vote, execute, pause, reprice, or move member
                   funds.
