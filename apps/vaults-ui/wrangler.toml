@@ -9,11 +9,10 @@
 # hostname to configure.
 #
 # WHAT THAT MEANS ON THE DAY, stated because it is the hazard this repository has
-# already hit once with the marketing site: THE NEXT `pages deploy` AGAINST THIS
-# PROJECT REPLACES THE LIVE VAULT EXPLORER. That is the intended end state and it
-# must not happen by accident. The DNS is already pointed; nothing needs to
+# already hit once with the marketing site: EVERY `pages deploy` AGAINST THIS
+# PROJECT IS LIVE ON app.rwally.com IMMEDIATELY. The cutover from the retired
+# explorer (apps/app) happened in #396. The DNS is pointed; nothing needs to
 # change there, which is precisely why an accidental deploy is live immediately.
-# The cutover is the owner's call, not a deployer's.
 #
 # `functions/` NOW EXISTS HERE, DELIBERATELY, AS OF CARD 212 — this comment used to say one must
 # not appear "casually", and this is the deliberate exception it was warning about, made in the

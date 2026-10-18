@@ -97,9 +97,9 @@ command lives with the owner rather than on this page for the reason above: the 
 See [`apps/vaults-ui/wrangler.toml`](apps/vaults-ui/wrangler.toml)'s own header, which is the source
 for every line above.
 
-### `apps/app/` — retiring, do not deploy
+### `apps/app/` — retired, do not deploy
 
-Still live at `app.rwally.com` until the cutover, and **reading chain 4663, which the protocol is no
+No longer served: the cutover happened ([#396](https://github.com/SlumperSan/agent-governed-vaults/pull/396)), and `app.rwally.com` serves `apps/vaults-ui/`. It **reads chain 4663, which the protocol is no
 longer on** — its live reads were never re-pointed at Arc and, per the decision above, will not be.
 Deploying it is the revert described above, not a rollback anyone has asked for. If a genuine
 rollback is ever needed it is the owner's decision, made with the knowledge that it restores a
