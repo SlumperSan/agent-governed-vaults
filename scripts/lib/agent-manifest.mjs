@@ -224,7 +224,8 @@ export function buildManifest({ record, config, observationWindowSeconds }) {
       'Live on Arc by owner decision of 2026-09-23. The soak drills (gate 3) and the canary (gate 6) were not re-run on the Arc source commit. The contracts are immutable.',
       'The external audit is an owner attestation for tag v0.4.0-audit that cannot be checked from this repository. The Arc source differs from that tag in 21 contract source files that no external audit covers.',
       'One High finding stays open at the launch configuration: the purchasable member count below five members. The per-gate record is docs/LAUNCH-READINESS.md.',
-      'Sub-vaults are disabled on this factory. The oracle reads one Chainlink feed for cirBTC, and Arc has no sequencer uptime feed, so that check is skipped. A stale oracle freezes everything, including exits.',
+      'Sub-vaults are disabled on this factory. The oracle reads one Chainlink feed for cirBTC, and Arc has no sequencer uptime feed, so that check is skipped.',
+      'If the cirBTC feed is stale or fails while the vault holds cirBTC, every call that values the vault reverts, with no fallback source: deposit, activate, skipWindow on a pending deposit, requestExit when it settles at once, settleQueuedExit and a rebalance. Exits are in that list, so shares cannot be redeemed until the feed recovers. The exception is cancelPending(), which reads no oracle: a deposit that has not been activated can still be reclaimed during a freeze.',
       'Total loss is possible. This is not an offer. Read docs/DISCLAIMERS.md before sending funds.',
     ],
     docs: {

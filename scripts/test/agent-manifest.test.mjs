@@ -15,6 +15,20 @@
  *      in either operand order or through a local, tx.origin, a role helper, a modifier, or an
  *      access-shaped custom error. The checker is itself probed on fixtures, so a checker that stops
  *      checking goes red.
+ *      KNOWN BLIND SPOTS of the row checker (PR 455 review round 2, advisory A). It does NOT detect
+ *      these gate forms, so a row tagged `anyone` that hides one stays green. Read the Solidity when
+ *      you add or change a row; do not take a green checker as proof of "anyone".
+ *        - a mapping lookup on the caller:      require(isKeeper[msg.sender], Unlisted());
+ *        - a boolean helper fed the caller:     require(_ok(msg.sender), Blocked());
+ *        - a mapping compared to false:         require(banned[msg.sender] == false, Banned());
+ *        - the caller passed to a helper that compares its own parameters:
+ *                                               _chk(msg.sender, keeper);   // require(a == b, Denied())
+ *      The last is the shape of `_checkCreatorGate`, which is caught only because CreatorStakeGate
+ *      is registered in GATES. Detection was not built: a rule broad enough to catch these (any
+ *      require or if-revert in the reach that touches msg.sender or a parameter fed from it) also
+ *      fires on legitimate caller-keyed state checks (`!skipOptIn[msg.sender]`,
+ *      `queuedExitShares[msg.sender] == 0`, `sharesOf[msg.sender] >= shares`) and needs an
+ *      allowlist of those, which is more than a small change and is its own reviewed work.
  *   4. POINTERS. Both `llms.txt` copies point at the manifest and name a file that exists.
  *
  * The prose in the manifest is walked by `claims-lede-truth` (it takes every `.json`), so wording
@@ -431,6 +445,63 @@ test('the observation-window note says shares come from activate(member) or skip
   assert.match(FUNCTION_TABLE.find((r) => r.function === 'deposit(uint256)').whoMayCall, /has not called skipWindow\(\)/);
   assert.doesNotMatch(note, /until this window ends/, 'the pre-fix wording implied the window ending grants shares');
   assert.match(FUNCTION_TABLE.find((r) => r.function === 'deposit(uint256)').whoMayCall, /activate\(member\)/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// PR 455 review round 2, advisory B: an oracle freeze is not "everything".
+// ---------------------------------------------------------------------------------------------
+
+/** Every string in the manifest that speaks of a freeze or of "everything", with its JSON path. */
+const freezeStrings = (m) => {
+  const out = [];
+  (function walk(v, p) {
+    if (typeof v === 'string') {
+      if (/freez|frozen|everything/i.test(v)) out.push([p, v]);
+    } else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => walk(x, `${p}.${k}`));
+  })(m, '$');
+  return out;
+};
+
+/** Problems with the freeze wording: it must name cancelPending as the exception and must not call a freeze total. */
+export const freezeProblems = (strings) => {
+  const problems = [];
+  if (strings.length === 0) problems.push('the manifest says nothing about an oracle freeze');
+  for (const [p, v] of strings) {
+    if (!/cancelPending/.test(v)) problems.push(`${p} speaks of a freeze without naming cancelPending as the exception: ${v}`);
+    if (/freezes everything/i.test(v)) problems.push(`${p} says a freeze takes everything`);
+  }
+  return problems;
+};
+
+const ORACLE_READ = /\b(navWad|navPerShareWad|_assetValueWad|_valueWad|_childValueWad|_fullNavWad|priceWad)\s*\(|\boracle\./;
+
+test('the freeze wording matches VaultCore: valuing calls revert on a stale oracle, cancelPending reads no oracle', () => {
+  const fns = fnsWithModifiers(read('contracts/src/VaultCore.sol'));
+  const reads = (n) => ORACLE_READ.test(reach(n, fns).text);
+  // The calls the manifest lists as reverting each reach an oracle read (navWad, or a priced slice).
+  for (const n of ['deposit', 'activate', 'skipWindow', 'requestExit', 'settleQueuedExit', 'executeRebalance']) {
+    assert.ok(reads(n), `VaultCore.${n} no longer reaches an oracle read, so the manifest's freeze list is wrong`);
+  }
+  // The exception it names: no oracle read anywhere in cancelPending's reach.
+  assert.equal(reads('cancelPending'), false, 'cancelPending reaches an oracle read, so it is not exempt from a freeze');
+  assert.equal(reads('claimEscrowed'), false);
+  // The oracle itself fails closed with StaleOracle on a stale or broken feed.
+  assert.match(read('contracts/src/oracle/ChainlinkOracle.sol'), /revert StaleOracle\(asset\)/);
+  const mentioned = freezeStrings(manifest);
+  assert.deepEqual(freezeProblems(mentioned), []);
+  const text = mentioned.map(([, v]) => v).join(' ');
+  for (const n of ['deposit', 'activate', 'skipWindow', 'requestExit', 'settleQueuedExit', 'rebalance', 'cancelPending()']) {
+    assert.ok(text.includes(n), `the freeze wording must name ${n}`);
+  }
+  assert.match(text, /reads no oracle/);
+});
+
+test('probe: the freeze checker reddens on the shipped wording and on a freeze note that drops cancelPending', () => {
+  const shipped = [['$.launchStatus[3]', 'A stale oracle freezes everything, including exits.']];
+  assert.ok(freezeProblems(shipped).length >= 2);
+  assert.notDeepEqual(freezeProblems([['$.x', 'If the feed is stale, every call that values the vault reverts, including exits.']]), []);
+  assert.deepEqual(freezeProblems([['$.x', 'During a freeze every valuing call reverts. The exception is cancelPending(), which reads no oracle.']]), []);
+  assert.notDeepEqual(freezeProblems([]), [], 'a manifest that says nothing about a freeze is also red');
 });
 
 test('the trust text says eth_getCode proves code, not identity, and that a forged manifest passes the reads', () => {
