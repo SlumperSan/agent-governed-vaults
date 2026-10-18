@@ -208,15 +208,20 @@ function shareBook(state, vault) {
 }
 
 function creditShares(state, vault, member, delta) {
+  const prev = shareBook(state, vault).get(member) ?? 0n;
+  setShares(state, vault, member, prev + delta);
+}
+
+/** Set a member's share balance to an absolute value; the vault total moves by the difference. */
+function setShares(state, vault, member, next) {
   const v = ensureVault(state, vault);
   const book = shareBook(state, vault);
   const prev = book.get(member) ?? 0n;
-  const next = prev + delta;
   if (prev === 0n && next > 0n) v.memberCount += 1;
   if (prev > 0n && next <= 0n) v.memberCount -= 1;
   if (next <= 0n) book.delete(member);
   else book.set(member, next);
-  v.totalShares += delta;
+  v.totalShares += next - prev;
 }
 
 /**
@@ -288,7 +293,14 @@ export function apply(state, e) {
     case 'DepositActivated': {
       const v = ensureVault(state, e.vault);
       if (v.pendingCount > 0) v.pendingCount -= 1; // window path; repeat deposits had none
-      creditShares(state, e.vault, a.member, big(a.sharesMinted));
+      // The event's third field is NOT a delta. VaultCore emits it as `sharesOf[member]`, the
+      // member's balance AFTER the mint (VaultCore.sol:427 on the immediate path, :478 in
+      // _activatePending), although the Solidity parameter is named `sharesMinted`. The contract
+      // is deployed and immutable, so the consumer reads it as an absolute balance: summing it as
+      // a delta double-counts every member's second activation.
+      const after = big(a.sharesMinted);
+      if (after <= 0n) throw new Error('DepositActivated carried a zero post-mint balance for ' + a.member);
+      setShares(state, e.vault, a.member, after);
       // idle tracking is approximate off events; authoritative NAV comes from a chain read.
       break;
     }

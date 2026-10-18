@@ -408,3 +408,34 @@ test('an ExitQueued with no amount records the lock as unknown, never as zero', 
   assert.equal(s.vaults.get(V).modeFSettledCount, 1, 'an unknown size is still a Mode-F settlement');
   assert.equal(memberPosition(s, V, A).votingEligibleNote, null, 'and the lock is gone from the report');
 });
+
+test('DepositActivated carries the post-mint balance: a second activation sets, never adds', () => {
+  // VaultCore emits sharesOf[member] (VaultCore.sol:427, :478), not the shares minted. Member A
+  // activates for 100 shares, then deposits again and mints 40 more: the second event carries 140.
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, amountUsdc: 100n, sharesMinted: 100n }),
+    ev('DepositActivated', 1, 1, V, { member: B, amountUsdc: 50n, sharesMinted: 50n }),
+    ev('DepositActivated', 2, 0, V, { member: A, amountUsdc: 40n, sharesMinted: 140n }),
+  ]);
+  const v = vaultView(s, V);
+  assert.equal(s.shares.get(V).get(A), 140n);
+  assert.equal(s.shares.get(V).get(B), 50n);
+  assert.equal(v.totalShares, 190n);
+  assert.equal(v.memberCount, 2);
+  // An exit after the second activation burns from the corrected balance.
+  apply(s, ev('ExitSettled', 3, 0, V, { member: A, sharesBurned: 140n }));
+  assert.equal(vaultView(s, V).totalShares, 50n);
+  assert.equal(vaultView(s, V).memberCount, 1);
+  assert.equal(s.shares.get(V).has(A), false);
+});
+
+test('DepositActivated after a partial exit sets the new balance, not the old plus it', () => {
+  const s = applyAll([
+    ev('DepositActivated', 1, 0, V, { member: A, amountUsdc: 100n, sharesMinted: 100n }),
+    ev('ExitSettled', 2, 0, V, { member: A, sharesBurned: 30n }),
+    ev('DepositActivated', 3, 0, V, { member: A, amountUsdc: 10n, sharesMinted: 80n }),
+  ]);
+  assert.equal(s.shares.get(V).get(A), 80n);
+  assert.equal(vaultView(s, V).totalShares, 80n);
+  assert.equal(vaultView(s, V).memberCount, 1);
+});
