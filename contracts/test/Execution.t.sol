@@ -13,6 +13,7 @@ import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, StubFeeEngine, StubRegistry} from "./mocks/Mocks.sol";
+import {VaultHook} from "./mocks/VaultHook.sol";
 
 /// @dev The per-proposal slippage bound these tests execute under. It rides in the payload that
 /// `actionHash` commits to, so it is fixed at commit time rather than read from a constant.
@@ -85,7 +86,7 @@ contract MockChainlinkFeed is IAggregatorV3 {
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
-contract ExecutionTest is Test {
+contract ExecutionTest is Test, VaultHook {
     uint256 constant USDC_1 = 1e6;
 
     MockERC20 usdc;
@@ -145,7 +146,7 @@ contract ExecutionTest is Test {
         address[] memory adapters = new address[](1);
         adapters[0] = address(adapter);
 
-        vault = new VaultCore(
+        vault = _newVault(
             address(usdc),
             basket,
             creator,
