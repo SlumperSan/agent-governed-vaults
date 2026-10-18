@@ -140,7 +140,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // The banned-shape regexes below are factored into `scripts/lib/claims-shapes.mjs` so
@@ -183,6 +183,12 @@ const SKIP_DIRS = new Set([
   'broadcast',
   'coverage',
   'artifacts',
+  // Transient build output. `apps/vaults-ui` tests create and delete directories under `dist-ssr/`
+  // (the ui-smoke SSR bundle, the config-doc-truth probe) WHILE this file runs, because
+  // `node --test` runs files concurrently. A walk that lists one and reads it after the owner
+  // deleted it dies with ENOENT. See the `dist-ssr` paragraph above the coverage test for why
+  // skipping it loses no prose coverage.
+  'dist-ssr',
 ]);
 
 // The surfaces a reader actually reads. Extensions, not a file list (see the header).
@@ -970,10 +976,11 @@ test('RWLY is absent from contracts/src entirely', () => {
 // written by the `vite build --ssr` half of `apps/site/package.json`'s build script; it contains no
 // HTML at all, and its only two prose files, `llms.txt` and `robots.txt`, are byte-identical copies
 // of `apps/site/public/`'s, which are walked whether or not anything has been built (checked
-// 2026-09-18 with `diff`). So it is walked today, it costs no coverage either way, and neither
-// `SKIP_DIRS` here nor the near-identical one in `config-doc-truth.test.mjs` lists it. Adding it
-// belongs in a change that edits both, since a skip list that two sibling guards disagree on is its
-// own drift.
+// 2026-09-18 with `diff`). So skipping it costs no coverage, and it IS on `SKIP_DIRS` because
+// `apps/vaults-ui` tests create and delete directories under it mid-run (the ui-smoke bundle and
+// `config-doc-truth`'s probe): walking it raced them, ENOENT on a file listed and then deleted.
+// `config-doc-truth.test.mjs` and `claims-exit-mechanics-truth.test.mjs` skip it for the same
+// reason, and the `dist-ssr` test at the end of this file pins it.
 //
 // So the ordering is ASSERTED here rather than only documented there. This is the one test in this
 // file that MAY name its files: it is a POSITIVE requirement, and by the rule quoted in the header,
@@ -1083,4 +1090,25 @@ test('every prerendered page is inside the walk', () => {
       '     exempt the pages the reader actually receives.\n' +
       `Not walked:\n  ${missing.join('\n  ')}`,
   );
+});
+
+test('the public-surface walk never lists dist-ssr, which a concurrent test creates and deletes mid-run', () => {
+  // The race, made deterministic: list while the file exists, delete it, then read what was listed.
+  // A walk that lists the probe dies here exactly as it did in `npm run gate` (ENOENT on a file
+  // another test owned). The unique name keeps two runs from deleting each other's probe.
+  const probeDir = path.join(REPO, 'apps', 'vaults-ui', 'dist-ssr', `__claims_lede_probe_${process.pid}__`);
+  const probe = path.join(probeDir, 'probe.md');
+  mkdirSync(probeDir, { recursive: true });
+  writeFileSync(probe, 'probe');
+  let listed;
+  try {
+    listed = publicSurfaces();
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
+  assert.ok(
+    !listed.some((f) => f.split('/').includes('dist-ssr')),
+    'publicSurfaces() listed a file under dist-ssr; reading it after its owner deletes it is ENOENT',
+  );
+  assert.doesNotThrow(() => surfacesWithText(), 'the walk and read must survive a dist-ssr directory');
 });
