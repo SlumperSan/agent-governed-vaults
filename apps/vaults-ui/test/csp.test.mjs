@@ -20,14 +20,27 @@
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import test, { before } from 'node:test';
+import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 const APP = fileURLToPath(new URL('..', import.meta.url));
-const DIST = join(APP, 'dist');
+// THE BUILD GOES UNDER dist-ssr/, NOT dist/, AND THE REASON IS A MEASURED RACE. `vite build` runs
+// `emptyOutDir`, so for a moment apps/vaults-ui/dist/ does not exist and then it holds half a build.
+// `node --test` runs files concurrently, and the repository-wide walks (claims-lede-truth,
+// claims-exit-mechanics-truth) list `dist/` and read it afterwards: one that had listed
+// `dist/index.html` before the wipe died with ENOENT on it, so `npm run gate` failed intermittently
+// (PRs 461 and 463, 2026-10-18; reproduced as 1 failure in 25 concurrent runs). Every one of those
+// walks already skips `dist-ssr/`, because ui-smoke.test.mjs and the config-doc probe create and
+// delete directories under it mid-run for the same reason, so a build placed there is invisible to
+// them and nothing else changes: this file still builds the real app and still reads the real
+// output. Suffixed with the pid so two sessions in one checkout cannot wipe each other's build.
+// Nothing read the old `dist/` after this suite (grep `vaults-ui/dist`): CI builds apps/site and
+// apps/app, not this app, and deploys build their own.
+const OUT_REL = `dist-ssr/csp-${process.pid}`;
+const DIST = join(APP, ...OUT_REL.split('/'));
 const HEADERS_SRC = join(APP, 'public', '_headers');
 
 before(() => {
@@ -41,15 +54,30 @@ before(() => {
   // broken `vite build` here fails `npm run test:backend` rather than shipping green.
   // WINDOWS NEEDS THE SHELL HERE AND ONLY HERE. Node refuses to spawn a .cmd wrapper without
   // one since CVE-2024-27980, so `npm.cmd` fails with EINVAL; scripts/gate.mjs documents the
-  // same exception for the same reason. Both arguments are fixed literals, so there is nothing
-  // for cmd.exe to reinterpret -- do not interpolate into this call.
+  // same exception for the same reason. Every argument is a fixed literal or built only from one (see OUT_REL),
+  // so there is nothing for cmd.exe to reinterpret -- do not interpolate anything else into this call.
   const WIN = process.platform === 'win32';
-  execFileSync(WIN ? 'npm.cmd' : 'npm', ['run', 'build'], {
+  // npm's argument separator passes `--outDir` to the last command of the script, `vite build`.
+  // OUT_REL is a fixed prefix plus a number, so it carries no character cmd.exe would reinterpret.
+  execFileSync(WIN ? 'npm.cmd' : 'npm', ['run', 'build', '--', '--outDir', OUT_REL], {
     cwd: APP,
     stdio: 'inherit',
     shell: WIN,
   });
   assert.ok(existsSync(join(DIST, 'index.html')), 'apps/vaults-ui did not build');
+});
+
+after(() => {
+  rmSync(DIST, { recursive: true, force: true });
+});
+
+test('the build is under dist-ssr/, the one build-output directory every repository walk skips', () => {
+  // Pins the race fix above. Point DIST back at `dist/` and a concurrent repository walk can list
+  // dist/index.html, lose it to this suite's own emptyOutDir, and die with ENOENT.
+  assert.ok(
+    DIST.startsWith(join(APP, 'dist-ssr') + sep),
+    `the csp build output is ${DIST}, outside apps/vaults-ui/dist-ssr/, where it races the repository walks`,
+  );
 });
 
 const html = () => readFileSync(join(DIST, 'index.html'), 'utf8');
