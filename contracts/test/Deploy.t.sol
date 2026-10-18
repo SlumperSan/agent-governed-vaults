@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
+import {Create2ProxyFixture} from "./helpers/Create2ProxyFixture.sol";
+import {ProtocolCreate2} from "../script/lib/ProtocolCreate2.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 import {Deploy} from "../script/Deploy.s.sol";
 import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
@@ -11,7 +13,11 @@ import {VaultFactory} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
 
 /// Proves the deploy script wires the system correctly and locks every one-shot back-reference.
-contract DeployTest is Test {
+contract DeployTest is Create2ProxyFixture {
+    function setUp() public {
+        _etchCreate2Proxy();
+    }
+
     function test_deployWiresAndLocks() public {
         Deploy d = new Deploy();
         (
@@ -52,6 +58,39 @@ contract DeployTest is Test {
         // A random caller is rejected before the one-shot check even matters.
         vm.expectRevert(OperatorRegistry.OnlyDeployer.selector);
         registry.wire(address(1), address(2));
+
+        // The deployer is the protocol-wide constant, not the Deploy contract or the CREATE2 proxy.
+        assertEq(dep, PROTOCOL_INITIALIZER, "deployer is PROTOCOL_INITIALIZER");
+        assertEq(subReg.deployer(), PROTOCOL_INITIALIZER, "subReg deployer");
+        assertEq(gov.deployer(), PROTOCOL_INITIALIZER, "gov deployer");
+    }
+
+    /// @notice The script lands every singleton at the address the manifest recipe predicts, which is
+    /// a function of (proxy, salt, initcode) alone, and leaves the factory initialised.
+    function test_deployLandsAtThePredictedAddresses() public {
+        ProtocolCreate2.Set memory p = ProtocolCreate2.predict();
+        Deploy d = new Deploy();
+        (
+            OperatorRegistry registry,
+            SubVaultRegistry subReg,
+            FeeEngine feeEngine,
+            Governance gov,
+            VaultDeployer vaultDeployer,
+            VaultFactory factory
+        ) = d.run();
+        assertEq(address(registry), p.operatorRegistry, "OperatorRegistry");
+        assertEq(address(subReg), p.subVaultRegistry, "SubVaultRegistry");
+        assertEq(address(feeEngine), p.feeEngine, "FeeEngine");
+        assertEq(address(gov), p.governance, "Governance");
+        assertEq(address(vaultDeployer), p.vaultDeployer, "VaultDeployer");
+        assertEq(address(factory), p.vaultFactory, "VaultFactory");
+        assertTrue(factory.initialized(), "factory initialised");
+        assertTrue(registry.initialized() && subReg.initialized() && gov.initialized(), "wired");
+    }
+
+    function test_proxyFixtureMatchesTheKnownCodehash() public view {
+        assertEq(ProtocolCreate2.PROXY.codehash, PROXY_CODEHASH, "fixture is the real Arachnid runtime");
+        assertEq(ProtocolCreate2.PROXY.code.length, 69, "69 bytes");
     }
 
     /// @notice C-6 deploy guard: on Base mainnet (chainid 8453) the deploy REFUSES to run with an

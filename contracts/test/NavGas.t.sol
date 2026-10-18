@@ -15,6 +15,7 @@ import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20} from "./mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
 contract Src is IPriceSource {
     uint256 immutable px;
@@ -80,11 +81,16 @@ contract NavGasTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            true, // exercises sub-vaults (createChildVault)
-            new address[](0) // C-6: no oracle allowlist (permissive)
+            true // exercises sub-vaults (createChildVault)
         );
+        // C-6: no oracle allowlist (permissive)
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(new address[](0));
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factory), address(fees));
+        vm.prank(PROTOCOL_INITIALIZER);
         subReg.wire(address(factory));
+        vm.prank(PROTOCOL_INITIALIZER);
         gov.wireSubVaultRegistry(address(subReg));
 
         // Baskets: parent {A,B,C}, child {A,B}, grandchild {A} — each a subset of its parent.

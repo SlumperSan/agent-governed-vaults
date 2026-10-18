@@ -14,6 +14,7 @@ import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "./mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
 /// Guards the #10 fix: every contract deployable under EIP-170, VaultCore's creation code
 /// pinned at compile time rather than supplied by anyone, and the attestation anchor exactly
@@ -69,11 +70,16 @@ contract Eip170Test is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(vaultDeployer)),
-            true, // asserts subVaultRegistry wiring propagates through the factory
-            new address[](0) // C-6: no oracle allowlist (permissive)
+            true // asserts subVaultRegistry wiring propagates through the factory
         );
+        // C-6: no oracle allowlist (permissive)
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(new address[](0));
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factory), address(fees));
+        vm.prank(PROTOCOL_INITIALIZER);
         subReg.wire(address(factory));
+        vm.prank(PROTOCOL_INITIALIZER);
         gov.wireSubVaultRegistry(address(subReg));
     }
 

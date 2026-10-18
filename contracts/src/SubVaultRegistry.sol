@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {PROTOCOL_INITIALIZER} from "./lib/ProtocolInitializer.sol";
+
 /// @title SubVaultRegistry — parent/child edges, depth cap, fee stacking, quorum inheritance
 /// @notice Sprint 5 module (SV-1..SV-7). Structural properties:
 ///
@@ -20,7 +22,10 @@ contract SubVaultRegistry {
     uint256 public constant PERF_FEE_BPS = 1_000; // mirrors FeeEngine, per level
 
     address public factory; // one-shot wiring
-    address public immutable deployer;
+    /// @notice The only address that may call `wire`: the protocol-wide {PROTOCOL_INITIALIZER}. A
+    /// constant, not the constructor's `msg.sender`, so the initcode (and the CREATE2 address) is the
+    /// same on every chain.
+    address public constant deployer = PROTOCOL_INITIALIZER;
 
     mapping(address => address) public parentOf; // child ⇒ parent (0 = root)
     mapping(address => uint256) public depthOf; // root = 0
@@ -35,8 +40,10 @@ contract SubVaultRegistry {
     error AlreadyRegistered();
     error ExitFeeStackExceeded();
 
-    constructor() {
-        deployer = msg.sender;
+    /// @notice True once `wire` has run. An unwired registry registers no edges: `registerChild` is
+    /// factory-only and the factory is unset until then.
+    function initialized() external view returns (bool) {
+        return factory != address(0);
     }
 
     /// @notice One-shot deploy-time wiring of the canonical factory — the only address ever

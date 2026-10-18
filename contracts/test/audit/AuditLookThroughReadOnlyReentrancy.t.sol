@@ -15,6 +15,7 @@ import {IFeeEngine} from "../../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {IExecutionAdapter} from "../../src/interfaces/IExecutionAdapter.sol";
 import {MockERC20, MockOracle} from "../mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../../src/lib/ProtocolInitializer.sol";
 
 /// @dev The per-proposal slippage bound these tests execute under.
 uint256 constant MAX_SLIPPAGE_BPS = 200;
@@ -69,11 +70,16 @@ contract AuditLookThroughReadOnlyReentrancyTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            true, // sub-vaults enabled for this suite
-            new address[](0) // C-6: no oracle allowlist (permissive)
+            true // sub-vaults enabled for this suite
         );
+        // C-6: no oracle allowlist (permissive)
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(new address[](0));
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factory), address(fees));
+        vm.prank(PROTOCOL_INITIALIZER);
         subReg.wire(address(factory));
+        vm.prank(PROTOCOL_INITIALIZER);
         gov.wireSubVaultRegistry(address(subReg));
 
         mal = new ReentrantAdapter(address(usdc), address(weth));
@@ -340,11 +346,16 @@ contract AuditLookThroughDepth2Test is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            true, // sub-vaults enabled for this suite
-            new address[](0) // C-6: no oracle allowlist (permissive)
+            true // sub-vaults enabled for this suite
         );
+        // C-6: no oracle allowlist (permissive)
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(new address[](0));
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factory), address(fees));
+        vm.prank(PROTOCOL_INITIALIZER);
         subReg.wire(address(factory));
+        vm.prank(PROTOCOL_INITIALIZER);
         gov.wireSubVaultRegistry(address(subReg));
 
         mal = new DepthTwoAdapter(address(usdc), address(weth));
