@@ -390,3 +390,15 @@ export const unqualifiedInitializeHits = (flatText) => {
   }
   return hits;
 };
+
+/**
+ * The key's choice said to be unique ("the allowlist is the one thing the key chooses", "the one
+ * choice the key makes", "initialize is the one that chooses something"). False: the three wire calls
+ * check only the caller and non-zero arguments, so the key also chooses which factory, fee engine and
+ * sub-registry the registries point at. Enumerate the key's choices; never call one the only choice.
+ */
+export const KEY_ONLY_CHOICE =
+  /\b(?:the\s+)?(?:one|only|sole)\s+(?:thing|choice|decision|argument)\s+(?:that\s+)?(?:the\s+)?(?:(?:deploy(?:er)?|initiali[sz]er|privileged)\s+)?(?:key|deployer|initiali[sz]er)\s+(?:chooses|makes|decides|picks|sets)\b|\binitiali[sz]e\b[^.]{0,40}\bis\s+the\s+(?:one|only\s+one)\s+that\s+(?:chooses|decides|sets)\b(?!\s+which\b)|\bthe\s+(?:one|only)\s+choice\s+(?:the\s+)?key\s+makes\b/gi;
+
+/** @param {string} flatText @returns {string[]} */
+export const keyOnlyChoiceHits = (flatText) => [...flatText.matchAll(KEY_ONLY_CHOICE)].map((m) => m[0]);

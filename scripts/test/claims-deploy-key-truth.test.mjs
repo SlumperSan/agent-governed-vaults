@@ -44,7 +44,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractStringLiterals } from '../lib/extract-string-literals.mjs';
-import { flat, deployKeyPowerHits, unqualifiedInitializeHits } from '../lib/claims-shapes.mjs';
+import { flat, deployKeyPowerHits, unqualifiedInitializeHits, keyOnlyChoiceHits } from '../lib/claims-shapes.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'lib', 'out', 'cache', 'broadcast', 'coverage', 'artifacts', 'dist-ssr']);
@@ -130,6 +130,19 @@ test('no public surface says the factory allowlist is set by initialize without 
   );
 });
 
+test('no public surface calls one of the deploy key choices the only one', () => {
+  const hits = [];
+  for (const { file, text } of publicTexts()) for (const quote of keyOnlyChoiceHits(text)) hits.push({ file, quote });
+  assert.deepEqual(
+    hits,
+    [],
+    'The three wire calls check only the caller and non-zero arguments, so the key also chooses which\n' +
+      'factory, fee engine and sub-registry the registries point at; a wrong pointer blocks vault creation\n' +
+      'or fakes track records. Enumerate what the key chooses; never call one choice the only one.\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
 // ---- mutation probes: reintroduce each defect, confirm the shape catches it --------------------
 
 test('probe: every false sentence the review found is caught', () => {
@@ -145,6 +158,24 @@ test('probe: every false sentence the review found is caught', () => {
     unqualifiedInitializeHits(flat('The oracle prices the assets it is constructed with, and the factory’s oracle allowlist is set once, by a one-shot initialize call, with no add, no remove and no owner afterwards.')).length > 0,
     'the risk-12 scope row wording must be caught',
   );
+});
+
+test('probe: the "only choice the key makes" sentences the review found are caught, and the enumerating wording passes', () => {
+  for (const s of [
+    'The allowlist is the one thing the key chooses, and a fake oracle on it is exactly the attack.',
+    'That fourth call is the one choice the key makes that a later vault depends on.',
+    'Each call works once, and factory.initialize is the one that chooses something: the oracle allowlist.',
+    'The only decision the deploy key makes is the allowlist.',
+  ]) {
+    assert.ok(keyOnlyChoiceHits(flat(s)).length > 0, s);
+  }
+  for (const ok of [
+    'The key chooses two kinds of thing: which addresses the registries point at and, on the same-address deployment, which oracles the factory accepts.',
+    'That fourth call is the only one whose argument decides which price source a vault may use.',
+    'factory.initialize is the one that decides which oracles a vault may use.',
+  ]) {
+    assert.deepEqual(keyOnlyChoiceHits(flat(ok)), [], ok);
+  }
 });
 
 test('probe: the approved wording passes both shapes', () => {
