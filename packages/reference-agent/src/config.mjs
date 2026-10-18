@@ -31,6 +31,9 @@
 // presets that ship.
 import arcMainnet from '../presets/arc-mainnet.json' with { type: 'json' };
 
+/** Values `policy.crank.scope` takes. */
+export const CRANK_SCOPES = Object.freeze(['held', 'all', 'off']);
+
 /** USDC has 6 decimals; policy numbers are written in whole USDC and scaled here. */
 export const USDC_DECIMALS = 6n;
 export const USDC_UNIT = 10n ** USDC_DECIMALS;
@@ -174,6 +177,29 @@ export const DEFAULT_CONFIG = Object.freeze({
       /** Poll interval for the perceive→decide→act loop. */
       tickIntervalSec: 60,
     },
+
+    /**
+     * Finishing a round, which anyone may do: `finalize` (reveal window over), `execute` (passed,
+     * inside its window) and `markExpired` (passed, window over). Each takes the proposal id
+     * alone, except `execute`, which also takes the payload bytes the chain never stores, so it
+     * runs only for an `actionHash` listed in `knownPayloads` whose keccak256 matches (checked each
+     * tick, where viem is loaded; see payloads.mjs). Every send is simulated first.
+     *
+     * `scope`: 'held' cranks only vaults where this agent has shares or a pending deposit (the
+     * gas is paid in the chain's gas asset, for other members' benefit as well); 'all' cranks
+     * every vault the agent reads; 'off' cranks nothing. A held vault outside the discovery window
+     * is not read, so name it in `discovery.include`.
+     * `markExpired` is bookkeeping only (the status refreshes itself on the next proposal), so it
+     * is off by default.
+     */
+    crank: {
+      scope: 'held',
+      finalize: true,
+      execute: true,
+      markExpired: false,
+      /** actionHash (lowercase 0x, 32 bytes) => payload (0x hex) whose keccak256 is that hash. */
+      knownPayloads: {},
+    },
   },
 
   /** Everything here is irreversible, opt-in, and off. */
@@ -266,6 +292,18 @@ export function loadConfig(overrides = {}) {
       throw new ConfigError(`discovery.${k} must be a positive integer, got ${JSON.stringify(cfg.discovery[k])}`);
   if (!Array.isArray(cfg.discovery.include) || !cfg.discovery.include.every((a) => /^0x[0-9a-fA-F]{40}$/.test(a)))
     throw new ConfigError('discovery.include must be an array of 0x vault addresses');
+  const crank = cfg.policy.crank;
+  if (!CRANK_SCOPES.includes(crank.scope))
+    throw new ConfigError(`policy.crank.scope must be one of ${CRANK_SCOPES.join(', ')}, got ${JSON.stringify(crank.scope)}`);
+  for (const k of /** @type {const} */ (['finalize', 'execute', 'markExpired']))
+    if (typeof crank[k] !== 'boolean') throw new ConfigError(`policy.crank.${k} must be true or false, got ${JSON.stringify(crank[k])}`);
+  if (!crank.knownPayloads || typeof crank.knownPayloads !== 'object' || Array.isArray(crank.knownPayloads))
+    throw new ConfigError('policy.crank.knownPayloads must be an object of actionHash => payload');
+  for (const [hash, payload] of Object.entries(crank.knownPayloads)) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new ConfigError(`policy.crank.knownPayloads key ${JSON.stringify(hash)} is not a 32-byte 0x hash`);
+    if (typeof payload !== 'string' || !/^0x(?:[0-9a-fA-F]{2})*$/.test(payload))
+      throw new ConfigError(`policy.crank.knownPayloads[${hash}] is not 0x hex bytes`);
+  }
   return cfg;
 }
 

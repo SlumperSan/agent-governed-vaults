@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadConfig } from '../src/config.mjs';
-import { asBigInt, decideEntry, decideExit, decideJoin, decideSettle, decideVote, votePhase } from '../src/policy.mjs';
+import { asBigInt, decideCrank, decideEntry, decideExit, decideJoin, decideSettle, decideVote, votePhase } from '../src/policy.mjs';
 
 const USDC = 10n ** 6n;
 const WAD = 10n ** 18n;
@@ -469,4 +469,204 @@ test('a genuinely absent proposal is still reported plainly', () => {
   assert.equal(r.action, 'none');
   assert.equal(r.degraded, undefined);
   assert.match(r.reason, /no active proposal/);
+});
+
+// ── crank: finalize / execute / markExpired ─────────────────────────────────
+//
+// One proposal, three clocks. R is the reveal deadline, E the executable-at, X the expiry. Every
+// boundary gets the second either side of it, because the contract's comparisons are `>=` on R,
+// `E <= now <= X` for execute and a strict `>` on X for markExpired, and an off-by-one on any of
+// them is a transaction that reverts (or, worse, one that is never sent).
+
+const R = 1_000_000;
+const E = 1_000_500;
+const X = 1_086_900;
+const HASH = '0x' + 'ab'.repeat(32);
+const PAYLOAD = '0x1234';
+const crankProposal = (over = {}) => ({
+  pid: 7n, vault: VAULT, ptype: 0, ptypeName: 'Rebalance', status: 1, statusName: 'Active',
+  commitDeadline: R - 100, revealDeadline: R, executableAt: E, expiresAt: X, actionHash: HASH, ...over,
+});
+const crankGov = (over = {}) => ({ available: true, activePid: 7n, proposal: crankProposal(over), hasPendingExecution: true });
+const passed = (over = {}) => crankGov({ status: 2, statusName: 'Passed', ...over });
+const crank = (over = {}) =>
+  decideCrank({
+    governance: crankGov(),
+    chainNowSec: R,
+    nowSec: R,
+    timing: CFG.policy.timing,
+    config: { ...CFG.policy.crank, markExpired: true },
+    knownPayloads: { [HASH]: PAYLOAD },
+    held: true,
+    ...over,
+  });
+const failedCrank = (r) => r.checks.filter((c) => !c.ok).map((c) => c.name);
+
+test('crank: the defaults finalize and execute, scope to held vaults, and leave markExpired off', () => {
+  assert.deepEqual(CFG.policy.crank, { scope: 'held', finalize: true, execute: true, markExpired: false, knownPayloads: {} });
+});
+
+test('crank finalize: the boundary is >= revealDeadline (R - 1 waits, R and R + 1 finalize)', () => {
+  const before = crank({ chainNowSec: R - 1 });
+  assert.equal(before.action, 'none');
+  assert.deepEqual(failedCrank(before), ['reveal-window-over']);
+  assert.match(before.reason, /reveal window ends at 1000000 \(in 1s\)/);
+
+  for (const now of [R, R + 1]) {
+    const r = crank({ chainNowSec: now });
+    assert.equal(r.action, 'finalize', `at ${now}`);
+    assert.equal(r.pid, 7n);
+    assert.deepEqual(failedCrank(r), []);
+  }
+});
+
+test('crank finalize: the per-kind switch turns it off, and says so', () => {
+  const r = crank({ config: { ...CFG.policy.crank, finalize: false } });
+  assert.equal(r.action, 'none');
+  assert.deepEqual(failedCrank(r), ['finalize-enabled']);
+});
+
+test('crank execute: the window is E <= now <= X, both ends inclusive', () => {
+  const gov = passed();
+  const early = crank({ governance: gov, chainNowSec: E - 1 });
+  assert.equal(early.action, 'none');
+  assert.deepEqual(failedCrank(early), ['timelock-elapsed']);
+  assert.match(early.reason, /executable at 1000500 \(in 1s\)/);
+
+  for (const now of [E, E + 1, X - 1, X]) {
+    const r = crank({ governance: gov, chainNowSec: now });
+    assert.equal(r.action, 'execute', `at ${now}`);
+    assert.equal(r.payload, PAYLOAD);
+    assert.equal(r.actionHash, HASH);
+    assert.equal(r.ptype, 0);
+  }
+});
+
+test('crank markExpired: the boundary is a strict > expiresAt (X is still executable, X + 1 is expired)', () => {
+  const gov = passed();
+  assert.equal(crank({ governance: gov, chainNowSec: X }).action, 'execute', 'at X the window is still open, so it is not expired');
+  // With no payload, X yields nothing at all: it must not fall through to markExpired.
+  assert.equal(crank({ governance: gov, chainNowSec: X, knownPayloads: {} }).action, 'none');
+  const after = crank({ governance: gov, chainNowSec: X + 1 });
+  assert.equal(after.action, 'mark-expired');
+  assert.equal(after.pid, 7n);
+  assert.equal(crank({ governance: gov, chainNowSec: X + 1, knownPayloads: {} }).action, 'mark-expired', 'it needs no payload');
+});
+
+test('crank markExpired: off by default, and then it is a named reason, not silence', () => {
+  const r = crank({ governance: passed(), chainNowSec: X + 1, config: CFG.policy.crank });
+  assert.equal(r.action, 'none');
+  assert.deepEqual(failedCrank(r), ['mark-expired-enabled']);
+});
+
+test('crank execute: a window with no matching payload is refused and the reason names the payload', () => {
+  const r = crank({ governance: passed(), chainNowSec: E, knownPayloads: {} });
+  assert.equal(r.action, 'none');
+  assert.deepEqual(failedCrank(r), ['payload-known']);
+  assert.match(r.reason, /no verified payload for actionHash 0xabab/);
+  assert.match(r.reason, /the chain does not store it/);
+  // A payload held under a DIFFERENT hash is not this proposal's payload.
+  assert.equal(crank({ governance: passed(), chainNowSec: E, knownPayloads: { ['0x' + 'cd'.repeat(32)]: PAYLOAD } }).action, 'none');
+});
+
+test('crank execute: the payload lookup is case-insensitive on the proposal side', () => {
+  const upper = '0x' + 'AB'.repeat(32);
+  const r = crank({ governance: passed({ actionHash: upper }), chainNowSec: E });
+  assert.equal(r.action, 'execute');
+});
+
+test('crank execute: only a Rebalance, even with a payload in hand', () => {
+  const r = crank({ governance: passed({ ptype: 1, ptypeName: 'RuleChange' }), chainNowSec: E });
+  assert.equal(r.action, 'none');
+  assert.deepEqual(failedCrank(r), ['rebalance-only']);
+  assert.match(r.reason, /a human decides it/);
+  // ...but a RuleChange that expired is still bookkept: markExpired takes only a pid.
+  assert.equal(crank({ governance: passed({ ptype: 1, ptypeName: 'RuleChange' }), chainNowSec: X + 1 }).action, 'mark-expired');
+});
+
+test('crank execute: the per-kind switch turns it off', () => {
+  const r = crank({ governance: passed(), chainNowSec: E, config: { ...CFG.policy.crank, execute: false } });
+  assert.equal(r.action, 'none');
+  assert.deepEqual(failedCrank(r), ['execute-enabled']);
+});
+
+test('crank execute: urgent inside revealSafetyMarginSec of expiry, not before', () => {
+  const margin = CFG.policy.timing.revealSafetyMarginSec;
+  assert.equal(crank({ governance: passed(), chainNowSec: X - margin - 1 }).urgent, false);
+  assert.equal(crank({ governance: passed(), chainNowSec: X - margin }).urgent, true);
+  assert.equal(crank({ governance: passed(), chainNowSec: X }).urgent, true, 'still sent at the last second: the alternative is certain expiry');
+});
+
+test('crank: Defeated, Executed, Expired and None are finished, so nothing is done', () => {
+  for (const [status, statusName] of [[3, 'Defeated'], [4, 'Executed'], [5, 'Expired'], [0, 'None']]) {
+    for (const now of [R, E, X, X + 1]) {
+      const r = crank({ governance: crankGov({ status, statusName }), chainNowSec: now });
+      assert.equal(r.action, 'none', `${statusName} at ${now}`);
+      assert.notEqual(r.degraded, true);
+    }
+  }
+});
+
+test('crank: a status the agent does not know is degraded and does nothing', () => {
+  const r = crank({ governance: crankGov({ status: 9, statusName: 'Unknown' }) });
+  assert.equal(r.action, 'none');
+  assert.equal(r.degraded, true);
+});
+
+test('crank: an UNREADABLE proposal is degraded and does nothing, however late it is', () => {
+  const gov = { available: true, activePid: 7n, proposal: null, proposalUnknown: true };
+  for (const now of [R, E, X + 1]) {
+    const r = crank({ governance: gov, chainNowSec: now });
+    assert.equal(r.action, 'none');
+    assert.equal(r.degraded, true);
+    assert.match(r.reason, /could NOT be read: unknown, not "nothing to do"/);
+  }
+});
+
+test('crank: no proposal, or no governance contract, is nothing to do and not degraded', () => {
+  const none = crank({ governance: { available: true, activePid: 0n, proposal: null } });
+  assert.equal(none.action, 'none');
+  assert.notEqual(none.degraded, true);
+  assert.equal(crank({ governance: { available: false } }).action, 'none');
+  assert.equal(crank({ governance: undefined }).action, 'none');
+});
+
+test('crank scope: held (the default) skips a vault the agent holds nothing in; all does not; off never acts', () => {
+  assert.equal(crank({ held: false }).action, 'none');
+  assert.deepEqual(failedCrank(crank({ held: false })), ['scope']);
+  assert.equal(crank({ held: true }).action, 'finalize');
+  assert.equal(crank({ held: false, config: { ...CFG.policy.crank, scope: 'all' } }).action, 'finalize');
+  assert.equal(crank({ held: true, config: { ...CFG.policy.crank, scope: 'off' } }).action, 'none');
+  assert.equal(crank({ held: false, config: { ...CFG.policy.crank, scope: 'off' } }).action, 'none');
+});
+
+test('crank clock: chain time wins over the local clock in BOTH directions', () => {
+  // Local clock ten minutes ahead of the chain: it must not finalize early.
+  const ahead = crank({ chainNowSec: R - 1, nowSec: R + 600 });
+  assert.equal(ahead.action, 'none');
+  assert.match(ahead.checks.find((c) => c.name === 'clock').detail, /^chain time 999999$/);
+  // Local clock ten minutes behind: chain time says the window is over, so it finalizes.
+  assert.equal(crank({ chainNowSec: R, nowSec: R - 600 }).action, 'finalize');
+});
+
+test('crank clock: with no chain time the local clock stands in LESS activateGraceSec, on the near side', () => {
+  const grace = CFG.policy.timing.activateGraceSec;
+  const at = (nowSec, over = {}) => crank({ chainNowSec: null, nowSec, ...over });
+  // finalize: local R + grace - 1 is not yet safely past R.
+  assert.equal(at(R + grace - 1).action, 'none');
+  assert.equal(at(R + grace).action, 'finalize');
+  assert.match(at(R + grace).checks.find((c) => c.name === 'clock').detail, /chain time unreadable: local clock 1000060 less the 60s margin = 1000000/);
+  // execute: not before the timelock, with the same margin.
+  assert.equal(at(E + grace - 1, { governance: passed() }).action, 'none');
+  assert.equal(at(E + grace, { governance: passed() }).action, 'execute');
+  // markExpired: never early, so strict > X plus the margin.
+  assert.equal(at(X + grace, { governance: passed(), knownPayloads: {} }).action, 'none');
+  assert.equal(at(X + grace + 1, { governance: passed(), knownPayloads: {} }).action, 'mark-expired');
+});
+
+test('crank: decideCrank is pure (same inputs, same verdict; inputs untouched)', () => {
+  const args = { governance: crankGov(), chainNowSec: R, nowSec: R, timing: CFG.policy.timing, config: CFG.policy.crank, knownPayloads: {}, held: true };
+  const before = JSON.stringify(args, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+  assert.deepEqual(decideCrank(args), decideCrank(args));
+  assert.equal(JSON.stringify(args, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)), before);
 });

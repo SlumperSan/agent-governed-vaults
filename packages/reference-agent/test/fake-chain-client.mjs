@@ -13,18 +13,31 @@ export const FACTORY = '0x' + 'f0'.repeat(20);
 export const REGISTRY = '0x' + 'e1'.repeat(20);
 export const SUBVAULT_REGISTRY = '0x' + 'd2'.repeat(20);
 export const GOVERNANCE = '0x' + 'c3'.repeat(20);
+export const ZERO_HASH = '0x' + '0'.repeat(64);
+
+/**
+ * The sixteen-field tuple `Governance.proposals(pid)` returns, positionally, as viem decodes it.
+ * @param {Object} f
+ */
+export const proposalTuple = ({ vault, ptype = 0, proposer = '0x' + 'a1'.repeat(20), createdAt = 0, commitDeadline = 0, revealDeadline = 0, executableAt = 0, expiresAt = 0, status = 1, actionHash = ZERO_HASH, snapshotTotal = 0n, memberCount = 5n }) => [
+  vault, ptype, proposer, BigInt(createdAt), BigInt(commitDeadline), BigInt(revealDeadline), BigInt(executableAt), BigInt(expiresAt), status, actionHash, snapshotTotal, memberCount, 0n, 0n, 0n, 0n,
+];
+
 export const addr = (n) => '0x' + n.toString(16).padStart(40, '0');
 export const OPERATOR_ADDR = (id) => '0x' + (0xa0 + id).toString(16).repeat(20);
 
 /**
  * @param {Object} spec
- * @param {Array<{address:string, operatorId?:number, realOperatorId?:number, holders?:number, depth?:number, creator?:string, capUsdc?:bigint, registry?:string}>} spec.vaults  in factory order (index 0 first).
+ * @param {Array<{address:string, shares?:bigint, operatorId?:number, realOperatorId?:number, holders?:number, depth?:number, creator?:string, capUsdc?:bigint, registry?:string}>} spec.vaults  in factory order (index 0 first).
  *   `registry` is the registry the VAULT claims to use; when it is not REGISTRY, that address answers `operatorOf`
  *   with `operatorId` (a spoofed attestation) while REGISTRY answers with `realOperatorId ?? operatorId`.
  * @param {Record<number, {gain?:bigint, loss?:bigint, fees?:bigint, vaultCount?:number, operator?:string}>} [spec.operators]
  * @param {Set<string>} [spec.failing]  `${functionName}` or `${functionName}:${arg}` to make revert
+ * @param {Record<string, {pid:bigint, tuple:any[], pending?:boolean}>} [spec.governance]  vault => its latest proposal. Read LIVE on every call, so a test can mutate `tuple` (for example its status) between ticks.
+ * @param {number|null|(() => number|null)} [spec.blockTimestamp]  what `getBlock` reports as the latest timestamp (a function is read on every call); null makes `getBlock` throw
+ * @param {(call:any)=>void} [spec.onSimulate]  called with each `simulateContract` request; throw from it to simulate a revert
  */
-export function createFakeChainClient({ vaults, operators = {}, failing = new Set() }) {
+export function createFakeChainClient({ vaults, operators = {}, failing = new Set(), governance = {}, blockTimestamp = 1_700_000_000, onSimulate = () => {} }) {
   const calls = [];
   let inFlight = 0;
   let maxInFlight = 0;
@@ -69,8 +82,13 @@ export function createFakeChainClient({ vaults, operators = {}, failing = new Se
         if (functionName === 'depthOf') return BigInt(byAddress.get(String(args[0]).toLowerCase())?.depth ?? 0);
       }
       if (a === GOVERNANCE.toLowerCase()) {
-        if (functionName === 'hasPendingExecution') return false;
-        if (functionName === 'activeProposalOf') return 0n;
+        const g = governance[String(args[0]).toLowerCase()];
+        if (functionName === 'hasPendingExecution') return g?.pending ?? false;
+        if (functionName === 'activeProposalOf') return g?.pid ?? 0n;
+        const byPid = Object.values(governance).find((x) => x.pid === args[0]);
+        if (functionName === 'proposals' && byPid) return byPid.tuple;
+        if (functionName === 'commitOf') return ZERO_HASH;
+        if (functionName === 'revealedOf') return false;
       }
       const v = byAddress.get(a);
       if (v) {
@@ -84,6 +102,12 @@ export function createFakeChainClient({ vaults, operators = {}, failing = new Se
           case 'isCapped': return (v.capUsdc ?? 0n) !== 0n;
           case 'minDepositUsdc': return 100n * USDC;
           case 'OBSERVATION_WINDOW': return 4n * 3600n;
+          case 'sharesOf': case 'votingEligibleShares': case 'pastVotingEligibleShares': return v.shares ?? 0n;
+          case 'exitFeeBpsOf': return 0n;
+          case 'queuedExitShares': return 0n;
+          case 'windowCleared': return true;
+          case 'skipOptIn': return false;
+          case 'pendingDeposit': return [0n, 0n];
         }
       }
       throw new Error(`fake chain: unhandled ${functionName} on ${a}`);
@@ -92,8 +116,23 @@ export function createFakeChainClient({ vaults, operators = {}, failing = new Se
     }
   }
 
+  async function getBlock({ blockTag } = {}) {
+    calls.push({ address: null, functionName: 'getBlock', args: [blockTag] });
+    const ts = typeof blockTimestamp === 'function' ? blockTimestamp() : blockTimestamp;
+    if (ts === null) throw new Error('fake chain: getBlock failed');
+    return { timestamp: BigInt(ts) };
+  }
+
+  async function simulateContract(request) {
+    calls.push({ address: String(request.address).toLowerCase(), functionName: `simulate:${request.functionName}`, args: request.args });
+    onSimulate(request);
+    return { result: undefined, request };
+  }
+
   return {
     readContract,
+    getBlock,
+    simulateContract,
     calls,
     get maxInFlight() { return maxInFlight; },
     resetPeak() { maxInFlight = 0; },

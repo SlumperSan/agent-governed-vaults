@@ -19,9 +19,10 @@ node packages/reference-agent/src/run.mjs --api=http://127.0.0.1:8402 --demo-wal
 | `src/salt.mjs` | deterministic wallet-derived reveal salt: the S-4 mitigation |
 | `src/chain.mjs` | direct contract reads; embedded ABI fragments, drift-tested against `contracts/out` |
 | `src/evaluators.mjs` | pluggable proposal evaluators (ships a naive drift band) |
-| `src/policy.mjs` | **pure** join/vote/exit/entry/settle decisions |
+| `src/policy.mjs` | **pure** join/vote/exit/entry/settle/crank decisions |
+| `src/payloads.mjs` | checks each `policy.crank.knownPayloads` entry against its keccak256 hash |
 | `src/plan.mjs` | decisions → risk-ordered, schedulable intents |
-| `src/act.mjs` | intents → transactions (or a description of them) |
+| `src/act.mjs` | intents → transactions (or a description of them); simulates each crank write first |
 | `src/perceive.mjs` | metered API + chain reads, under budget |
 | `src/agent.mjs` | the perceive→decide→act loop |
 | `src/run.mjs` | CLI entrypoint (dry-run only, by construction) |

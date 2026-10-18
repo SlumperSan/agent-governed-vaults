@@ -195,3 +195,24 @@ test('the preset does not leak into a later default load', () => {
   assert.equal(loadConfig().chain.chainId, 84532);
   assert.equal(DEFAULT_CONFIG.chain.preset, null);
 });
+
+// ── policy.crank validation ─────────────────────────────────────────────────
+
+test('policy.crank: a bad scope, a non-boolean switch, or a malformed payload table is a startup error', () => {
+  const bad = (crank, re) => assert.throws(() => loadConfig({ policy: { crank } }), (e) => e instanceof ConfigError && re.test(e.message));
+  bad({ scope: 'everything' }, /policy\.crank\.scope must be one of held, all, off/);
+  bad({ finalize: 'yes' }, /policy\.crank\.finalize must be true or false/);
+  bad({ markExpired: 1 }, /policy\.crank\.markExpired must be true or false/);
+  bad({ knownPayloads: [] }, /knownPayloads must be an object/);
+  bad({ knownPayloads: { '0x12': '0x00' } }, /not a 32-byte 0x hash/);
+  bad({ knownPayloads: { ['0x' + 'ab'.repeat(32)]: 'abcd' } }, /not 0x hex bytes/);
+  bad({ knownPayloads: { ['0x' + 'ab'.repeat(32)]: '0xabc' } }, /not 0x hex bytes/);
+});
+
+test('policy.crank: valid values are accepted, and the default scope is held', () => {
+  assert.equal(loadConfig().policy.crank.scope, 'held');
+  const cfg = loadConfig({ policy: { crank: { scope: 'all', markExpired: true, knownPayloads: { ['0x' + 'ab'.repeat(32)]: '0x' } } } });
+  assert.equal(cfg.policy.crank.scope, 'all');
+  assert.equal(cfg.policy.crank.markExpired, true);
+  assert.equal(cfg.policy.crank.finalize, true);
+});

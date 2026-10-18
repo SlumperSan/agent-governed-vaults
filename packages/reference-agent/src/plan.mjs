@@ -8,31 +8,43 @@
  * would be sent, not a parallel description of it that can drift.
  *
  * Ordering is risk-ordered, not vault-ordered:
- *   1. reveal            — an obligation already incurred; missing it forfeits the vote (S-4)
- *   2. settle-queued-exit — capital already committed to leaving, waiting to be released
- *   3. exit              — risk-off
- *   4. activate          — completes an entry already paid for
- *   5. commit            — a new obligation, taken on last
- *   6. deposit           — new capital, the only intent that increases exposure
+ *   0. reveal: an obligation already incurred; missing it forfeits the vote (S-4)
+ *   1. finalize: ends a reveal window that has closed; until it runs the vault is in Mode F
+ *   2. settle-queued-exit: capital already committed to leaving, waiting to be released
+ *   3. execute: carries out a passed Rebalance whose payload the agent was handed
+ *   4. exit: risk-off
+ *   5. activate: completes an entry already paid for
+ *   6. skip-window: irreversible, and only ever with danger.allowSkipWindow
+ *   7. mark-expired: bookkeeping only (a status refresh), so the lowest of the crank intents
+ *   8. commit: a new obligation, taken on last
+ *   9. deposit: new capital, the only intent that increases exposure
+ *
+ * A tick plans from ONE snapshot and cannot see the state a send will create. A `settle-queued-exit`
+ * therefore appears on the tick AFTER the `finalize` or `execute` that releases it is mined. At the
+ * default 60 s tick that is a minute, and it is the price of never planning against a guess.
  *
  * `dueAtSec` lets an intent be SCHEDULED rather than done now — the activate-after-window case and
  * the reveal case both need it. An intent with `dueAtSec > now` is reported and deferred, not run.
  *
  * **skipWindow is not in the vocabulary** unless `danger.allowSkipWindow` is explicitly true.
- * test/plan.test.mjs pins that the default config cannot produce one.
+ * test/policy.test.mjs and test/loop.test.mjs pin that the default config cannot produce one; the
+ * plan is tested through those two files (there is no plan.test.mjs).
  */
 
-import { decideEntry, decideExit, decideJoin, decideSettle, decideVote } from './policy.mjs';
+import { decideCrank, decideEntry, decideExit, decideJoin, decideSettle, decideVote } from './policy.mjs';
 
 /** Risk order — lower runs first. */
 export const INTENT_ORDER = Object.freeze({
   reveal: 0,
-  'settle-queued-exit': 1,
-  exit: 2,
-  activate: 3,
-  'skip-window': 4,
-  commit: 5,
-  deposit: 6,
+  finalize: 1,
+  'settle-queued-exit': 2,
+  execute: 3,
+  exit: 4,
+  activate: 5,
+  'skip-window': 6,
+  'mark-expired': 7,
+  commit: 8,
+  deposit: 9,
 });
 
 /**
@@ -97,6 +109,39 @@ export function plan({ world, config, entryMarks = new Map(), log }) {
       // A degraded verdict is a warning, not an informational line: it means the agent could not
       // determine whether it owes a reveal.
       (vote.degraded ? log.warn : log.decide)(`${short} no vote action — ${vote.reason}`);
+    }
+
+    // ── crank: finish a round, which anyone may do ────────────────────────────
+    // Decided on chain time (world.chainNowSec); the verified payloads are what `execute` needs.
+    const crank = decideCrank({
+      governance: o.governance,
+      chainNowSec: world.chainNowSec ?? null,
+      nowSec,
+      timing: config.policy.timing,
+      config: config.policy.crank,
+      knownPayloads: world.crankPayloads ?? {},
+      held: held || pending,
+    });
+    decisions.push({ vault, kind: 'crank', ...crank });
+    if (crank.action === 'none') {
+      // Silent when there is no proposal to finish or the scope excludes the vault; named when a
+      // round is open and the crank is not acting on it (a missing payload, a closed window).
+      const open = ['Active', 'Passed'].includes(o.governance?.proposal?.statusName) && crank.checks.some((c) => c.name === 'clock');
+      if (crank.degraded) log.warn(`${short} no crank action: ${crank.reason}`);
+      else if (open) log.decide(`${short} no crank action: ${crank.reason}`);
+    } else {
+      log.checks(`${short} crank checks:`, crank.checks);
+      const common = { vault, pid: crank.pid, dueAtSec: nowSec, reason: crank.reason };
+      if (crank.action === 'finalize') intents.push({ kind: 'finalize', ...common, args: { pid: crank.pid } });
+      else if (crank.action === 'mark-expired') intents.push({ kind: 'mark-expired', ...common, args: { pid: crank.pid } });
+      else
+        intents.push({
+          kind: 'execute',
+          ...common,
+          urgent: crank.urgent,
+          args: { pid: crank.pid, ptype: crank.ptype, actionHash: crank.actionHash, payload: crank.payload },
+        });
+      log.decide(`${short} ${crank.action.toUpperCase()}: ${crank.reason}`);
     }
 
     // ── Mode F: release shares already queued behind an executed rebalance ────

@@ -16,6 +16,9 @@
  *   decideJoin  — attested operator, positive leaderboard net, capacity available, fees in bounds
  *   decideVote  — commit / reveal / abstain, via a pluggable evaluator
  *   decideExit  — drawdown threshold, oracle-freeze warning, operator net turning negative
+ *
+ * and, beside them, the entry, settle and crank decisions (decideEntry, decideSettle, decideCrank:
+ * finalize, execute and mark-expired, the three Governance calls anyone may make).
  */
 
 import { toBaseUnits, fromBaseUnits } from './config.mjs';
@@ -421,4 +424,135 @@ export function decideSettle({ chain, governance }) {
   if (governance?.hasPendingExecution === true)
     return { action: 'none', reason: `${queued} shares queued, but the rebalance has not executed yet — settling now is not possible` };
   return { action: 'settle-queued-exit', reason: `${queued} shares queued and no pending execution remains — settle at post-rebalance NAV` };
+}
+
+/** The one proposal type the crank executes: Rebalance. RuleChange and ChildAllocation need a human. */
+export const CRANK_EXECUTE_PTYPE = 0;
+
+/**
+ * Should the agent finish the latest proposal on this vault: `finalize`, `execute` or `markExpired`?
+ *
+ * All three are callable by anyone and gate on `block.timestamp` (Governance.sol `finalize`,
+ * `execute`, `markExpired`), so the decision is taken on CHAIN time. `chainNowSec` is the latest
+ * block's timestamp; when it is unreadable the local clock stands in with `timing.activateGraceSec`
+ * taken OFF it, which puts the margin on the near side of every boundary: a `finalize` or
+ * `markExpired` is never emitted early, and an `execute` is never emitted before the timelock. The
+ * far side of the execution window is left to the simulation that precedes every send.
+ *
+ * Phase table, `now` being the chain time above:
+ *
+ *   Active,  now >= revealDeadline                      finalize      (boundary is >=)
+ *   Passed,  executableAt <= now <= expiresAt           execute       (needs a verified payload, ptype 0)
+ *   Passed,  now >  expiresAt                           mark-expired  (boundary is strict >)
+ *   Passed,  now <  executableAt                        none: wait
+ *   Defeated / Executed / Expired / None                none
+ *   proposal unreadable                                 none, degraded
+ *
+ * `execute` needs the payload bytes, which the chain never stores, so it runs only for an
+ * `actionHash` present in `knownPayloads`. `knownPayloads` must already be verified against keccak256
+ * (payloads.verifyKnownPayloads): this function is pure and loads no hash library.
+ *
+ * @param {Object} p
+ * @param {any} p.governance    readGovernance result (the latest proposal stays readable once settled)
+ * @param {number|null} [p.chainNowSec]  latest block timestamp, null when unreadable
+ * @param {number} p.nowSec     the local clock, used only when chainNowSec is null
+ * @param {any} p.timing        resolved policy.timing config
+ * @param {any} p.config        resolved policy.crank config
+ * @param {Record<string,string>} [p.knownPayloads]  verified actionHash (lowercase) => payload
+ * @param {boolean} p.held      the agent has shares or a pending deposit in this vault
+ * @returns {{action:'finalize'|'execute'|'mark-expired'|'none', checks:Array<{name:string,ok:boolean,detail:string}>, reason:string, degraded?:boolean, urgent?:boolean, pid?:bigint, ptype?:number, actionHash?:string, payload?:string}}
+ */
+export function decideCrank({ governance, chainNowSec = null, nowSec, timing, config, knownPayloads = {}, held }) {
+  /** @type {Array<{name:string,ok:boolean,detail:string}>} */
+  const checks = [];
+  const none = (reason, extra = {}) => ({ action: /** @type {const} */ ('none'), checks, reason, ...extra });
+
+  // ── scope: cranking a vault the agent does not hold spends gas for other members ─────────────
+  if (config.scope === 'off') {
+    checks.push(check('scope', false, 'policy.crank.scope is off'));
+    return none('cranking is switched off (policy.crank.scope = off)');
+  }
+  const inScope = config.scope === 'all' || held === true;
+  checks.push(
+    check(
+      'scope',
+      inScope,
+      config.scope === 'all'
+        ? 'scope is all: every vault read is cranked'
+        : held
+          ? 'scope is held and the agent holds a position here'
+          : 'scope is held and the agent holds no position here',
+    ),
+  );
+  if (!inScope) return none('the agent holds no position here and policy.crank.scope is held');
+
+  // ── the proposal: an unreadable one is unknown, never "nothing to do" ────────────────────────
+  const p = governance?.proposal;
+  if (governance?.available === false) return none('no governance contract is configured');
+  if (!p && BigInt(governance?.activePid ?? 0n) > 0n)
+    return none(`proposal ${governance.activePid} exists but its state could NOT be read: unknown, not "nothing to do". Retrying next tick.`, { degraded: true });
+  if (!p) return none('no proposal on this vault');
+
+  // ── the clock ─────────────────────────────────────────────────────────────────────────────────
+  const grace = Number(timing?.activateGraceSec ?? 0);
+  const onChainTime = chainNowSec != null && Number.isFinite(Number(chainNowSec));
+  const now = onChainTime ? Number(chainNowSec) : Number(nowSec) - grace;
+  checks.push(
+    check(
+      'clock',
+      true,
+      onChainTime ? `chain time ${now}` : `chain time unreadable: local clock ${nowSec} less the ${grace}s margin = ${now}`,
+    ),
+  );
+
+  const ids = { pid: p.pid, ptype: p.ptype, actionHash: p.actionHash };
+  const allOk = () => checks.every((c) => c.ok);
+  /** The verdict when every check passed, else `none` carrying the first failing check's detail. */
+  const verdict = (action, why, extra = {}) =>
+    allOk() ? { action, checks, reason: why, ...ids, ...extra } : none(checks.find((c) => !c.ok)?.detail ?? why, ids);
+
+  if (p.statusName === 'Active') {
+    checks.push(check('status-active', true, 'proposal is Active'));
+    // Governance.finalize: `block.timestamp >= revealDeadline`.
+    const over = now >= p.revealDeadline;
+    checks.push(check('reveal-window-over', over, over ? `reveal window ended at ${p.revealDeadline}` : `reveal window ends at ${p.revealDeadline} (in ${p.revealDeadline - now}s)`));
+    checks.push(check('finalize-enabled', config.finalize === true, config.finalize === true ? 'policy.crank.finalize is on' : 'policy.crank.finalize is off'));
+    return verdict('finalize', `FINALIZE proposal ${p.pid}: the reveal window ended at ${p.revealDeadline}, and until it is finalized the vault stays in Mode F`);
+  }
+
+  if (p.statusName === 'Passed') {
+    checks.push(check('status-passed', true, 'proposal has Passed'));
+    // Governance.markExpired: `block.timestamp > expiresAt`, strict.
+    if (now > p.expiresAt) {
+      checks.push(check('window-over', true, `execution window ended at ${p.expiresAt}`));
+      checks.push(check('mark-expired-enabled', config.markExpired === true, config.markExpired === true ? 'policy.crank.markExpired is on' : 'policy.crank.markExpired is off (bookkeeping only)'));
+      return verdict('mark-expired', `MARK-EXPIRED proposal ${p.pid}: the execution window ended at ${p.expiresAt}`);
+    }
+    // Governance.execute: `executableAt <= block.timestamp <= expiresAt`.
+    const elapsed = now >= p.executableAt;
+    checks.push(check('timelock-elapsed', elapsed, elapsed ? `executable since ${p.executableAt}` : `executable at ${p.executableAt} (in ${p.executableAt - now}s)`));
+    checks.push(check('window-open', true, `execution window open until ${p.expiresAt} (${p.expiresAt - now}s left)`));
+    checks.push(check('execute-enabled', config.execute === true, config.execute === true ? 'policy.crank.execute is on' : 'policy.crank.execute is off'));
+    const rebalance = p.ptype === CRANK_EXECUTE_PTYPE;
+    checks.push(check('rebalance-only', rebalance, rebalance ? 'proposal type is Rebalance' : `proposal type ${p.ptypeName} is not executed by this agent; a human decides it`));
+    const payload = knownPayloads[String(p.actionHash).toLowerCase()];
+    const known = typeof payload === 'string';
+    checks.push(
+      check(
+        'payload-known',
+        known,
+        known
+          ? `a verified payload for ${p.actionHash} is held`
+          : `no verified payload for actionHash ${p.actionHash}: the chain does not store it, so it cannot be executed from here (policy.crank.knownPayloads)`,
+      ),
+    );
+    const margin = Number(timing?.revealSafetyMarginSec ?? 0);
+    return verdict('execute', `EXECUTE proposal ${p.pid}: passed, inside its execution window until ${p.expiresAt}`, {
+      payload,
+      urgent: p.expiresAt - now <= margin,
+    });
+  }
+
+  if (p.statusName === 'Unknown') return none(`proposal status ${p.status} is not one this agent knows`, { degraded: true, ...ids });
+  return none(`proposal ${p.pid} is ${p.statusName}: nothing to finish`, ids);
 }
