@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "proxy": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+  "initializer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
+  "build": {
+    "solc": "0.8.26",
+    "evmVersion": "cancun",
+    "viaIR": true,
+    "optimizerRuns": 800,
+    "bytecodeHash": "none",
+    "cborMetadata": false
+  },
+  "contracts": {
+    "OperatorRegistry": {
+      "salt": "0xa36b54ca8b93313756191768ede922255b37db91601dd63f8757d481f1170153",
+      "saltPreimage": "rwally.protocol.v2.OperatorRegistry",
+      "initcodeBytes": 2199,
+      "initcodeHash": "0xa88a77ee36cf956ef40fff490ff95390295938cfc960167523494a48f5062b6d",
+      "address": "0xf80382d75920A41647F6934610f40493A3920Ea8"
+    },
+    "SubVaultRegistry": {
+      "salt": "0xd53a1a127f54f7f27bc0b631e0cf27e44c9449e95f0ec3ea4e39810e81b3e2db",
+      "saltPreimage": "rwally.protocol.v2.SubVaultRegistry",
+      "initcodeBytes": 1585,
+      "initcodeHash": "0xaae1a2761a5b4f05f7ac57f2922dd4890a66b1c816fa8a30ea7ffa827a5ffc05",
+      "address": "0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0"
+    },
+    "FeeEngine": {
+      "salt": "0xd8f1679f02d6606921c26b6b023169bd156839cb2c0f6bf534797a144277614c",
+      "saltPreimage": "rwally.protocol.v2.FeeEngine",
+      "initcodeBytes": 3039,
+      "initcodeHash": "0xa6d5d30d324209084426271f792e31d52aad7da1281b71c46a56ab5f38e03cb0",
+      "address": "0x71b75692565B47B2fA803a38d0933b99FA6E6999"
+    },
+    "Governance": {
+      "salt": "0x63443617e577b0fe15d184bf775497e0df7226d6de04e69a3a0e8616861cd98e",
+      "saltPreimage": "rwally.protocol.v2.Governance",
+      "initcodeBytes": 12249,
+      "initcodeHash": "0x858b4bd5092a6260eddd0f664fcd383290c0baab4fb91d7fa6ff63ab25d962b7",
+      "address": "0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11"
+    },
+    "VaultDeployer": {
+      "salt": "0x4da370845b1209e6d554c694ba2509b1774fd6a747163c88a467823a3477f13f",
+      "saltPreimage": "rwally.protocol.v2.VaultDeployer",
+      "initcodeBytes": 23937,
+      "initcodeHash": "0xca020a3451c1ec1eace68297b8119d9329fbfaf716b65e02c9a958da0c02a63b",
+      "address": "0x6a31cA2d9e901730e6B634f1a1698AB20B66E513"
+    },
+    "VaultFactory": {
+      "salt": "0xe1f58806a42a380b2f3c321f838c429518693322bf2171d5c223b66eb7f97058",
+      "saltPreimage": "rwally.protocol.v2.VaultFactory",
+      "initcodeBytes": 4473,
+      "initcodeHash": "0xadf9d17ccd2adc4a479d4173d19b98be109c9bfc203ebc5ee5fdb41327fa2399",
+      "address": "0xe17B45a6240eE74Cda48a1d44a27bfF9f6c79F3d"
+    }
+  }
+}

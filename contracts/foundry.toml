@@ -7,6 +7,12 @@ evm_version = "cancun"
 via_ir = true
 optimizer = true
 optimizer_runs = 800
+# No metadata trailer. The solc default appends a hash of the source text (comments included), so a
+# comment-only edit would move every contract's bytes and, under CREATE2, its address on every chain.
+# With both off the creation code depends on the code alone. See contracts/config/create2-manifest.json
+# and scripts/test/create2-manifest.test.mjs.
+bytecode_hash = "none"
+cbor_metadata = false
 fs_permissions = [{access = "read", path = "./config"}, {access = "read", path = "./out"}]
 
 [profile.default.fuzz]
