@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { publish, filesFor, PUBLISH_BRANCH, PUBLISH_FLAG } from '../src/publish.mjs';
@@ -65,6 +65,15 @@ test('a closed epoch file is immutable: different bytes for an existing epoch ar
     assert.equal(g('rev-parse', PUBLISH_BRANCH), before);
     // the same bytes again are accepted (a re-run)
     publish({ repoDir: dir, files: filesFor(board(1, 'closed', 'one')), message: 'c', env });
+  } finally { done(); }
+});
+
+test('a ref that exists but cannot be read is never replaced by a new orphan commit', () => {
+  const { dir, done } = tempRepo();
+  try {
+    writeFileSync(join(dir, '.git', 'refs', 'heads', PUBLISH_BRANCH), 'garbage\n');
+    assert.throws(() => publish({ repoDir: dir, files: filesFor(board(1, 'closed')), message: 'm', env: { [PUBLISH_FLAG]: 'yes' } }), /reference broken|update_ref failed/);
+    assert.equal(readFileSync(join(dir, '.git', 'refs', 'heads', PUBLISH_BRANCH), 'utf8'), 'garbage\n', 'the broken ref is left as it was');
   } finally { done(); }
 });
 

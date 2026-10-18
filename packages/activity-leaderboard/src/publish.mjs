@@ -67,7 +67,9 @@ export function publish({ repoDir, files, message, env = process.env }) {
     }
     const tree = git(repoDir, ['write-tree'], { env: indexEnv });
     const commit = git(repoDir, ['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', message]);
-    git(repoDir, ['update-ref', ref, commit, ...(parent ? [parent] : [])]);
+    // Compare-and-swap: an existing ref is only replaced from the parent we read, and a new ref only if
+    // none exists (all-zero old value), so a ref we failed to read is never overwritten by an orphan.
+    git(repoDir, ['update-ref', ref, commit, parent ?? '0'.repeat(commit.length)]);
     return { published: true, dryRun: false, ref, commit, plan };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
