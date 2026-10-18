@@ -41,14 +41,14 @@ reader can run. Never state a recovery time you cannot evidence.
 > C-5 (#34)**, and removed C-4 (#32)'s trigger. **C-1
 > ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is closed at launch by
 > root-only**, C-6 is resolved by the Chainlink-direct pivot, and the external audit is complete on
-> owner attestation, so gates 0 and 1 are **GO**. The protocol remains **NO-GO for BASE mainnet on
-> the OPERATIONAL gates** (soak + canary, gates 3/6, which need a funded testnet key), not on
-> security ([LAUNCH-READINESS.md](LAUNCH-READINESS.md)).
+> owner attestation, so gates 0 and 1 are **GO**. The soak and canary (gates 3 and 6) were not
+> re-run on the current source before the Arc mainnet deployment of 2026-09-24, by owner decision of
+> 2026-09-23; the residual risk that leaves is stated in
+> [LAUNCH-READINESS.md](LAUNCH-READINESS.md).
 >
-> **NO DEPLOYMENT OF THIS PROTOCOL IS LIVE ON ANY MAINNET, AND NO MEMBER FUNDS ARE AT STAKE
-> ANYWHERE.** Every incident below that begins with a deposit, a proposal or an exit is hypothetical
-> today. The one running stack is on **Base Sepolia** testnet, which holds no member money, and
-> its lifecycle evidence is
+> **THE PROTOCOL IS DEPLOYED ON ARC MAINNET (CHAIN 5042) SINCE 2026-09-24,** so an incident below
+> that begins with a deposit, a proposal or an exit can now happen to real funds. The **Base
+> Sepolia** testnet stack holds no member money, and its lifecycle evidence is
 > [`evidence/testnet-lifecycle-run.json`](evidence/testnet-lifecycle-run.json).
 >
 > **Chain 4663 (Robinhood Chain) is abandoned by owner decision of 2026-09-18, and both of its

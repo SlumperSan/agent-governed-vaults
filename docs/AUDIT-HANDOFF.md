@@ -30,7 +30,7 @@
 > - Remaining Mediums/Lows: dispositioned (accepted design-tradeoffs / off-chain / dormant) in the
 >   report's §1 table.
 >
-> **The BASE mainnet launch is NO-GO on two external gates:** (1) the Base mainnet deploy config must supply
+> **When this handoff was written, the BASE mainnet launch was NO-GO on two external gates:** (1) the Base mainnet deploy config must supply
 > **real, on-chain-verified Base Chainlink feed addresses** (the `chainlinkOracle` block in
 > `base-mainnet.json` is placeholders; `scripts/verify-chainlink-oracle.mjs` gates it; `Deploy.s.sol`
 > refuses a Base-mainnet deploy with an empty oracle allowlist); (2) **this external audit**.

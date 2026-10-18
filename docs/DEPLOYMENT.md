@@ -290,10 +290,10 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > purely-internal fix — the correct mechanism (parent casts the child's vote) is a post-launch,
 > post-audit feature. To enable sub-vaults you must deploy a factory with `allowSubVaults = true`,
 > which is only appropriate once that mechanism has shipped and been audited. See
-> [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and [INCIDENTS.md](INCIDENTS.md) §8. The protocol is
-> **NO-GO for mainnet on the OPERATIONAL gates** (soak + canary, which need a funded testnet key).
-> The protocol has never been deployed to any mainnet, so this gate has not yet been exercised
-> outside testnet; the security gates are cleared and the external audit is complete on owner
+> [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and [INCIDENTS.md](INCIDENTS.md) §8. The
+> Arc mainnet deployment (2026-09-24) went ahead by owner decision of 2026-09-23 without re-running
+> the operational gates, soak and canary, on the current source; [LAUNCH-READINESS.md](LAUNCH-READINESS.md)
+> carries the verdict and the residual risk to depositors. The external audit is complete on owner
 > attestation. Enabling sub-vaults is additionally gated on the post-launch look-through mechanism
 > shipping and being audited.
 >
@@ -301,11 +301,10 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > ([SOAK-REPORT.md](SOAK-REPORT.md) drill 2) stand as evidence, and re-running them against the
 > corrected contracts is step 3 of LAUNCH-READINESS §6's path to GO. Throwaway funds on a testnet
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
-> holding members' money. There is no mainnet deployment today and no vault anywhere holds member
-> funds, so the constraint is a design requirement to carry into whenever an Arc (chain 5042)
-> deployment happens, not a live position to check now. Once a factory is deployed there, confirm
-> `VaultFactory.allowSubVaults()` by reading it back on-chain rather than assuming a value carried
-> over from a prior deployment.
+> holding members' money. On Arc (chain 5042) `contracts/config/deployments/arc-mainnet.json` records
+> `factory.allowSubVaults()` as false, read on two endpoints at deploy time. On any other factory,
+> confirm `VaultFactory.allowSubVaults()` by reading it back on-chain rather than assuming a value
+> carried over from a prior deployment.
 
 ## 5. Post-deploy verification (before any real capital)
 

@@ -92,10 +92,11 @@ authority if the two ever disagree.
   cross-check a Chainlink answer that is wrong but inside its band and heartbeat. See the README's
   "Named residual" paragraph and [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md) (residual
   12, "curation immobility").
-- **Launch verdict:** as of this writing the board in
-  [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md) is the authority on go/no-go; `npm run cc`
-  prints the current computed state. A clean security posture does not by itself mean "launched
-  with no open gates" — read the board, not just this file.
+- **Launch verdict:** the protocol is live on Arc mainnet by owner decision, with the soak and
+  canary gates not re-run on the current source. The verdict and the residual risk to depositors are
+  at the top of [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md), which is the authority on
+  go/no-go; `npm run cc` prints the current computed state. A clean security posture does not by
+  itself mean "launched with no open gates". Read the board, not just this file.
 
 ## Bug bounty
 
