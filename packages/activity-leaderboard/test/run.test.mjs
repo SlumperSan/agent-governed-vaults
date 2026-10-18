@@ -133,7 +133,7 @@ function memberWithNoLaterActivity() {
   return { ch, bB };
 }
 
-test('a member whose logs were all missed is caught by the share total (the read starts after their only deposit)', async () => {
+test('a member who still holds shares and whose logs were all missed is caught by the share total (the read starts after their only deposit)', async () => {
   const { ch, bB } = memberWithNoLaterActivity();
   // The whole history read is sound.
   const ok = (await run(ch)).board.chains[0].rows.map((r) => r.address).sort();
@@ -142,10 +142,29 @@ test('a member whose logs were all missed is caught by the share total (the read
   await assert.rejects(run(ch, { vaults: [{ address: VAULT, fromBlock: bB }] }), (e) => e instanceof ConsistencyError && /totalShares/.test(e.message) && /missed/.test(e.message));
 });
 
-test('an endpoint that answers every log query with an empty list is caught by the share total', async () => {
+test('an endpoint that answers every log query with an empty list is caught by the share total while any member still holds shares', async () => {
   const { ch } = memberWithNoLaterActivity();
   ch.client.getLogs = async () => [];
   await assert.rejects(run(ch), (e) => e instanceof ConsistencyError && /totalShares/.test(e.message));
+});
+
+// The residual the README states: an address that entered and fully left leaves nothing at the head, so
+// missed logs for it are not seen. This pins the documented limit; if a later check closes it, update the README with it.
+test('residual: an address that fully exited before the read starts is silently absent, and an all-empty endpoint with every member exited gives an empty board', async () => {
+  const ch = fakeChain({ startTs: ANCHOR, creator: CREATOR });
+  ch.deposit(A, 100n * USDC, ANCHOR + DAY);
+  ch.exit(A, 100n * USDC * 10n ** 12n, ANCHOR + 3 * DAY);
+  const bB = ch.deposit(B, 50n * USDC, ANCHOR + 4 * DAY);
+  ch.advanceTo(ANCHOR + 8 * DAY);
+  assert.deepEqual((await run(ch)).board.chains[0].rows.map((r) => r.address).sort(), [A, B].sort());
+  const late = (await run(ch, { vaults: [{ address: VAULT, fromBlock: bB }] })).board.chains[0].rows.map((r) => r.address);
+  assert.deepEqual(late, [B]);
+  const gone = fakeChain({ startTs: ANCHOR, creator: CREATOR });
+  gone.deposit(A, 100n * USDC, ANCHOR + DAY);
+  gone.exit(A, 100n * USDC * 10n ** 12n, ANCHOR + 3 * DAY);
+  gone.advanceTo(ANCHOR + 8 * DAY);
+  gone.client.getLogs = async () => [];
+  assert.deepEqual((await run(gone)).board.chains[0].rows, []);
 });
 
 test('a second endpoint that agrees is recorded in the diagnostics', async () => {

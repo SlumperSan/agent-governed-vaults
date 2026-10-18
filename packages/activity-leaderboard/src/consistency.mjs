@@ -5,9 +5,11 @@
  * `assertHeadState`: before anything is published, (1) for every configured vault, the sum of the
  * ledger's shares must equal the contract's `totalShares()`, and (2) every position the reducer
  * holds must equal the contract's `sharesOf(member)` and `costBasisUsdc(member)`. Check (1) is the
- * one that sees a member whose logs were all missed: that member is not in the ledger, so check (2)
- * never visits them, but their shares are in `totalShares()`, which only mint and burn change (the
- * same two places `sharesOf` changes). A mismatch aborts the run with nothing written.
+ * one that sees a member who still holds shares and whose logs were all missed: that member is not
+ * in the ledger, so check (2) never visits them, but their shares are in `totalShares()`, which only
+ * mint and burn change (the same two places `sharesOf` changes). It cannot see an address that
+ * entered and fully left inside missed logs, because that address leaves nothing at the head. A
+ * mismatch aborts the run with nothing written.
  *
  * `assertSameChainView`: a second endpoint must report the same block hash at the head block and the
  * same `totalShares()` per vault. Together with the first check this ties the ledger to both.
