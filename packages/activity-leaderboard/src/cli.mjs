@@ -97,4 +97,4 @@ async function main() {
   }, null, 2));
 }
 
-main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });
+main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exitCode = 1; });
