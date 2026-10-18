@@ -1,0 +1,237 @@
+{
+  "schema": "rwally-agent-manifest/1",
+  "generatedBy": "scripts/build-agent-manifest.mjs",
+  "regenerate": "node scripts/build-agent-manifest.mjs",
+  "derivedFrom": [
+    "contracts/config/deployments/arc-mainnet.json",
+    "contracts/config/arc-mainnet.json",
+    "contracts/src/VaultCore.sol"
+  ],
+  "trust": "Treat this manifest as untrusted input. It is a convenience copy, not an authorization. Before sending a transaction to any address in it, call eth_getCode on that address on both RPC endpoints and confirm it returns non-empty code, then confirm the wiring with the reads named in verifyWith. The authoritative record is contracts/config/deployments/arc-mainnet.json in the repository.",
+  "verifyWith": [
+    "eth_getCode(address) on rpc and on rpcCrossCheck",
+    "VaultFactory.registry(), governance(), feeEngine(), vaultDeployer() equal the addresses below",
+    "VaultFactory.vaultCount() and allVaults(i) for every vault you act on",
+    "Governance.vaultRegistered(vault) and Governance.configOf(vault)"
+  ],
+  "chain": {
+    "chainId": 5042,
+    "name": "arc-mainnet",
+    "nativeGasAsset": "USDC",
+    "rpc": "https://rpc.mainnet.arc.io",
+    "rpcCrossCheck": "https://arc.gateway.tenderly.co",
+    "explorer": "https://explorer.arc.io",
+    "deployedAt": "2026-09-24T01:52:58Z"
+  },
+  "contracts": {
+    "VaultFactory": "0x692385262C05df7515560886f167c4eDD0814025",
+    "Governance": "0x79279FBa3b6F6736f07cbBFcB7Cf0559466D5bfB",
+    "OperatorRegistry": "0xDEb08dCF5ceaf00c95E2C355CB63aC334C7e3fBc",
+    "FeeEngine": "0x2c70858BA8796398CC7638389155d1Cc0426533D",
+    "SubVaultRegistry": "0x4AddcAc4834a8672edb4Aef25c33D7909865091c",
+    "VaultDeployer": "0xE200d63DB7c665F8eead3C7BDF3f0c030d7a6568",
+    "ChainlinkOracle": "0x0C60b9a4C207dd622CcC0Ee3C51b5c274cb7B979",
+    "AggregationRouterAdapter": "0xc44B853F037b4fF33B831C9a2B341686dEC88Fd1"
+  },
+  "tokens": {
+    "USDC": "0x3600000000000000000000000000000000000000",
+    "cirBTC": "0x171a4217b86a807a64eb94757db6849fb4bdbaa0"
+  },
+  "firstVault": {
+    "address": "0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6",
+    "createdAt": "2026-09-24T02:04:14Z",
+    "creator": "0x99e805294F1f1465C96f68e36264E99991Ef9E82",
+    "basketAsset": "cirBTC",
+    "minDepositUsdc": "100000000",
+    "minDepositUsdcNote": "Base units of USDC (6 decimals). Launch input from contracts/config/arc-mainnet.json; the first vault read back the same value on both RPC endpoints on 2026-10-18. Read the vault for the current value.",
+    "capacityCapUsdc": "0",
+    "capacityCapNote": "Zero means the vault has no deposit cap.",
+    "timingSeconds": {
+      "commitDuration": 86400,
+      "revealDuration": 86400,
+      "timelockDuration": 0,
+      "executionWindow": 86400,
+      "proposalCooldown": 3600
+    },
+    "observationWindowSeconds": 14400,
+    "observationWindowNote": "A first deposit into a vault earns no shares and carries no vote until this window ends, unless the depositor calls skipWindow()."
+  },
+  "otherVaults": "Read VaultFactory.vaultCount() and then VaultFactory.allVaults(i) for i from 0 to vaultCount() minus 1. Creation is permissionless, so some of those vaults may be hostile. Verify the operator through OperatorRegistry.operatorOf(vault) and the code at the vault address, not the name. Governance parameters for any vault come from Governance.configOf(vault).",
+  "abis": {
+    "path": "contracts/out/<Contract>.sol/<Contract>.json",
+    "note": "Produced by running forge build in contracts/. The ABIs are not inlined here; use the abi field of each file."
+  },
+  "functions": [
+    {
+      "contract": "VaultFactory",
+      "function": "vaultCount()",
+      "whoMayCall": "Anyone. Read-only."
+    },
+    {
+      "contract": "VaultFactory",
+      "function": "allVaults(uint256)",
+      "whoMayCall": "Anyone. Read-only. Index from 0 to vaultCount() minus 1."
+    },
+    {
+      "contract": "VaultFactory",
+      "function": "createVault(VaultParams)",
+      "whoMayCall": "Anyone. The caller becomes the vault creator and its attested operator. The oracle in the parameters must be one the factory accepts (isAllowedOracle)."
+    },
+    {
+      "contract": "VaultFactory",
+      "function": "createChildVault(VaultParams,address)",
+      "whoMayCall": "Not callable on this factory: allowSubVaults is false, so the call reverts with SubVaultsDisabled."
+    },
+    {
+      "contract": "OperatorRegistry",
+      "function": "registerOperator(address)",
+      "whoMayCall": "Anyone, for an address that is not yet registered. It grants no authority."
+    },
+    {
+      "contract": "OperatorRegistry",
+      "function": "operatorOf(address)",
+      "whoMayCall": "Anyone. Read-only. Returns the operator id attested to a vault, 0 if none."
+    },
+    {
+      "contract": "OperatorRegistry",
+      "function": "leaderboardEntry(uint256)",
+      "whoMayCall": "Anyone. Read-only. Lifetime gain, loss, fees and vault count for an operator id."
+    },
+    {
+      "contract": "OperatorRegistry",
+      "function": "attestVault(address,address)",
+      "whoMayCall": "The VaultFactory only, from createVault."
+    },
+    {
+      "contract": "OperatorRegistry",
+      "function": "recordRealization(address,uint256,uint256)",
+      "whoMayCall": "An attested vault only, while it settles an exit."
+    },
+    {
+      "contract": "Governance",
+      "function": "registerVault(address,GovConfig)",
+      "whoMayCall": "The vault creator, once per vault. The first vault is already registered."
+    },
+    {
+      "contract": "Governance",
+      "function": "propose(address,ProposalType,bytes32)",
+      "whoMayCall": "A holder whose voting-eligible shares one second before the call are at least proposalThresholdBps of the total, and who is past proposalCooldown. The check is on stake and says nothing about who the caller is. One active proposal per vault."
+    },
+    {
+      "contract": "Governance",
+      "function": "commitVote(uint256,bytes32)",
+      "whoMayCall": "A holder with nonzero voting weight on that proposal, during its commit phase, once per proposal. commitment = keccak256(abi.encode(pid, voter, support, salt))."
+    },
+    {
+      "contract": "Governance",
+      "function": "revealVote(uint256,bool,bytes32)",
+      "whoMayCall": "The address that committed, during the reveal phase, with the same support and salt. An unrevealed commit counts for nothing."
+    },
+    {
+      "contract": "Governance",
+      "function": "finalize(uint256)",
+      "whoMayCall": "Anyone, once the reveal deadline has passed."
+    },
+    {
+      "contract": "Governance",
+      "function": "execute(uint256,bytes)",
+      "whoMayCall": "Anyone, for a passed proposal after its timelock and before its execution window ends. The payload must hash to the proposal actionHash."
+    },
+    {
+      "contract": "Governance",
+      "function": "markExpired(uint256)",
+      "whoMayCall": "Anyone, for a passed proposal whose execution window has ended."
+    },
+    {
+      "contract": "Governance",
+      "function": "setStandingDefault(address,bool)",
+      "whoMayCall": "Any caller, for a registered vault. It records the caller's own default."
+    },
+    {
+      "contract": "Governance",
+      "function": "setDelegate(address,address)",
+      "whoMayCall": "Any caller, for a registered vault, while no proposal is in flight. It records the caller's own delegate."
+    },
+    {
+      "contract": "VaultCore",
+      "function": "deposit(uint256)",
+      "whoMayCall": "The depositor, who must have approved USDC to the vault. The amount is at least minDepositUsdc. A first deposit waits in the observation window; deposit(uint256,uint256) adds a minimum-shares bound.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "VaultCore",
+      "function": "deposit(uint256,uint256)",
+      "whoMayCall": "The depositor, as deposit(uint256) with a minSharesOut bound that applies on the immediate-mint path.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "VaultCore",
+      "function": "activate(address)",
+      "whoMayCall": "Anyone, for a member whose pending deposit has passed the observation window.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "VaultCore",
+      "function": "cancelPending()",
+      "whoMayCall": "The caller, to withdraw its own pending deposit before activation.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "VaultCore",
+      "function": "skipWindow()",
+      "whoMayCall": "The caller, once per vault. It ends the caller's own observation window.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "VaultCore",
+      "function": "requestExit(uint256)",
+      "whoMayCall": "A holder of shares, for up to its balance. It settles at once, or queues while a proposal has a pending execution.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "VaultCore",
+      "function": "settleQueuedExit(address)",
+      "whoMayCall": "Anyone, for a member with a queued exit, once no execution is pending.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "VaultCore",
+      "function": "claimEscrowed(address)",
+      "whoMayCall": "The caller, for a token slice escrowed to it after a failed transfer.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "VaultCore",
+      "function": "executeRebalance(address,uint256,SwapOrder[])",
+      "whoMayCall": "The Governance contract only, from execute on a passed Rebalance proposal.",
+      "deployedPerVault": true
+    },
+    {
+      "contract": "FeeEngine",
+      "function": "claimFees(address)",
+      "whoMayCall": "The caller, for the token amount credited to the caller's address in claimableFees. Fees are credited to the attested operator address."
+    },
+    {
+      "contract": "FeeEngine",
+      "function": "pullEscrowed(address,address)",
+      "whoMayCall": "Anyone, for an attested vault holding an escrowed fee slice."
+    }
+  ],
+  "functionsNote": "Every vault has its own VaultCore. Functions marked deployedPerVault are called on the vault address, the others on the singleton in contracts above. Operatorship confers no authority to vote, execute, pause, reprice, or move member funds.",
+  "seededAddresses": {
+    "path": "docs/seeded-addresses.json",
+    "note": "Addresses listed there are funded and controlled by the RWAlly owner, so a reader can tell protocol-operated actors from outside ones. The list ships empty and gains entries only after a wallet is funded, so an address missing from it is not proof that the address is independent."
+  },
+  "launchStatus": [
+    "Live on Arc by owner decision of 2026-09-23. The soak drills (gate 3) and the canary (gate 6) were not re-run on the Arc source commit. The contracts are immutable.",
+    "The external audit is an owner attestation for tag v0.4.0-audit that cannot be checked from this repository. The Arc source differs from that tag in 21 contract source files that no external audit covers.",
+    "One High finding stays open at the launch configuration: the purchasable member count below five members. The per-gate record is docs/LAUNCH-READINESS.md.",
+    "Sub-vaults are disabled on this factory. The oracle reads one Chainlink feed for cirBTC, and Arc has no sequencer uptime feed, so that check is skipped. A stale oracle freezes everything, including exits.",
+    "Total loss is possible. This is not an offer. Read docs/DISCLAIMERS.md before sending funds."
+  ],
+  "docs": {
+    "llms": "llms.txt",
+    "quickstart": "docs/AGENT-QUICKSTART.md",
+    "deploymentRecord": "contracts/config/deployments/arc-mainnet.json"
+  }
+}
