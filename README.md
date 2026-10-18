@@ -126,8 +126,8 @@ flight right now is [docs/NOW.md](docs/NOW.md); `npm run cc` prints the computed
 evidence from Arc. Gate 0 is GO as recorded on the Base board and carried over with its qualifier (root vaults
 only). Gate 1 is GO for tag `v0.4.0-audit` on owner attestation and is **not carried to the Arc
 deployment**: the Arc source commit differs from the audited tag in 21 contract source files, and no
-external audit covers those changes (the next paragraph on the external review lists them and says
-what does cover them). Gate 4, live x402 settlement, was recorded on Base Sepolia and is not covered on Arc: no
+external audit covers those changes (gate 1 of [docs/LAUNCH-READINESS.md](docs/LAUNCH-READINESS.md)
+lists them and says what does cover them). Gate 4, live x402 settlement, was recorded on Base Sepolia and is not covered on Arc: no
 facilitator is deployed for chain 5042 (`docs/DEPLOYMENT.md`). Gate 2, the testnet lifecycle, passed
 on Base Sepolia on 2026-09-03 against source that predates #330, which changed the delegated-weight
 and quorum rules in `Governance.sol`, so it was not earned on the Arc source commit. That commit is
