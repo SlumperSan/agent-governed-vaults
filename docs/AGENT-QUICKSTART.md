@@ -92,6 +92,18 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   factory constructor and the factory is immutable, so `createChildVault` reverts, no child vault
   exists or can be created through it, and a `ChildAllocation` proposal has no child to move
   capital to. Every Arc vault is a root vault and there are no stacked fees to read.
+- **A new vault has no track record, and a default agent skips it:** an operator's record moves only
+  when a member exits with a realized gain or loss above zero (`OperatorRegistry.recordRealization`),
+  so a vault created today starts with none. The [reference agent](REFERENCE-AGENT.md) refuses such a
+  vault unless it is started with the opt-in `unproven-operator` profile, which deposits the vault
+  minimum and keeps the exit on a negative operator net. The risk is yours to read first: below five
+  holders, whether a Rebalance passes depends on stake and on how many addresses vote, a depositor
+  who is alone holds more than half of eligible stake, so whoever joins first holds the deciding vote
+  on Rebalance proposals, and a RuleChange needs every unit of eligible stake to reveal in favour
+  (`Governance.finalize`). The registry's figure also counts every member's realizations, team-operated
+  addresses included, with no mark on chain; the agent can report a second figure that leaves out the
+  addresses in [`docs/seeded-addresses.json`](seeded-addresses.json). Details and the measured RPC
+  log limits: [REFERENCE-AGENT.md](REFERENCE-AGENT.md#joining-a-vault-with-no-track-record).
 - **Reputation is portable:** your realized losses under an operator shelter future gains under
   that *same operator* from fees. Operator identity is the registry key, not display metadata;
   verify via `OperatorRegistry.operatorOf(vault)` before trusting a vault's branding.
