@@ -42,6 +42,14 @@
  *                                       member count, which is NOT the API's event-derived one
  *   VaultCore.creator()                 who deployed it; the 5% withdrawal gate binds to this address
  *
+ * Crank support (finalize, execute, markExpired):
+ *
+ *   Block.timestamp                     `readBlockTimestamp()`: all three Governance gates compare
+ *                                       `block.timestamp`, never the agent's own clock, so the
+ *                                       crank decision is taken on chain time
+ *   eth_call of an exact write          `simulateCall()`: the one shared simulation used before a
+ *                                       crank write is sent. Read-only: it signs and sends nothing
+ *
  * **Oracle-freeze detection is a proxy, and it is a warning only in the loosest sense.**
  * `navPerShareWad()` reverts with `StaleOracle` when any basket asset's price is stale
  * (VaultCore.sol:256) — so a failed NAV read means the vault is ALREADY frozen, at which point
@@ -537,6 +545,53 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
         commitUnknown,
       };
     },
+
+    /**
+     * The latest block's timestamp, in seconds. `Governance.finalize`, `execute` and `markExpired`
+     * all gate on `block.timestamp`, so the crank decides on this and not on the agent's clock.
+     * Null on a failed read (the planner then falls back to the local clock with a margin).
+     * @returns {Promise<number|null>}
+     */
+    async readBlockTimestamp() {
+      try {
+        const c = await getClient();
+        const block = await c.getBlock({ blockTag: 'latest' });
+        const ts = Number(block?.timestamp);
+        return Number.isSafeInteger(ts) && ts > 0 ? ts : null;
+      } catch (err) {
+        onEvent({ level: 'warn', msg: 'chain read failed: latest block timestamp', detail: { error: String(err?.shortMessage ?? err?.message ?? err) } });
+        return null;
+      }
+    },
+
+    /**
+     * Simulate one write: an `eth_call` of the exact calldata, from `from` when given. Read-only,
+     * so it runs in dry-run too. Never throws.
+     *
+     * `{ ok: true }` means the call did not revert against the latest block. `{ ok: false,
+     * reverted: true, error }` means the contract rejected it (a lost `finalize` race reverts
+     * `WrongPhase`); `{ ok: false, reverted: false, error }` means the simulation itself could not
+     * run (the RPC failed), which the caller treats the same way: do not send what was not checked.
+     *
+     * Pass an ABI that includes the contract's `error` fragments to get the error NAME back.
+     *
+     * @param {{to:string, abi:any[], functionName:string, args:any[]}} call
+     * @param {{from?:string|null}} [opts]
+     * @returns {Promise<{ok:true}|{ok:false, reverted:boolean, error:string}>}
+     */
+    async simulateCall({ to, abi, functionName, args }, { from = null } = {}) {
+      try {
+        const c = await getClient();
+        await c.simulateContract({ address: to, abi, functionName, args, ...(from ? { account: from } : {}) });
+        return { ok: true };
+      } catch (err) {
+        const revert = typeof err?.walk === 'function' ? err.walk((e) => e?.name === 'ContractFunctionRevertedError') : null;
+        const error = revert
+          ? String(revert.data?.errorName ?? revert.reason ?? revert.shortMessage ?? 'reverted')
+          : String(err?.shortMessage ?? err?.message ?? err);
+        return { ok: false, reverted: Boolean(revert), error };
+      }
+    },
   };
 }
 
@@ -548,8 +603,11 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
  *
  * @param {Record<string, any>} fixture  vault ⇒ partial readVault result
  * @param {Record<string, any>} [govFixture]  vault ⇒ partial readGovernance result
+ * @param {Object} [opts]
+ * @param {number|null} [opts.blockTimestamp]  what `readBlockTimestamp` answers (null: unreadable)
+ * @param {(call:any, opts:any)=>{ok:boolean, reverted?:boolean, error?:string}} [opts.simulate]  what `simulateCall` answers
  */
-export function createStubChainReader(fixture = {}, govFixture = {}) {
+export function createStubChainReader(fixture = {}, govFixture = {}, { blockTimestamp = null, simulate = () => ({ ok: true }) } = {}) {
   const base = {
     navPerShareWad: 10n ** 18n,
     navReadable: true,
@@ -609,6 +667,12 @@ export function createStubChainReader(fixture = {}, govFixture = {}) {
       const g = govFixture[lc(vault)];
       if (!g) return { available: true, stub: true, hasPendingExecution: false, activePid: 0n, proposal: null, commitment: null, hasOutstandingCommit: false, revealed: null };
       return { available: true, stub: true, hasPendingExecution: false, activePid: 0n, proposal: null, commitment: null, hasOutstandingCommit: false, revealed: null, voter, ...g };
+    },
+    async readBlockTimestamp() {
+      return blockTimestamp;
+    },
+    async simulateCall(call, o = {}) {
+      return simulate(call, o);
     },
   };
 }
