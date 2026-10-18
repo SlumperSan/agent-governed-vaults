@@ -42,6 +42,7 @@ import { assembleVoteCommit, planVoteCommit, type PlannedCall } from '@atlas/cha
 import { MAX_TICK_WALK, tickBoundaries } from '@atlas/size-impact';
 import { TARGET_CHAIN } from './chains';
 import { assertNotSanctioned } from './sanctions';
+import { requireConfirmed } from './tx-status';
 
 /** Every field is independently nullable: `readExitGateInputs` resolves each read on its own
  * (`Promise.allSettled`, not `Promise.all`), so one reverting call — an older vault, a transient
@@ -577,7 +578,9 @@ export async function sendDeposit(
     args: [vault, amountUsdc],
     account,
   });
-  await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+  // Same receipt semantics as every other write: a reverted, replaced or unconfirmed approval stops
+  // the flow here, before the deposit is signed. `approvalHash` below is the one that mined.
+  const minedApprovalHash = await requireConfirmed(publicClient, approvalHash, 'USDC approval', 'deposit');
   const depositHash = await simulateThenWrite(publicClient, walletClient, {
     address: vault,
     abi: VAULT_WRITE_ABI,
@@ -585,7 +588,7 @@ export async function sendDeposit(
     args: [amountUsdc],
     account,
   });
-  return { approvalHash, depositHash };
+  return { approvalHash: minedApprovalHash, depositHash };
 }
 
 /**

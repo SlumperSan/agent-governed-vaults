@@ -102,3 +102,26 @@ export function replacedLine(label: string, hash: string): string {
 export function unconfirmedLine(label: string, hash: string, detail: string): string {
   return `Could not confirm yet (${detail}). The transaction may still be mined; check ${label} ${hash} before retrying.`;
 }
+
+/**
+ * Wait for a step that a LATER write depends on (the USDC approval before a deposit) and return the
+ * hash that mined. Anything but `confirmed` throws, so the caller stops instead of sending the next
+ * write on top of an approval that reverted, was cancelled, or is not known to be mined. Each
+ * message says that nothing further was sent, and claims no more than the outcome shows.
+ */
+export async function requireConfirmed(
+  client: ReceiptWaiter,
+  hash: `0x${string}`,
+  label: string,
+  next: string,
+): Promise<`0x${string}`> {
+  const outcome = await confirmTx(client, hash);
+  if (outcome.state === 'confirmed') return outcome.hash;
+  if (outcome.state === 'reverted') {
+    throw new Error(`The ${label} reverted on chain (${outcome.hash}), so no ${next} was sent. The network fee was still charged.`);
+  }
+  if (outcome.state === 'replaced') {
+    throw new Error(`The ${label} was replaced from your wallet, so nothing is confirmed for ${hash} and no ${next} was sent. Check your wallet before retrying.`);
+  }
+  throw new Error(`Could not confirm the ${label} yet (${outcome.detail}). No ${next} was sent; check ${hash} before retrying.`);
+}

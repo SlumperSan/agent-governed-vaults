@@ -78,7 +78,8 @@ const IDLE: FlowState = { busy: false, message: null, error: null };
 /**
  * A write's hash only proves the wallet broadcast it. This shows the pending line, waits for the
  * receipt, and only then shows `done` (receipt status success) or the revert error (receipt status
- * reverted). A receipt wait that could not settle is neither: the member is pointed at the hash.
+ * reverted). `done` receives the MINED hash (`outcome.hash`), which differs from the broadcast
+ * hash when the wallet repriced the transaction. A receipt wait that could not settle is neither: the member is pointed at the hash.
  * A mined revert undoes the call's state changes and still charges the network fee.
  */
 async function settleFlow(
@@ -86,13 +87,13 @@ async function settleFlow(
   set: (s: FlowState) => void,
   label: string,
   hash: `0x${string}`,
-  done: string,
+  done: (minedHash: string) => string,
   action: string,
 ): Promise<boolean> {
   set({ busy: true, message: submittedLine(label, hash), error: null });
   const outcome = await confirmTx(publicClient, hash);
   if (outcome.state === 'confirmed') {
-    set({ busy: false, message: done, error: null });
+    set({ busy: false, message: done(outcome.hash), error: null });
     return true;
   }
   if (outcome.state === 'reverted') {
@@ -271,7 +272,7 @@ export function MemberActions({ vault }: Props) {
     setDeposit({ busy: true, message: 'Approving…', error: null });
     try {
       const r = await sendDeposit(publicClient, walletClient, address as Address, vaultAddr as Address, parsed.value);
-      const ok = await settleFlow(publicClient, setDeposit, 'deposit', r.depositHash, `Deposited. approve ${r.approvalHash} · deposit ${r.depositHash}`, 'deposit');
+      const ok = await settleFlow(publicClient, setDeposit, 'deposit', r.depositHash, (h) => `Deposited. approve ${r.approvalHash} · deposit ${h}`, 'deposit');
       if (ok) setDepositInput('');
     } catch (e) {
       setDeposit({ busy: false, message: null, error: e instanceof Error ? e.message : String(e) });
@@ -285,7 +286,7 @@ export function MemberActions({ vault }: Props) {
     setExit({ busy: true, message: null, error: null });
     try {
       const r = await sendRequestExit(publicClient, walletClient, address as Address, vaultAddr as Address, parsed.value);
-      const ok = await settleFlow(publicClient, setExit, 'requestExit', r.exitHash, `Exit requested. requestExit ${r.exitHash}`, 'exit request');
+      const ok = await settleFlow(publicClient, setExit, 'requestExit', r.exitHash, (h) => `Exit requested. requestExit ${h}`, 'exit request');
       if (ok) setExitInput('');
     } catch (e) {
       setExit({ busy: false, message: null, error: e instanceof Error ? e.message : String(e) });
@@ -297,7 +298,7 @@ export function MemberActions({ vault }: Props) {
     setCommit({ busy: true, message: null, error: null });
     try {
       const r = await sendCommitVote(publicClient, walletClient, address as Address, addrs.governance, vaultAddr as Address, vault.proposal.pid, support);
-      await settleFlow(publicClient, setCommit, 'commitVote', r.commitHash, `Committed ${support ? 'FOR' : 'AGAINST'}. commitVote ${r.commitHash}`, 'vote commit');
+      await settleFlow(publicClient, setCommit, 'commitVote', r.commitHash, (h) => `Committed ${support ? 'FOR' : 'AGAINST'}. commitVote ${h}`, 'vote commit');
     } catch (e) {
       setCommit({ busy: false, message: null, error: e instanceof Error ? e.message : String(e) });
     }
@@ -308,7 +309,7 @@ export function MemberActions({ vault }: Props) {
     setReveal({ busy: true, message: null, error: null });
     try {
       const r = await sendRevealVote(publicClient, walletClient, address as Address, addrs.governance, vault.proposal.pid, custody);
-      await settleFlow(publicClient, setReveal, 'revealVote', r.revealHash, `Revealed. revealVote ${r.revealHash}`, 'vote reveal');
+      await settleFlow(publicClient, setReveal, 'revealVote', r.revealHash, (h) => `Revealed. revealVote ${h}`, 'vote reveal');
     } catch (e) {
       setReveal({ busy: false, message: null, error: e instanceof Error ? e.message : String(e) });
     }
