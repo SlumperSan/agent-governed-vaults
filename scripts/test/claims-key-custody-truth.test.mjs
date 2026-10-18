@@ -133,8 +133,9 @@ const SELF = path.relative(REPO, HERE).split(path.sep).join('/');
 // whole copies of this repository underneath it, and a guard that read them would report another
 // session's in-flight text as this branch's defect.
 //
-// THIS LIST DIVERGES FROM `claims-lede-truth.test.mjs`'s BY TWO ENTRIES, `dist` AND `dist-ssr`, AND
-// THAT IS DELIBERATE. Its header argues at length that skipping build output is how a guard goes
+// THIS LIST SKIPS `dist`, WHICH `claims-lede-truth.test.mjs`'s DOES NOT, AND THAT IS DELIBERATE.
+// (The other difference, `lib`, is explained in the next paragraph. `dist-ssr` used to be a third;
+// claims-lede now skips it too, because other tests create and delete probe files there mid-run.) Its header argues at length that skipping build output is how a guard goes
 // vacuous, and it is right for the claim family IT guards: `apps/site` publishes the public
 // lede only as prerendered output, so a walk that skips `dist` guards the pages a reader receives
 // by nothing. This family is the opposite shape. No page under `apps/site` mentions
@@ -145,7 +146,7 @@ const SELF = path.relative(REPO, HERE).split(path.sep).join('/');
 // costs no coverage of THIS family and buys precision. Said out loud because the sibling header
 // states that a skip list two guards disagree on is its own drift; this is the disagreement,
 // declared, with its reason. If a public page ever starts describing facilitator modes, delete
-// these two entries rather than reasoning from this paragraph.
+// the `dist` entry rather than reasoning from this paragraph.
 //
 // `lib` USED TO BE IN THIS SET AND IS NOT ANY MORE. Matching a bare directory NAME at any depth is
 // right for `node_modules` and wrong for `lib`: the entry was meant for `contracts/lib`, the forge
