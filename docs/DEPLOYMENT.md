@@ -93,11 +93,11 @@ allowlist. So the oracle is deployed **before** the factory:
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
-> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive). The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); once a factory is deployed there, `factory.oracleAllowlistEnforced()` and `factory.isAllowedOracle(...)` must be read back on-chain from the actual deployed factory address — no Arc deployments file exists yet to look it up in.
+> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`) — an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive). The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); on a factory brought up through `initialize`, `scripts/protocol-initialize-preflight.mjs` reads `initialized()`, `oracleAllowlistEnforced()` and `isAllowedOracle(...)` back on-chain from the deployed factory address (section 10). The live Arc deployment is recorded in `contracts/config/deployments/arc-mainnet.json`.
 
-### Arc — the sequencer-uptime-feed exemption is NOT yet granted
+### Arc — the sequencer-uptime-feed exemption
 
-**This weakens a security gate, so it is an owner decision and it has not been made.** Chainlink
+**This weakens a security gate, so it was an owner decision, and it has been made (2026-09-18, recorded in `contracts/config/arc-mainnet.json`; chain 5042 is on the exempt allowlist below).** Chainlink
 publishes no L2 Sequencer Uptime Feed for Arc, and would not be expected to: Arc is an L1, not a
 rollup, so there is no sequencer whose liveness the feed would report. `ChainlinkOracle`'s
 `_requireSequencerUp` returns early on a zero address, so the gate is skipped at price time rather
@@ -105,9 +105,9 @@ than reverting — which means deploying on Arc runs with two of the three oracl
 
 `requiresSequencerUptimeFeed` in
 [`DeployChainlinkOracle.s.sol`](../contracts/script/DeployChainlinkOracle.s.sol) refuses a chain it
-has no sequencer policy for. **Arc is not on its exempt allowlist and must be added deliberately
-before any deploy** — that edit is the moment the decision gets made, and it should be recorded here
-with a date and the owner's words, the way the previous one was.
+has no sequencer policy for. Arc (5042) is on its exempt allowlist; any other chain is added
+deliberately, and that edit is the moment the decision gets made, recorded with a date and the owner's
+words, the way this one was.
 
 **One habit worth keeping from the previous chain.** `verify-chainlink-oracle.mjs` computes
 `SEQUENCER_REQUIRED` from the *config's* `chainId` and never from the RPC, while the RPC is resolved
@@ -637,12 +637,34 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
   (`0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, constant in `contracts/src/lib/ProtocolInitializer.sol`)
   is the only address that can call `factory.initialize`, `registry.wire`, `subReg.wire` and
   `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
-  been the proxy. Each call works once.
-- **Order on each chain.** Gate on the proxy having 69 bytes and each predicted address being empty or
-  carrying the manifest codehash. Deploy the six (any order). Deploy the per-chain oracle and adapter.
-  Send `factory.initialize([oracle])`, read back `factory.initialized()`, `oracleAllowlistEnforced()` and
-  `isAllowedOracle(oracle)`. Only then send the three wires. An uninitialised factory has its allowlist
-  off; `createVault` and `createChildVault` revert `NotInitialized` until `initialize` lands.
+  been the proxy. Each call works once. That is four one-shot calls per chain, and `factory.initialize` is the
+  one that chooses something: the oracle allowlist, where an empty list leaves the C-6 gate off for good. The
+  live Arc set (v1, plain CREATE) is different: its key made only the three wire calls, all three made, and
+  its factory fixed the allowlist in its constructor and has no `initialize`.
+- **Order on each chain.** Gate on the proxy having 69 bytes and each predicted address being empty. `ProtocolCreate2.create`
+  reverts on an address that already has code, so a half-run or a squatted address is finished by sending
+  the remaining creates by hand, after checking the runtime at each existing address against a local
+  build. Deploy the six (any order). Deploy the per-chain oracle and adapter.
+  Send `factory.initialize([oracle])`, then run the initialisation preflight (next bullet). Only when it
+  passes send the three wires. An uninitialised factory has its allowlist off; `createVault` and
+  `createChildVault` revert `NotInitialized` until `initialize` lands.
+- **Initialisation preflight, per chain, before any wire, vault or announced address.**
+  `node scripts/protocol-initialize-preflight.mjs --plan <plan.json>` (plan shape in the script header)
+  reads, on at least two RPC endpoints per chain: the chain id, code at the manifest's `VaultFactory`,
+  `initialized()` and `oracleAllowlistEnforced()` true, `isAllowedOracle(o)` true for every oracle in the
+  plan, and that the factory's single `Initialized` event lists exactly the plan's oracles (a mapping
+  cannot be enumerated, so the event is what catches an extra blessed oracle). A read that fails is a
+  failure, not a skip. Exit 1 means do not wire, do not create a vault, do not announce the address.
+  `scripts/test/protocol-initialize-preflight.test.mjs` runs it against a fake chain.
+- **Recovery on a wrongly initialised chain is a new salt.** `initialize` works once, so a factory that
+  was initialised with an empty list, a list that blesses an oracle nobody chose, or by a compromised
+  `PROTOCOL_INITIALIZER`, cannot be corrected. The set on that chain is replaced by a new set under a new
+  salt prefix (the `rwally.protocol.v2.` salts in `contracts/script/lib/ProtocolCreate2.sol` and
+  `SALT_PREFIX` in `scripts/lib/create2-manifest.mjs`), which gives new addresses there and ends the same-address property for that chain.
+  If the cause is a compromised initialiser key, it can also wire the other singletons on any chain it has not yet
+  initialised, so treat every uninitialised chain as exposed until a new key is in the constant, and
+  changing the constant moves the addresses of the singletons that carry it and of those that embed them,
+  on every chain.
 - **The manifest.** `contracts/config/create2-manifest.json` records each salt, initcode hash and
   address. Regenerate it after `forge build` with `node scripts/update-create2-manifest.mjs`, then read
   what moved. `contracts/test/Create2Determinism.t.sol` checks it against the compiler and
