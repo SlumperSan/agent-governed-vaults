@@ -447,7 +447,8 @@ const quoteSpans = (text) => {
  * `opts.denial` skips a match containing its own refutation. `opts.citation` skips a match wholly
  * inside a quoted span that also sits near a refutation marker. `opts.qualifier` skips a match with
  * a delay qualifier in the window OUTSIDE the match — outside, because "cannot be queued" carries
- * the word "queued" and would otherwise exempt itself. `opts.records` skips dated records.
+ * the word "queued" and would otherwise exempt itself. `opts.exception` skips a match whose window
+ * outside the match names the exception it needs (guard 8b). `opts.records` skips dated records.
  */
 const scan = (patterns, opts = {}) => {
   const hits = [];
@@ -462,6 +463,7 @@ const scan = (patterns, opts = {}) => {
         if (opts.denial && DENIAL_IN_MATCH.test(m[0])) continue;
         if (opts.citation && spans.some(([a, b]) => a <= i && j <= b) && REFUTATION.test(around)) continue;
         if (opts.qualifier && DELAY_QUALIFIER.test(around)) continue;
+        if (opts.exception && opts.exception.test(around)) continue;
         // `skip` receives the whole MATCH OBJECT, not just its text, so a caller reading a captured
         // figure reads the one the pattern captured. A draft passed `m[0]` and re-parsed the first
         // `%` out of it, which is a different number whenever the match spans two percentages — see
@@ -917,6 +919,52 @@ test('no public surface offers an exit during an oracle freeze, or calls pending
 });
 
 // ---------------------------------------------------------------------------------------------
+// Guard 8b: the freeze is not "everything". `cancelPending` is the exception, and a sentence that
+// says "freezes everything" without it is false against `VaultCore.sol`.
+//
+// "The stale-oracle breaker freezes everything, including exits" shipped in `llms.txt`, its
+// byte-identical `apps/site/public` copy, `docs/ARCHITECTURE.md`, `docs/AGENT-QUICKSTART.md`,
+// `docs/THREAT-MODEL.md` and `apps/web/index.html`. The exits half is true and is the point of the
+// sentence; the "everything" half is not: `cancelPending` reads no oracle and no NAV, so
+// un-activated capital stays reclaimable (guard 8 pins that fact from the source). The true form
+// names what freezes: every call that reads NAV.
+//
+// A match is excused only when the exception is named within WINDOW characters outside the match
+// (`cancelPending`, pending capital or deposits, an observation window), and a verb-first match preceded by "not", "never" or "no" is skipped as a
+// denial (a lookbehind, because the shared `denial` option only reads the match itself). `.ts` is outside
+// PUBLIC_EXT, so the NatSpec above `navWad` ("freezing everything, including exits") and the
+// string literals in `apps/site/src` are not walked here; the first is contract source and is left
+// to the owner's contract-diff rule.
+// ---------------------------------------------------------------------------------------------
+const FREEZE_EXCEPTION = /cancelPending|pending\s+(?:capital|deposits?)|un-?activated|observation[-\s]window/i;
+const FREEZE_EVERYTHING = [
+  /(?<!\bnot\s)(?<!\bnever\s)(?<!n't\s)(?<!\bno\s)\b(?:freez\w*|froze|frozen)\s+(?:absolutely\s+)?(?:everything|all\s+(?:calls|actions|functions|operations|paths))\b/gi,
+  /(?<!\bnot\s)(?<!\bnever\s)(?<!n't\s)(?<!\bno\s)\beverything\s+(?:freezes|is\s+frozen|reverts|halts)\b/gi,
+  /\bfreez\w*\s+the\s+(?:whole|entire)\s+vault\b/gi,
+  /\b(?:all|every)\s+(?:calls?|functions?|actions?|operations?)\s+(?:revert|freeze)s?\b/gi,
+];
+
+test('no public surface says an oracle freeze stops everything without naming cancelPending', () => {
+  const facts = exitMechanics();
+  premise(
+    facts,
+    'cancelPendingReadsNoOracle',
+    '`cancelPending` now touches the oracle or NAV, so "freezes everything" may have become true.\n' +
+      'Re-read the freeze prose before relaxing this guard.',
+  );
+  const hits = scan(FREEZE_EVERYTHING, { denial: true, exception: FREEZE_EXCEPTION });
+  assert.deepEqual(
+    files(hits),
+    [],
+    'A stale oracle freezes every call that READS NAV: deposit, activate, skipWindow on a pending\n' +
+      'deposit, an exit that settles at once, settleQueuedExit and executeRebalance. It does NOT\n' +
+      'freeze `cancelPending`, which reads no oracle and no NAV, nor `claimEscrowed`. Write\n' +
+      '"every call that reads NAV", or name `cancelPending` beside the claim.\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
 // Guard 9 — the creator's stake gate: it binds only while other members remain, and for a queued
 // exit it is checked at REQUEST time, not at settlement.
 //
@@ -1029,6 +1077,7 @@ const caught = (patterns, s, opts = {}) => {
       if (opts.denial && DENIAL_IN_MATCH.test(m[0])) continue;
       if (opts.citation && spans.some(([a, b]) => a <= i && j <= b) && REFUTATION.test(around)) continue;
       if (opts.qualifier && DELAY_QUALIFIER.test(around)) continue;
+      if (opts.exception && opts.exception.test(around)) continue;
       // Guard 9's window includes the match itself, because the qualifier is usually inside the
       // same clause ("below 5% while at least one non-creator member remains").
       if (opts.members && MEMBERS_QUALIFIER.test(`${around} ${m[0]}`)) continue;
@@ -1083,6 +1132,10 @@ test('probe: the banned shapes are caught as SHAPES, not as those two strings', 
     [FREEZE_HATCH, 'There is an emergency withdrawal for exactly this case.', { denial: true }],
     [FREEZE_HATCH, 'You can still exit while the feed is stale.', { denial: true }],
     [PENDING_TRAPPED, 'A pending deposit is stranded until the freeze lifts.', { denial: true }],
+    [FREEZE_EVERYTHING, 'Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.', { denial: true, exception: FREEZE_EXCEPTION }],
+    [FREEZE_EVERYTHING, 'A stale oracle freezes the whole vault.', { denial: true, exception: FREEZE_EXCEPTION }],
+    [FREEZE_EVERYTHING, 'When the feed is stale, everything freezes, including exits.', { denial: true, exception: FREEZE_EXCEPTION }],
+    [FREEZE_EVERYTHING, 'Once the breaker trips, all calls revert.', { denial: true, exception: FREEZE_EXCEPTION }],
     [GATE_AT_SETTLEMENT, 'The creator gate is evaluated at settlement.', {}],
     // The two cases a missing `\b` after `%` let through. Kept as probes so the trap stays shut.
     [CREATOR_FLOOR, 'The creator must always keep 5% of the vault.', {}],
@@ -1126,6 +1179,10 @@ test('probe: the true, scoped sentences are NOT caught — the copy must not be 
     [FREEZE_HATCH, 'There is no escape hatch from the staleness breaker and none will be added, because an escape hatch is exactly the stale-price exit the breaker exists to prevent.', { denial: true }],
     [FREEZE_HATCH, 'Only capital still inside an un-activated observation window stays reclaimable.', { denial: true }],
     [PENDING_TRAPPED, 'Pending capital is the only capital that stays reclaimable while the oracle is frozen.', { denial: true }],
+    [FREEZE_EVERYTHING, 'The breaker freezes every call that reads NAV, including exits.', { denial: true, exception: FREEZE_EXCEPTION }],
+    [FREEZE_EVERYTHING, 'A stale feed does not freeze everything.', { denial: true, exception: FREEZE_EXCEPTION }],
+    [FREEZE_EVERYTHING, 'It never freezes everything: one call still works.', { denial: true, exception: FREEZE_EXCEPTION }],
+    [FREEZE_EVERYTHING, 'The breaker freezes everything including exits, but cancelPending reads no oracle, so a deposit not yet activated can be reclaimed.', { denial: true, exception: FREEZE_EXCEPTION }],
     // The creator gate, with its two qualifiers.
     [
       GATE_AT_SETTLEMENT,
