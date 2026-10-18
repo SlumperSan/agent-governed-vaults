@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import {
+  FACTORY_READ_ABI,
   GOVERNANCE_READ_ABI,
   OPERATOR_REGISTRY_READ_ABI,
   PROPOSAL_STATUS,
@@ -45,6 +46,7 @@ const outs = (f) => (f.outputs ?? []).map((o) => o.type).join(',');
  */
 for (const [contract, abi] of [
   ['VaultCore', VAULT_READ_ABI],
+  ['VaultFactory', FACTORY_READ_ABI],
   ['Governance', GOVERNANCE_READ_ABI],
   ['OperatorRegistry', OPERATOR_REGISTRY_READ_ABI],
   ['SubVaultRegistry', SUBVAULT_REGISTRY_READ_ABI],
@@ -61,6 +63,26 @@ for (const [contract, abi] of [
     }
   });
 }
+
+test('the chain-discovery fragments are all present, with the argument and output names the reader indexes by', () => {
+  // The drift loop above proves each fragment exists on the compiled contract. These pin the
+  // fragments chain-only discovery depends on, so deleting one is a failure here and not a
+  // reader that quietly returns null for it.
+  const names = (abi) => abi.map((f) => f.name);
+  assert.ok(['holderCount', 'creator', 'operatorRegistry'].every((n) => names(VAULT_READ_ABI).includes(n)));
+  assert.deepEqual(names(FACTORY_READ_ABI).sort(), ['allVaults', 'vaultCount']);
+  assert.ok(names(OPERATOR_REGISTRY_READ_ABI).includes('leaderboardEntry'));
+  assert.ok(names(OPERATOR_REGISTRY_READ_ABI).includes('operatorOf'));
+});
+
+test('leaderboardEntry components match the compiled OperatorStats struct, field for field', (t) => {
+  const compiled = compiledAbi('OperatorRegistry');
+  if (!compiled) return t.skip('contracts/out/OperatorRegistry.sol is absent — run `forge build`');
+  const frag = OPERATOR_REGISTRY_READ_ABI.find((f) => f.name === 'leaderboardEntry');
+  const real = compiled.find((e) => e.type === 'function' && e.name === 'leaderboardEntry');
+  const comps = (o) => o.components.map((c) => `${c.name}:${c.type}`);
+  assert.deepEqual(comps(frag.outputs[1]), comps(real.outputs[1]), 'the stats tuple drifted: the reader indexes it by these names');
+});
 
 test('the write fragments the actor uses also match the compiled ABI', async () => {
   const { VAULT_WRITE_ABI, GOVERNANCE_WRITE_ABI } = await import('../src/act.mjs');

@@ -31,6 +31,17 @@
  *   OperatorRegistry.operatorOf(vault)      attestation verified at the registry, not from the
  *                                       API's branding metadata (AGENT-QUICKSTART §4)
  *
+ * Chain-only discovery (no API at all) adds four more, all plain views:
+ *
+ *   VaultFactory.vaultCount() / allVaults(i)   the vault set, straight from the factory's array.
+ *                                       Bounded: a window of the newest `maxVaults` entries, read in
+ *                                       pages, so a chain with thousands of vaults cannot stall a tick
+ *   OperatorRegistry.leaderboardEntry(opId)    the operator's record: address and the lifetime
+ *                                       gain / loss / fee / vault-count accumulators
+ *   VaultCore.holderCount()             addresses holding shares (creator included): the chain's
+ *                                       member count, which is NOT the API's event-derived one
+ *   VaultCore.creator()                 who deployed it; the 5% withdrawal gate binds to this address
+ *
  * **Oracle-freeze detection is a proxy, and it is a warning only in the loosest sense.**
  * `navPerShareWad()` reverts with `StaleOracle` when any basket asset's price is stale
  * (VaultCore.sol:256) — so a failed NAV read means the vault is ALREADY frozen, at which point
@@ -41,6 +52,11 @@
  */
 
 import { assertChainBinding } from '../../chain-config/src/chain-binding.mjs';
+
+/** No `node:assert`: this package is bundled for the browser by apps/vaults-ui. */
+const assert = (cond, msg) => {
+  if (!cond) throw new Error(msg);
+};
 
 const lc = (a) => (typeof a === 'string' ? a.toLowerCase() : a);
 
@@ -77,7 +93,12 @@ export const VAULT_READ_ABI = Object.freeze([
   fn('pendingDeposit', [A()], [U(), { name: '', type: 'uint64' }]),
   fn('operatorRegistry', [], [A()]),
   fn('OBSERVATION_WINDOW', [], [U()]),
+  fn('holderCount', [], [U()]),
+  fn('creator', [], [A()]),
 ]);
+
+/** The factory is the vault list: `allVaults` is its public array and `vaultCount` its length. */
+export const FACTORY_READ_ABI = Object.freeze([fn('vaultCount', [], [U()]), fn('allVaults', [U('index')], [A()])]);
 
 export const GOVERNANCE_READ_ABI = Object.freeze([
   fn('hasPendingExecution', [A('vault')], [{ name: '', type: 'bool' }]),
@@ -104,7 +125,24 @@ export const GOVERNANCE_READ_ABI = Object.freeze([
   ]),
 ]);
 
-export const OPERATOR_REGISTRY_READ_ABI = Object.freeze([fn('operatorOf', [A('vault')], [U()])]);
+export const OPERATOR_REGISTRY_READ_ABI = Object.freeze([
+  fn('operatorOf', [A('vault')], [U()]),
+  // OperatorRegistry.OperatorStats, in declaration order. The monotone accumulators behind the
+  // leaderboard: nothing is ever removed or restated (SF-4), so the net is gain minus loss.
+  fn('leaderboardEntry', [U('opId')], [
+    A('operator'),
+    {
+      name: 'stats',
+      type: 'tuple',
+      components: [
+        U('lifetimeGainUsdc'),
+        U('lifetimeLossUsdc'),
+        U('lifetimeFeesUsdc'),
+        U('vaultCount'),
+      ],
+    },
+  ]),
+]);
 
 /** Sub-vaults STACK fees up the parent chain — the headline 10% is a floor, not the number the
  *  agent pays (AGENT-QUICKSTART §4). Read the stacked figures, never assume the base. */
@@ -318,6 +356,94 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
     },
 
     /**
+     * The vault set, read from the factory instead of an API.
+     *
+     * Newest first, and bounded twice: at most `maxVaults` entries are looked at (the NEWEST ones,
+     * since a vault with no history is where a new opportunity appears), and they are read
+     * `pageSize` at a time, so one tick costs at most `maxVaults` indexed reads however many vaults
+     * the factory holds. `total` is reported either way so the caller can say the list is a window.
+     *
+     * A failed `vaultCount` returns `total: null` and no addresses; a failed `allVaults(i)` is
+     * counted in `failedIndexes` and skipped. Neither throws, and neither is read as "no vaults".
+     *
+     * @param {string|null} factory  VaultFactory address (config.chain.factory)
+     * @param {{maxVaults?:number, pageSize?:number}} [opts]
+     * @returns {Promise<{total:number|null, addresses:string[], truncated:boolean, failedIndexes:number[]}>}
+     */
+    async listFactoryVaults(factory, { maxVaults = 25, pageSize = 10 } = {}) {
+      if (!factory) return { total: null, addresses: [], truncated: false, failedIndexes: [] };
+      assert(Number.isInteger(maxVaults) && maxVaults > 0, 'chain: maxVaults must be a positive integer');
+      assert(Number.isInteger(pageSize) && pageSize > 0, 'chain: pageSize must be a positive integer');
+      const count = await read(lc(factory), FACTORY_READ_ABI, 'vaultCount');
+      if (!count.ok) return { total: null, addresses: [], truncated: false, failedIndexes: [] };
+      const total = Number(count.value);
+      const newest = total - 1; // allVaults is zero-indexed: the last entry is vaultCount - 1
+      const oldest = Math.max(0, total - maxVaults);
+      const addresses = [];
+      const failedIndexes = [];
+      for (let top = newest; top >= oldest; top -= pageSize) {
+        const bottom = Math.max(oldest, top - pageSize + 1);
+        const indexes = [];
+        for (let i = top; i >= bottom; i--) indexes.push(i);
+        const page = await Promise.all(indexes.map((i) => read(lc(factory), FACTORY_READ_ABI, 'allVaults', [BigInt(i)])));
+        page.forEach((r, k) => {
+          if (r.ok) addresses.push(lc(r.value));
+          else failedIndexes.push(indexes[k]);
+        });
+      }
+      return { total, addresses, truncated: total > maxVaults, failedIndexes };
+    },
+
+    /**
+     * The per-vault facts the vault list needs that `readVault` does not already carry:
+     * `holderCount` (addresses with shares, creator included), `creator`, and the registry the
+     * vault itself points at (to compare with the one the config trusts). Null on a failed read.
+     * @param {string} vault
+     */
+    async readVaultIdentity(vault) {
+      const v = lc(vault);
+      const [holders, creator, registry] = await Promise.all([
+        read(v, VAULT_READ_ABI, 'holderCount'),
+        read(v, VAULT_READ_ABI, 'creator'),
+        read(v, VAULT_READ_ABI, 'operatorRegistry'),
+      ]);
+      return {
+        holderCount: holders.ok ? Number(holders.value) : null,
+        creator: creator.ok ? lc(creator.value) : null,
+        operatorRegistry: registry.ok ? lc(registry.value) : null,
+      };
+    },
+
+    /**
+     * An operator's record as a leaderboard row, in the shape the indexer projection serves, so
+     * `decideJoin` and `decideExit` read it unchanged. The registry holds a row for every
+     * registered operator, zeros included, which is also what the indexer's leaderboard lists.
+     * Null when `opId` is 0 (unattested), when the registry cannot be read, or when the id has no
+     * operator address: an unknown operator is a missing row, never a row of zeros.
+     * @param {string|null} registryAddress @param {number} opId
+     */
+    async readOperatorRecord(registryAddress, opId) {
+      if (!registryAddress || !Number.isInteger(opId) || opId <= 0) return null;
+      const r = await read(lc(registryAddress), OPERATOR_REGISTRY_READ_ABI, 'leaderboardEntry', [BigInt(opId)]);
+      if (!r.ok) return null;
+      const operator = Array.isArray(r.value) ? r.value[0] : r.value?.operator;
+      const stats = Array.isArray(r.value) ? r.value[1] : r.value?.stats;
+      if (!operator || /^0x0{40}$/i.test(operator) || !stats) return null;
+      const field = (i, name) => BigInt((Array.isArray(stats) ? stats[i] : stats[name]) ?? 0);
+      const gain = field(0, 'lifetimeGainUsdc');
+      const loss = field(1, 'lifetimeLossUsdc');
+      return {
+        operatorId: opId,
+        operator: lc(operator),
+        netRealizedUsdc: (gain - loss).toString(),
+        lifetimeGainUsdc: gain.toString(),
+        lifetimeLossUsdc: loss.toString(),
+        lifetimeFeesUsdc: field(2, 'lifetimeFeesUsdc').toString(),
+        vaultCount: Number(field(3, 'vaultCount')),
+      };
+    },
+
+    /**
      * The agent's VOTING-ELIGIBLE stake — not its share balance.
      *
      * At a proposal's snapshot timestamp when one is given, because that is the measure the
@@ -448,6 +574,17 @@ export function createStubChainReader(fixture = {}, govFixture = {}) {
     },
     async readOperatorId(_registry, vault) {
       return fixture[lc(vault)]?.operatorId ?? null;
+    },
+    async listFactoryVaults(_factory, { maxVaults = 25 } = {}) {
+      const all = Object.keys(fixture);
+      return { total: all.length, addresses: all.slice(-maxVaults).reverse(), truncated: all.length > maxVaults, failedIndexes: [] };
+    },
+    async readVaultIdentity(vault) {
+      const f = fixture[lc(vault)] ?? {};
+      return { holderCount: f.holderCount ?? 0, creator: f.creator ?? null, operatorRegistry: f.operatorRegistry ?? null };
+    },
+    async readOperatorRecord(_registry, opId) {
+      return opId > 0 ? { operatorId: opId, operator: '0x' + '0'.repeat(39) + '1', netRealizedUsdc: '0', lifetimeGainUsdc: '0', lifetimeLossUsdc: '0', lifetimeFeesUsdc: '0', vaultCount: 1 } : null;
     },
     async readVotingWeight(vault, member, _ts = null) {
       if (!member) return null;
