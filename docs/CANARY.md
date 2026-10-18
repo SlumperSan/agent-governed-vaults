@@ -487,7 +487,7 @@ masking failure of single-key signals, and it is why per-leg keys are the house 
 proposal went (`commit phase of proposal 3 … is over; now in the reveal phase`, or `settled as
 Executed at block N`). A full lifecycle is therefore about eight lines spread over hours or days.
 Low volume by construction, and the bound is **CM-6**: `propose` requires the previous proposal to
-be settled (`Governance.sol:315`), so one vault cannot have two proposals running at once however
+be settled (`Governance.sol:325`), so one vault cannot have two proposals running at once however
 many proposers try. That, not the phase durations, is what bounds pages per vault per hour, and it
 is the answer to M-7's per-proposer cooldown sidestep. "Every phase is at least an hour" is **not**
 true: `_validateConfig` floors `commitDuration`, `revealDuration` and `executionWindow` at 1 hour
@@ -577,7 +577,7 @@ actually reads**, which is not the same book for both:
    per vault, and can even be 0, see M-6 below), which gates the operator's own next `propose()`
    call. Measured as `votingEligibleShares(creator) * 10000 / totalVotingEligibleShares()`, because
    that is what `Governance.propose` compares (`pastVotingEligibleShares` /
-   `pastTotalVotingEligibleShares`, `Governance.sol:324-325`). **Voting-eligible** is
+   `pastTotalVotingEligibleShares`, `Governance.sol:334-335`). **Voting-eligible** is
    `sharesOf - queuedExitShares`, with a registered parent vault counted as 0.
 2. VaultCore's `CREATOR_MIN_STAKE_BPS` (a protocol **constant**, 500 bps everywhere), which gates the
    operator's own voluntary **exit** while non-creator members remain (`_checkCreatorGate`). Only

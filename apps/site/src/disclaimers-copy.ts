@@ -441,7 +441,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "Each vault's oracle address is fixed in immutable code at construction. Governance has no oracle-shaped proposal. The factory's allowlist is fixed in its constructor with no add, no remove and no owner, and it governs only which oracle a <em>new</em> vault may be created with."
+        "dd": "Each vault's oracle address is fixed in immutable code at construction. Governance has no oracle-shaped proposal. The factory's allowlist is set once, by a one-shot initialize call, with no add, no remove and no owner afterwards, and it governs only which oracle a <em>new</em> vault may be created with."
       },
       {
         "dt": "Worst case",
@@ -631,7 +631,7 @@ export const SCOPE_ROWS: readonly ScopeRow[] = [
   {
     "key": "stock-index-needs-different-oracle",
     "term": "The stock index needs a different oracle",
-    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 90,000-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
+    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is set once, by a one-shot initialize call, with no add, no remove and no owner afterwards. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 90,000-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
   }
 ];
 

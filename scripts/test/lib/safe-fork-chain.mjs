@@ -52,6 +52,8 @@ export const SAFE_MASTERCOPY_1_4_1 = '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762
 export const SAFE_PROXY_FACTORY_1_4_1 = '0x4e1DCF7AD4e460CfD30791CCC4F9c8a4f820ec67';
 export const SAFE_FALLBACK_HANDLER_1_4_1 = '0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99';
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+/** contracts/src/lib/ProtocolInitializer.sol: the only sender of the one-shot wiring and factory.initialize. */
+export const PROTOCOL_INITIALIZER = '0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35';
 
 // ─────────────────────────────────────── process plumbing ───────────────────────────────────────
 
@@ -201,11 +203,17 @@ function withDeployLock(fn) {
 /** `forge script DeployTestnet.s.sol --broadcast`, UNMODIFIED, against the local fork. Returns the
  *  singleton addresses parsed from its own broadcast receipt. Serialized machine-wide by
  *  `withDeployLock` (see its own doc) against every other concurrent caller of this function. */
-export function deployProtocol(rpcUrl, privateKey) {
+export function deployProtocol(rpcUrl, _unusedDeployerKey) {
   return withDeployLock(() => {
+    // DeployTestnet pins its broadcast to PROTOCOL_INITIALIZER, the only sender the singletons' wiring
+    // and VaultFactory.initialize accept, so no throwaway key can run it. On this local anvil fork we
+    // impersonate that address instead (no key exists here, and none is needed). The second argument is
+    // kept so callers do not change; it is not used.
+    cast(['rpc', 'anvil_impersonateAccount', PROTOCOL_INITIALIZER, '--rpc-url', rpcUrl]);
+    setEthBalance(rpcUrl, PROTOCOL_INITIALIZER, '0x56bc75e2d63100000');
     run('forge', [
       'script', 'script/DeployTestnet.s.sol:DeployTestnet',
-      '--rpc-url', rpcUrl, '--private-key', privateKey, '--broadcast', '--non-interactive',
+      '--rpc-url', rpcUrl, '--unlocked', '--sender', PROTOCOL_INITIALIZER, '--broadcast', '--non-interactive',
     ], { cwd: CONTRACTS_DIR, timeout: 120_000 });
     const deployJson = path.join(CONTRACTS_DIR, 'broadcast', 'DeployTestnet.s.sol', String(BASE_SEPOLIA_CHAIN_ID), 'run-latest.json');
     if (!fs.existsSync(deployJson)) throw new Error(`deployProtocol: expected forge to write ${deployJson}`);

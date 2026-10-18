@@ -396,10 +396,12 @@ test('every config still chooses a proposal threshold above zero, since the cont
   }
 });
 
-test('every `allowSubVaults = false` citation of `Deploy.s.sol:N` in docs/ points at the root-vaults-only line', () => {
+test('every `allowSubVaults = false` citation of `ProtocolCreate2.sol:N` in docs/ points at the root-vaults-only line', () => {
   // Scoped to doc lines that make the C-1 claim. Historical audit reports cite other Deploy.s.sol
   // lines as they stood at the time; those are records, not live claims, and are left alone.
-  const deploy = read('contracts', 'script', 'Deploy.s.sol').split(/\r?\n/);
+  // Since 2026-10-18 the flag lives in the CREATE2 recipe (`ALLOW_SUB_VAULTS`), not as a literal argument in
+  // Deploy.s.sol, so this citation guard follows it there.
+  const deploy = read('contracts', 'script', 'lib', 'ProtocolCreate2.sol').split(/\r?\n/);
   const files = [];
   (function walk(dir) {
     for (const entry of readdirSync(dir)) {
@@ -412,14 +414,14 @@ test('every `allowSubVaults = false` citation of `Deploy.s.sol:N` in docs/ point
   for (const file of files) {
     for (const docLine of readFileSync(file, 'utf8').split(/\r?\n/)) {
       if (!/allowSubVaults = false/.test(docLine)) continue;
-      for (const m of docLine.matchAll(/Deploy\.s\.sol:(\d+)\b/g)) {
+      for (const m of docLine.matchAll(/ProtocolCreate2\.sol:(\d+)\b/g)) {
         cited += 1;
         const line = deploy[Number(m[1]) - 1] ?? '';
-        assert.match(line, /false, \/\/ C-1: root vaults only/, `${path.relative(REPO, file)} cites Deploy.s.sol:${m[1]} for allowSubVaults = false, but that line is now: ${JSON.stringify(line.trim())}`);
+        assert.match(line, /ALLOW_SUB_VAULTS = false;/, `${path.relative(REPO, file)} cites ProtocolCreate2.sol:${m[1]} for allowSubVaults = false, but that line is now: ${JSON.stringify(line.trim())}`);
       }
     }
   }
-  assert.ok(cited > 0, 'no doc cites Deploy.s.sol:N for allowSubVaults = false any more; drop this test or re-point it');
+  assert.ok(cited > 0, 'no doc cites ProtocolCreate2.sol:N for allowSubVaults = false any more; drop this test or re-point it');
 });
 
 /**
@@ -658,18 +660,19 @@ test('probe: the sequencer-fails-closed guard is live', () => {
  * than rotting into a claim no deployment satisfies.
  */
 test('allowSubVaults is asymmetric by design: Deploy.s.sol false, DeployTestnet.s.sol true', () => {
-  const mainnetScript = read('contracts', 'script', 'Deploy.s.sol');
+  // The mainnet script passes the flag through the CREATE2 recipe's ALLOW_SUB_VAULTS, since 2026-10-18.
+  const mainnetScript = read('contracts', 'script', 'lib', 'ProtocolCreate2.sol');
   assert.match(
     mainnetScript,
-    /false, \/\/ C-1: root vaults only/,
-    'Deploy.s.sol no longer passes allowSubVaults = false. That is the C-1 fix; every doc saying the '
+    /C-1: root vaults only[\s\S]{0,200}?ALLOW_SUB_VAULTS = false;/,
+    'Deploy.s.sol (ProtocolCreate2.ALLOW_SUB_VAULTS) no longer passes allowSubVaults = false. That is the C-1 fix; every doc saying the '
       + 'mainnet launch path is root-only must be rewritten before this is changed.'
   );
 
   const testnetScript = read('contracts', 'script', 'DeployTestnet.s.sol');
   assert.match(
     testnetScript,
-    /C-1: TESTNET deliberately enables sub-vaults[\s\S]{0,400}?\n\s*true,/,
+    /C-1: TESTNET deliberately enables sub-vaults[\s\S]{0,400}?\n\s*true\n/,
     'DeployTestnet.s.sol no longer passes allowSubVaults = true. The docs cite the testnet factory as '
       + 'the proof that allowSubVaults is per-deployment rather than a protocol property, and the SV-7 '
       + 'look-through soak drill has no environment to run in without it.'
