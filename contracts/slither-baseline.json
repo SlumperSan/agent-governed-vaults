@@ -86,8 +86,8 @@
       "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:156) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:154) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultCore.constructor": {
-      "count": 1,
-      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:156) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:154) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "count": 2,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:156) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:154) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled. Count 2 since 2026-10-18: AgentVaultCore inherits this constructor unchanged, so the same reviewed basket loop is reported a second time under the subclass. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "calls-loop::VaultCore.executeRebalance": {
       "count": 1,
@@ -161,9 +161,17 @@
       "count": 1,
       "reason": "By design -- same staticcall pattern as IdentityGate.agentIdOf above."
     },
+    "low-level-calls::RWAllyAgentRegistry.setAgentWallet": {
+      "count": 1,
+      "reason": "By design. The ERC-1271 verification call to the wallet being designated, as the ERC-8004 reference registry does: the caller must already be the identity's owner or approved, the returned magic value and length are checked, and any other outcome reverts with InvalidWalletSignature. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
+    },
     "missing-inheritance::OperatorRegistry": {
       "count": 1,
       "reason": "Cosmetic -- interface-shaped contracts that do not formally `is` the interface; ABIs match and are exercised across the interface by the factory-path tests. SLITHER-TRIAGE.md 'missing-inheritance'."
+    },
+    "missing-inheritance::RWAllyAgentRegistry": {
+      "count": 1,
+      "reason": "False positive. Slither matches balanceOf(address) against the unrelated IERC20Balance interface declared in AggregationRouterAdapter.sol; the registry is an ERC-721 and is not a token of that shape. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "missing-inheritance::SubVaultRegistry": {
       "count": 1,
@@ -184,6 +192,10 @@
     "missing-zero-check::IdentityGate.hasIdentity": {
       "count": 1,
       "reason": "Safe -- same reasoning as IdentityGate.agentIdOf above (view query parameter)."
+    },
+    "missing-zero-check::RWAllyAgentRegistry.transferOwnership": {
+      "count": 1,
+      "reason": "By design. Nominating address(0) is how the owner clears a pending nomination; acceptOwnership can never be called by address(0), so a zero nominee cannot take office. The constructor does reject a zero owner. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "missing-zero-check::VaultCore.constructor": {
       "count": 1,
@@ -332,6 +344,10 @@
     "timestamp::Governance.setDelegate": {
       "count": 1,
       "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::RWAllyAgentRegistry.setAgentWallet": {
+      "count": 1,
+      "reason": "By design. The agent-wallet signature carries a deadline that must be in the future and no more than five minutes out, the ERC-8004 reference behaviour; block.timestamp is the only clock available. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "timestamp::UniswapV3Adapter.executeSwap": {
       "count": 1,

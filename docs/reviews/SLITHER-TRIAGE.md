@@ -259,6 +259,18 @@ The `20,481 B / 4,095 B` this line carried until now was measured before #98 and
 pair is still carried by `docs/LAUNCH-READINESS.md`, which was **not** this PR's to correct —
 flagged so it is not lost.
 
+## AgentVaultCore and RWAllyAgentRegistry (2026-10-18)
+
+Five baseline rows changed. None is a finding in `AgentVaultCore`'s own code: its gate is one bounded static call, and Slither raises nothing on it.
+
+| Detector | Disposition |
+| --- | --- |
+| `calls-loop` on `VaultCore.constructor` (count 1 to 2) | **Same reviewed code, reported twice.** `AgentVaultCore` inherits the constructor unchanged, so the basket loop (decimals reads, capped at `MAX_BASKET_ASSETS`) is attributed to both contracts. |
+| `low-level-calls` on `RWAllyAgentRegistry.setAgentWallet` | **By design.** The ERC-1271 `staticcall` to the wallet being designated, as in the ERC-8004 reference registry. The caller must already be the identity's owner or approved; the magic value and return length are checked; anything else reverts. |
+| `missing-inheritance` on `RWAllyAgentRegistry` | **False positive.** `balanceOf(address)` matches `IERC20Balance` by signature only. |
+| `missing-zero-check` on `RWAllyAgentRegistry.transferOwnership` | **By design.** Nominating address(0) clears a pending nomination; `acceptOwnership` cannot be called by address(0). The constructor rejects a zero owner. |
+| `timestamp` on `RWAllyAgentRegistry.setAgentWallet` | **By design.** The wallet signature's deadline, at most five minutes out, as in the reference registry. |
+
 ## Running it
 
 ```bash
