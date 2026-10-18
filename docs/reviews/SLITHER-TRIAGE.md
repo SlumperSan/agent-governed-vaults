@@ -274,6 +274,17 @@ Nine baseline rows changed (eight added, one count raised). None is a finding in
 | `timestamp` on `RWAllyAgentRegistry.importAgent` | **By design.** The import window closes at `importEnd`, 30 days after `initialize`; `block.timestamp` is the only clock and the window is measured in days. After it closes the outside registry is never called. |
 | `timestamp` on `RWAllyAgentRegistry.setAgentWallet` | **By design.** The wallet signature's deadline, at most one hour out (long enough for a user operation to wait in a bundler mempool). |
 
+## Registry attestation (mintMirrored)
+
+Two new baseline rows, both `timestamp`, both by design.
+
+| Detector | Disposition |
+| --- | --- |
+| `timestamp` on `RWAllyAgentRegistry.mintMirrored` | **By design.** The attestation expiry (at most seven days out) and the per-UTC-day mint cap both read `block.timestamp`; they are measured in hours and days, far outside any miner tolerance. |
+| `timestamp` on `RWAllyAgentRegistry.mirrorsRemainingToday` | **By design.** A view comparing the current UTC day with the stored one. |
+
+The signature check uses `ecrecover` through the existing `_recover` (high `s` and bad `v` refused) and a gas- and returndata-bounded `staticcall` through `BoundedCall` for an ERC-1271 attestor; Slither raises nothing on either.
+
 ## Running it
 
 ```bash
