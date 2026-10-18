@@ -78,8 +78,10 @@ Between `8a0e1155` and `protocol/main` the only changed file under `contracts/sr
 `ChainlinkOracle` are all blob-identical, as is `contracts/foundry.toml`.
 
 **The exception, because it is the kind of thing an auditor should hear from us rather than
-discover.** `foundry.toml` sets no `bytecode_hash`, so solc's default `ipfs` metadata applies and
-the CBOR trailer hashes source text: a comment-only edit changes it. So the deployed
+discover.** At that deployment's commit `foundry.toml` set no `bytecode_hash`, so solc's default `ipfs`
+metadata applied and the CBOR trailer hashed source text: a comment-only edit changed it. Since
+2026-10-18 `foundry.toml` sets `bytecode_hash = "none"` and `cbor_metadata = false`, so a `protocol/main`
+build carries no trailer and the comparison below holds only against a build at the pinned commit. So the deployed
 `VaultDeployer` differs from a `protocol/main` build in its trailer bytes alone, at the same 938 B.
 It does **not** differ in the `VaultCore` creation code it carries, so vaults produced by this
 deployment are byte-identical to what this tree builds; the on-chain vault runtime is 20,650 B. To

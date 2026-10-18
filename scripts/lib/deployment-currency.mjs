@@ -30,7 +30,7 @@
  *   31 of those bytes differ, the first at offset 22,348   -> the bytes say MISMATCH
  *
  * The differing run is the CBOR metadata trailer's IPFS hash, which is FIXED LENGTH. `contracts/
- * foundry.toml` sets no `bytecode_hash`, so solc appends that hash, and it is a digest of the
+ * foundry.toml` set no `bytecode_hash` (until 2026-10-18), so solc appended that hash, and it is a digest of the
  * metadata — which includes each source file's keccak and its license string. The BUSL-1.1 -> MIT
  * relicense therefore changed the deployed bytes of every contract while changing the length of
  * none of them. `contracts/config/deployments/robinhood-mainnet.json` makes exactly this point

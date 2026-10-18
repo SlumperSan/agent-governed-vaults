@@ -174,7 +174,7 @@ deployment carries the adapter fix in
 
 One qualifier, because "current" is narrower than it sounds: the only `contracts/src/` change
 between `8a0e1155` and `protocol/main` is a NatSpec-only edit to `VaultDeployer.sol`, and with
-solc's default `ipfs` metadata that still changes `VaultDeployer`'s own bytecode trailer. The
+solc's default `ipfs` metadata, which was in force at that commit, that still changes `VaultDeployer`'s own bytecode trailer (since 2026-10-18 `foundry.toml` emits no trailer, so a build at `protocol/main` no longer matches that deployment byte for byte). The
 **vaults** it produces are byte-identical to a `protocol/main` build, because `VaultCore.sol` is
 unchanged. The address book's `bytecodeCurrency` block states this precisely. No testnet run is
 evidence about the mainnet deployment, and the gate board remains the authority on what is proven.

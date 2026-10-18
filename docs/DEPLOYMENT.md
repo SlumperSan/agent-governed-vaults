@@ -121,8 +121,10 @@ gets queried.
 
 ## 2. Deploy the singletons + factory (with the oracle allowlist)
 
-The six protocol singletons + their one-shot wiring deploy in one transaction via
-[`contracts/script/Deploy.s.sol`](../contracts/script/Deploy.s.sol). Set `BLESSED_ORACLES` from §1:
+The six protocol singletons deploy through the Arachnid CREATE2 proxy, then take their per-chain
+oracle allowlist and one-shot wiring, via
+[`contracts/script/Deploy.s.sol`](../contracts/script/Deploy.s.sol). The broadcast is pinned to
+`PROTOCOL_INITIALIZER` (§10), so `--account` must resolve to that address. Set `BLESSED_ORACLES` from §1:
 
 ```bash
 cd contracts
@@ -134,12 +136,14 @@ forge script script/Deploy.s.sol:Deploy \
 ```
 
 This deploys `OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer`,
-`VaultFactory` and performs the **irreversible** wiring:
+`VaultFactory`, calls `factory.initialize(BLESSED_ORACLES)`, then performs the **irreversible** wiring:
 `registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`.
-`test/Deploy.t.sol` asserts each wire locks; re-running any wire reverts `AlreadyWired`.
+`test/Deploy.t.sol` asserts each wire locks; re-running any wire reverts `AlreadyWired`, and a second
+`initialize` reverts `AlreadyInitialized`.
 
 Ordering note (#10): `VaultDeployer` **must** be deployed before `VaultFactory`, which pins it
-immutably in its constructor. It takes no constructor arguments and needs no wiring — it holds
+immutably in its constructor (under CREATE2 its address is known in advance, so the order is bookkeeping,
+but the factory's initcode embeds that address). It takes no constructor arguments and needs no wiring — it holds
 no authority (see [audit/walkthroughs/VaultDeployer.md](audit/walkthroughs/VaultDeployer.md)).
 
 Record the six addresses printed by the script.
@@ -502,8 +506,11 @@ been re-run.
 ## 9. Source-verifying a LIVE deployment (read this before running `forge verify-contract`)
 
 **`HEAD` is not guaranteed to reproduce a historical deployment's bytecode — only the exact
-commit it was built from is.** `contracts/foundry.toml` sets no `bytecode_hash`, so solc's
-default `ipfs` metadata mode applies: every compiled contract's runtime bytecode ends with a CBOR
+commit it was built from is.** Every deployment recorded before 2026-10-18 was built with
+`contracts/foundry.toml` setting no `bytecode_hash`, so solc's default `ipfs` metadata mode applied
+to it (since that date `foundry.toml` sets `bytecode_hash = "none"` and `cbor_metadata = false`, so
+a `HEAD` build carries no trailer and matches none of those deployments byte for byte, see
+[section 10](#10-same-address-deployment-create2)): every compiled contract's runtime bytecode ends with a CBOR
 trailer whose IPFS hash is a digest of the compiler's `sources` map, keyed by **source path**.
 Moving, renaming, or re-pathing *any* file in a contract's compiled dependency graph — including
 one it only imports indirectly, and including a file that has nothing to do with the contract's
@@ -612,3 +619,44 @@ steps (that file's own header states it must mirror `.github/workflows/ci.yml`, 
 wiring this in would mean editing both, and the check has nothing to do with whether the current
 diff is mergeable). Run it by hand before cutting a new deployment record, or whenever
 `contracts/src/` moves files around and a live deployment references the old layout.
+
+## 10. Same-address deployment (CREATE2)
+
+Six protocol singletons are built to have the same address on every chain: `OperatorRegistry`,
+`SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer` and `VaultFactory`. Each is deployed by
+sending `salt || initcode` to Arachnid's deterministic deployment proxy
+(`0x4e59b44847b379578588920cA78FbF26c0B4956C`, 69 bytes of runtime, present on Arc, Base, Arbitrum,
+Ethereum and Polygon). The address is a function of the proxy, a fixed per-contract salt with no chain
+id in it, and the hash of the initcode, so no initcode may take a per-chain value.
+
+- **What is per chain.** `ChainlinkOracle` and `AggregationRouterAdapter` are not part of the set: their
+  whole content is per-chain configuration, so they are deployed per chain with plain CREATE. The one
+  per-chain input to a singleton, the oracle allowlist, is set after deployment by
+  `VaultFactory.initialize`.
+- **Who may initialise.** `PROTOCOL_INITIALIZER`
+  (`0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, constant in `contracts/src/lib/ProtocolInitializer.sol`)
+  is the only address that can call `factory.initialize`, `registry.wire`, `subReg.wire` and
+  `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
+  been the proxy. Each call works once.
+- **Order on each chain.** Gate on the proxy having 69 bytes and each predicted address being empty or
+  carrying the manifest codehash. Deploy the six (any order). Deploy the per-chain oracle and adapter.
+  Send `factory.initialize([oracle])`, read back `factory.initialized()`, `oracleAllowlistEnforced()` and
+  `isAllowedOracle(oracle)`. Only then send the three wires. An uninitialised factory has its allowlist
+  off; `createVault` and `createChildVault` revert `NotInitialized` until `initialize` lands.
+- **The manifest.** `contracts/config/create2-manifest.json` records each salt, initcode hash and
+  address. Regenerate it after `forge build` with `node scripts/update-create2-manifest.mjs`, then read
+  what moved. `contracts/test/Create2Determinism.t.sol` checks it against the compiler and
+  `scripts/test/create2-manifest.test.mjs` recomputes it independently from `contracts/out`.
+- **Build settings.** `contracts/foundry.toml` sets `bytecode_hash = "none"` and `cbor_metadata = false`
+  so a comment-only edit cannot move an address. `scripts/test/create2-comment-determinism.test.mjs`
+  compiles real contracts before and after a comment edit and also proves the edit moves the bytes
+  when the settings are removed. Any source change that reaches a singleton moves its hash: regenerate
+  the manifest and treat the new addresses as a new deployment.
+- **Sequencer feed and price band.** `DeployChainlinkOracle` exempts local 31337, Base Sepolia 84532,
+  Robinhood Chain 4663, Arc 5042, Ethereum 1 and Polygon 137 from the sequencer uptime feed, each with an
+  enumerated reason (owner decisions 2026-09-04, 2026-09-19 and 2026-10-18). Base and Arbitrum One are not
+  exempt. A sane-price band per asset is mandatory on every chain except 31337 and 84532.
+- **State is per chain.** The same address on two chains is two separate deployments with separate
+  state. `OperatorRegistry` marks and carry on one chain say nothing about another.
+- **Arc.** The live Arc set was made by plain CREATE and stays as it is (v1). A CREATE2 set on Arc is a
+  second deployment at new addresses.
