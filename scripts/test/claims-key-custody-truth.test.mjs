@@ -133,9 +133,9 @@ const SELF = path.relative(REPO, HERE).split(path.sep).join('/');
 // whole copies of this repository underneath it, and a guard that read them would report another
 // session's in-flight text as this branch's defect.
 //
-// THIS LIST DIVERGES FROM `claims-lede-truth.test.mjs`'s BY ONE ENTRY, `dist`, AND THAT IS
-// DELIBERATE. (`dist-ssr` used to be a second difference; claims-lede now skips it too, because
-// other tests create and delete probe files there mid-run.) Its header argues at length that skipping build output is how a guard goes
+// THIS LIST SKIPS `dist`, WHICH `claims-lede-truth.test.mjs`'s DOES NOT, AND THAT IS DELIBERATE.
+// (The other difference, `lib`, is explained in the next paragraph. `dist-ssr` used to be a third;
+// claims-lede now skips it too, because other tests create and delete probe files there mid-run.) Its header argues at length that skipping build output is how a guard goes
 // vacuous, and it is right for the claim family IT guards: `apps/site` publishes the public
 // lede only as prerendered output, so a walk that skips `dist` guards the pages a reader receives
 // by nothing. This family is the opposite shape. No page under `apps/site` mentions
