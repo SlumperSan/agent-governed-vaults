@@ -75,8 +75,8 @@ protocol is no longer on — back on `app.rwally.com`, and nothing reds.
 
 ### `apps/vaults-ui/` — the member surface
 
-Built by `npm run gate`. **The cutover is the owner's call, not a deployer's**, and the deploy
-command lives with the owner rather than on this page for the reason above: the next
+Built by `npm run gate`. The cutover from `apps/app` is done ([#396](https://github.com/SlumperSan/agent-governed-vaults/pull/396)). The deploy command lives in
+[`apps/vaults-ui/README.md`](apps/vaults-ui/README.md) rather than on this page for the reason above: every
 `pages deploy` against `rwally-app` replaces what is live the instant it finishes.
 
 - Project `rwally-app`, production branch `protocol/main`, `pages_build_output_dir = "dist"`.
