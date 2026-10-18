@@ -23,7 +23,7 @@ The agent-relevant entrypoints:
 | Goal | Call | Notes |
 | --- | --- | --- |
 | Join a vault | `VaultCore.deposit(amountUsdc)` | First deposit enters a **4-hour observation window** (no shares/votes yet). Call `activate(self)` after the window, or `skipWindow()` to opt in immediately (irreversible, once per vault). |
-| Propose | `Governance.propose(vault, ptype, actionHash)` | Needs ≥ `proposalThresholdBps` of eligible stake. `ptype`: 0 Rebalance, 1 RuleChange, 2 ChildAllocation. |
+| Propose | `Governance.propose(vault, ptype, actionHash)` | Needs ≥ `proposalThresholdBps` of eligible stake. `ptype`: 0 Rebalance, 1 RuleChange, 2 ChildAllocation (moves capital to a child vault; Arc's factory has sub-vaults disabled, see section 2). |
 | Vote | `Governance.commitVote(pid, hash)` then `revealVote(pid, support, salt)` | **Commit-reveal**: two txns. `hash = keccak256(abi.encode(pid, voter, support, salt))`. Missing the reveal window forfeits your vote. |
 | Delegate | `Governance.setDelegate(vault, delegate)` | Concentration-capped on the delegate's *received* weight. **Delegated weight moves the TALLY and never the QUORUM** (VO-2b) — see the note below. |
 | Exit | `VaultCore.requestExit(shares)` | Instant pro-rata **in-kind** (Mode I). While `Governance.hasPendingExecution(vault)` is true (from the moment a live proposal reaches its **reveal phase**, not from the moment one passes, and on through a passed proposal's execution window), it queues and settles at **post-rebalance NAV** (Mode F). Call `settleQueuedExit(self)` once the proposal executes, is defeated, or its window lapses. |
@@ -76,16 +76,22 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   period, `priceWad` reverts and **everything freezes, including exits**, by design, and with **no
   fallback source**. Chainlink publishes no L2 sequencer uptime feed for Arc, which is an L1, so the
   Arc oracle's `sequencerUptimeFeed` is the zero address, `_requireSequencerUp` returns early, and
-  that trigger cannot fire on Arc; the feed heartbeat and the sane-price band remain. The cirBTC
-  feed heartbeat is 90,000 seconds, the cap `MAX_HEARTBEAT`
-  (`contracts/src/oracle/ChainlinkOracle.sol:132`), and the staleness trigger fires only after the
-  feed has gone stale past that heartbeat. The oracle is immutable per vault, so check
+  that trigger cannot fire on Arc; the feed heartbeat and the sane-price band remain. The oracle's
+  configured heartbeat for the cirBTC feed, which is its staleness bound, is 90,000 seconds, equal
+  to the cap `MAX_HEARTBEAT` (`contracts/src/oracle/ChainlinkOracle.sol:132`), and the staleness
+  trigger fires only after the feed's latest update is more than 90,000 seconds old. That is the
+  oracle's bound, not a statement of how often the feed itself publishes. The oracle is immutable per vault, so check
   `VaultCore.oracle()` against the oracle in the deployment record before you deposit and don't
   strand funds in a vault whose feeds you don't trust. Un-activated (observation-window) deposits
   stay reclaimable during a freeze via `cancelPending`, which reads no oracle.
 - **Fees:** 10% of realized profit (per-member high-water mark that follows *operator identity*
-  across vaults) + an exit fee ≤1% decaying with tenure, paid to remaining members. Sub-vaults
-  stack fees; read `SubVaultRegistry.stackedPerfFeeBps(vault)` / `stackedExitFeeCapBps(vault)`.
+  across vaults) + an exit fee ≤1% decaying with tenure, paid to remaining members. Where sub-vaults
+  exist they stack fees; read `SubVaultRegistry.stackedPerfFeeBps(vault)` /
+  `stackedExitFeeCapBps(vault)`.
+- **Sub-vaults on Arc:** the Arc factory's `allowSubVaults()` reads false. It is set once in the
+  factory constructor and the factory is immutable, so `createChildVault` reverts, no child vault
+  exists or can be created through it, and a `ChildAllocation` proposal has no child to move
+  capital to. Every Arc vault is a root vault and there are no stacked fees to read.
 - **Reputation is portable:** your realized losses under an operator shelter future gains under
   that *same operator* from fees. Operator identity is the registry key, not display metadata;
   verify via `OperatorRegistry.operatorOf(vault)` before trusting a vault's branding.
