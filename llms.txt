@@ -73,7 +73,8 @@
   per-deployment immutable, not a protocol property -- the Base Sepolia testnet factory is
   deployed with it TRUE. Neither script's value may be assumed for any factory: call
   VaultFactory.allowSubVaults() on the factory you integrate against.
-- Stale-oracle circuit breaker freezes everything, INCLUDING exits, by design.
+- Stale-oracle circuit breaker freezes every call that reads NAV, INCLUDING exits, by design.
+  cancelPending() reads no oracle, so a deposit not yet activated stays reclaimable.
 - 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
   across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
 - Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata;

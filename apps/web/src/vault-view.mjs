@@ -14,7 +14,7 @@ import { stackedPerfFeeBps, stackedExitFeeCapBps } from './fees.mjs';
 /**
  * Per-asset oracle health. A freeze is PER ASSET — `ChainlinkOracle.priceWad(asset)` reverts
  * `StaleOracle` for the one asset whose single feed went stale, and `VaultCore.navWad` walks the
- * whole basket, so a single stale feed freezes the entire vault. Showing which asset, and how far
+ * whole basket, so a single stale feed freezes every call that reads NAV. Showing which asset, and how far
  * past its bound, is what turns "frozen" from a scary opaque word into a legible mechanism.
  *
  * A ZERO balance is skipped entirely: `navWad` walks the basket under `if (bal != 0)`

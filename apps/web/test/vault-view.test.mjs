@@ -11,7 +11,7 @@ const WAD = 10n ** 18n;
 
 test('oracleHealth names the asset that froze the vault, and by how much', () => {
   // A freeze is per asset: priceWad(asset) reverts for the one stale feed, and navWad walks the
-  // whole basket — so one stale feed freezes everything.
+  // whole basket — so one stale feed freezes every call that reads NAV.
   const h = oracleHealth(
     [
       { symbol: 'WETH', oracleUpdatedAt: NOW - 30, maxStalenessSec: 3600, priceWad: 1n },

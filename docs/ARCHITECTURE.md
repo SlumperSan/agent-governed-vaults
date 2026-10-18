@@ -258,7 +258,7 @@ special-case them.
   cbBTC via BTC/USD, USDC pinned to $1.00, and no cbETH because Base has no cbETH/USD feed. Three
   guards, all fail-closed: an **L2 sequencer uptime gate** with a grace period after recovery, a
   per-feed **heartbeat**, and a **sane-price band**. On any of them `priceWad` reverts, and the
-  breaker **freezes everything including exits** (K-4; accepted: an attacker who can induce
+  breaker **freezes every call that reads NAV, including exits** (K-4; accepted: an attacker who can induce
   staleness can trap capital, and no escape hatch will be added, since any escape hatch is exactly
   the stale-price exit the breaker exists to prevent).
   **Named residual; single-provider dependency:** those three guards are the only defences
