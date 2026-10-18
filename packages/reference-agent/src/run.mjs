@@ -20,6 +20,9 @@
  *                      are marked [stub-chain] in the narrative. `config.mjs` defaults
  *                      `chain.rpcUrl` to null, so the stub is what a demo run gets unless you
  *                      pass one.
+ *   --preset=<name>    fill the chain block from presets/<name>.json (arc-mainnet); the explicit
+ *                      flags below still win, except a --chain-id that disagrees with the preset,
+ *                      which is refused. Without it the defaults are Base Sepolia (84532).
  *   --governance=<addr> --subvault-registry=<addr> --usdc=<addr> --chain-id=<n>
  *   --ticks=<n>        how many loop passes to run (default 1)
  *   --demo-wallet      generate a throwaway in-memory key, used as the x402 payer AND as the
@@ -80,6 +83,7 @@ async function main() {
     },
     chain: {
       ...(fileConfig.chain ?? {}),
+      ...(args.preset ? { preset: String(args.preset) } : {}),
       ...(args.rpc ? { rpcUrl: String(args.rpc) } : {}),
       ...(args['chain-id'] ? { chainId: Number(args['chain-id']) } : {}),
       ...(args.governance ? { governance: String(args.governance).toLowerCase() } : {}),
@@ -120,18 +124,17 @@ async function main() {
   }
 
   // ── chain reader ───────────────────────────────────────────────────────────
-  // No RPC ⇒ the stub, loudly marked. contracts/config/deployments/ holds base-sepolia.json (a
-  // testnet trial) and robinhood-mainnet.json (Robinhood Chain mainnet since 2026-09-05: the
-  // singletons are wired and two vaults hold real funds on it). Without an --rpc there is no
-  // node to read at all, so the demo run
+  // No RPC ⇒ the stub, loudly marked. contracts/config/deployments/ holds the deployment records
+  // (list the directory for which chains; arc-mainnet.json is the one `--preset=arc-mainnet`
+  // is generated from). Without an --rpc there is no node to read at all, so the demo run
   // answers from the fixture and does not pretend to.
   //
   // These comments are swept BY HAND. `.mjs` is in no claims guard's walk — not
   // claims-lede-truth's PUBLIC_EXT, not config-doc-truth's PROSE_EXT — so five sites in this
   // package carried "the protocol is not deployed" for months after it was, were narrowed to
-  // "mainnet" on 2026-09-04 (#197), and were falsified again by the Robinhood Chain deployment of
-  // 2026-09-05. Do not narrow one of these to the boundary that happens to be visible;
-  // name the chain, or name the directory and let the reader look.
+  // "mainnet" on 2026-09-04 (#197), and were falsified again by a later deployment. Do not
+  // narrow one of these to the boundary that happens to be visible; name the directory and let
+  // the reader look rather than listing chains here, because a list is what went stale.
   let chainReader;
   let entryMarks = {};
   if (config.chain.rpcUrl) {
@@ -139,6 +142,7 @@ async function main() {
       rpcUrl: config.chain.rpcUrl,
       chainId: config.chain.chainId,
       chainName: config.chain.chainName,
+      nativeCurrency: config.chain.nativeCurrency,
       governance: config.chain.governance,
       onEvent: (e) => (e.level === 'warn' ? log.warn(e.msg, e.detail) : log.info(e.msg, e.detail)),
     });

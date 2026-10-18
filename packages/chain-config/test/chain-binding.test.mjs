@@ -660,3 +660,45 @@ test('an injected client is exempt — it closes no declared-versus-actual gap, 
   assert.equal(r.ok, true);
   assert.match(r.message, /client injected/);
 });
+
+// ── the Arc preset (chain 5042) ──────────────────────────────────────────────────────────────
+// The reader is built from the preset's own chain block, exactly as `run.mjs` builds it, so these
+// prove the preset and the binding agree: the Arc RPC answers for 5042 and binds; a Base RPC
+// handed to the Arc preset is refused with both numbers named.
+
+async function arcPresetReader(rpcUrl) {
+  const { createChainReader } = await import('../../reference-agent/src/chain.mjs');
+  const { loadConfig } = await import('../../reference-agent/src/config.mjs');
+  const c = loadConfig({ chain: { preset: 'arc-mainnet', rpcUrl } }).chain;
+  return createChainReader({ rpcUrl: c.rpcUrl, chainId: c.chainId, chainName: c.chainName, nativeCurrency: c.nativeCurrency });
+}
+
+test('the Arc preset binds when the RPC answers for chain 5042', async () => {
+  const rpc = await rpcServerReporting(5042);
+  try {
+    const bound = await (await arcPresetReader(rpc.url)).assertBoundToDeclaredChain();
+    assert.equal(bound.ok, true);
+    assert.match(bound.message, /is chain 5042/);
+  } finally {
+    await rpc.close();
+  }
+});
+
+test('the Arc preset REFUSES a Base RPC, naming both chain ids', async () => {
+  for (const baseId of [8453, 84532]) {
+    const rpc = await rpcServerReporting(baseId);
+    try {
+      await assert.rejects(
+        async () => (await arcPresetReader(rpc.url)).assertBoundToDeclaredChain(),
+        (err) => {
+          assert.equal(err.name, 'ChainBindingError');
+          assert.match(err.message, new RegExp(`reports chain id ${baseId}`));
+          assert.match(err.message, /declares chain 5042/);
+          return true;
+        },
+      );
+    } finally {
+      await rpc.close();
+    }
+  }
+});
