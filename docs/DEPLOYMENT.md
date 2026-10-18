@@ -284,8 +284,8 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 (same USDC), depth ≤ 3, stacked exit-fee ≤ 2.5%.
 
 > **Sub-vaults are DISABLED at launch (Critical C-1 remediation, "root vaults only").** The former
-> manual warning here is now an enforced contract invariant: `Deploy.s.sol` constructs
-> `VaultFactory` with `allowSubVaults = false` — a constructor immutable, so it binds that factory
+> manual warning here is now an enforced contract invariant: `Deploy.s.sol` deploys
+> `VaultFactory` through `ProtocolCreate2`, which passes `allowSubVaults = false` (`ProtocolCreate2.sol:37`) — a constructor immutable, so it binds that factory
 > rather than the protocol. On it `createChildVault` reverts `SubVaultsDisabled` and every vault it
 > deploys is wired `subVaultRegistry = address(0)` — intrinsically root-only. This closes C-1
 > ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) and the sub-vault-only
@@ -469,7 +469,7 @@ can:
   demonstrates — but the oracle still *values* that slice to set the performance fee, and the fee
   IS withheld from the member's actual tokens: drift costs a bounded, one-directional haircut of up
   to the 10% fee clamp, not nothing. That is the shape the proof
-  covers, and it is the launch shape (`Deploy.s.sol` sets `allowSubVaults = false`). **With
+  covers, and it is the launch shape (`Deploy.s.sol` reaches `ProtocolCreate2`, which passes `allowSubVaults = false`). **With
   children present it is unproven**: `childValTotalWad` is oracle-derived and enters the *sizing*
   of the cash leg, not only its valuation. Do not tell a member with a sub-vault parent that
   their exit is unaffected.
@@ -638,7 +638,7 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
   is the only address that can call `factory.initialize`, `registry.wire`, `subReg.wire` and
   `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
   been the proxy. Each call works once. That is four one-shot calls per chain, and `factory.initialize` is the
-  one that chooses something: the oracle allowlist, where an empty list leaves the C-6 gate off for good. The
+  one that decides which oracles a vault may use: the oracle allowlist, where an empty list leaves the C-6 gate off for good. The three wires check only the caller and non-zero arguments, so they also choose which factory, fee engine and sub-registry the registries point at. The
   live Arc set (v1, plain CREATE) is different: its key made only the three wire calls, all three made, and
   its factory fixed the allowlist in its constructor and has no `initialize`.
 - **Order on each chain.** Gate on the proxy having 69 bytes and each predicted address being empty. `ProtocolCreate2.create`
