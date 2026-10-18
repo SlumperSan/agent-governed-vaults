@@ -60,6 +60,7 @@ PERCEIVE   metered API (via the agent SDK, under a spend cap)
                          pastVotingEligibleShares (the snapshot measure, NOT sharesOf)
              Governance  hasPendingExecution · activeProposalOf · proposals
                          commitOf · revealedOf
+             the chain   latest block timestamp (the crank decides on chain time)
              registries  operatorOf · stackedPerfFeeBps · stackedExitFeeCapBps
 
 DECIDE     pure functions over that world (policy.mjs) — no clock, no I/O
@@ -68,9 +69,10 @@ DECIDE     pure functions over that world (policy.mjs) — no clock, no I/O
              exit   drawdown · oracle-freeze · operator net negative
              entry  activate after the window (never skip it)
              settle release Mode-F shares once the rebalance has executed
+             crank  finalize · execute · markExpired, calls anyone may make to finish a round
 
 ACT        intents, risk-ordered:
-             reveal → settle → exit → activate → commit → deposit
+             reveal → finalize → settle → execute → exit → activate → mark-expired → commit → deposit
            dry-run prints each as the exact call it would make; execute sends it
 ```
 
@@ -170,6 +172,18 @@ publish. Swap it out by passing your own object.
 | `activateGraceSec` | `60` | Clock-skew tolerance past the observation window's real end |
 | `tickIntervalSec` | `60` | Loop interval |
 
+### `policy.crank`: finishing a round
+
+| Knob | Default | What it means |
+| --- | --- | --- |
+| `scope` | `"held"` | `held`: only vaults where the agent has shares or a pending deposit. `all`: every vault the agent reads. `off`: no crank, and no block-time read |
+| `finalize` | `true` | `finalize(pid)` once the reveal window has ended |
+| `execute` | `true` | `execute(pid, payload)` for a passed Rebalance inside its execution window, and only with a payload from `knownPayloads` |
+| `markExpired` | `false` | `markExpired(pid)` once the execution window has ended. Bookkeeping only, so it is off until you want a clean status |
+| `knownPayloads` | `{}` | `actionHash => payload` (`0x` hex). Each entry is checked against keccak256 on every tick, and one that does not hash to its key is ignored and reported as a perception gap |
+
+See [Cranking a round](#cranking-a-round) for what each call does and what it needs.
+
 ### `danger`: irreversible, opt-in, off
 
 | Knob | Default | What it means |
@@ -179,6 +193,39 @@ publish. Swap it out by passing your own object.
 The agent **never** calls `skipWindow()` autonomously. Two independent gates enforce it: the
 planner will not emit the intent, and the actor refuses it again even if handed one. With the flag
 on, it is still an operator's standing config decision, not an agent decision.
+
+### Cranking a round
+
+`Governance.finalize`, `execute` and `markExpired` have no sender check: any address may call them,
+so an agent can finish a round it did not propose. They differ in what they are worth and what they need.
+
+| Call | When it is allowed (`block.timestamp`) | Needs | Why it matters |
+| --- | --- | --- | --- |
+| `finalize(pid)` | Active, and `now >= revealDeadline` | the proposal id | Until it runs, every exit on the vault is Mode F and `settleQueuedExit` is blocked, so the agent's own exit waits on it. On Arc the timelock is 0, so the execution window starts when `finalize` is mined |
+| `execute(pid, payload)` | Passed, and `executableAt <= now <= expiresAt` | the payload bytes | Does what the vote approved and releases Mode F exits at post-vote NAV |
+| `markExpired(pid)` | Passed, and `now > expiresAt` (strict) | the proposal id | A clean status for interfaces and the indexer. `hasPendingExecution` already reads false past expiry |
+
+Four things to know:
+
+- **`execute` runs only with a payload the agent was handed.** A proposal stores `actionHash`, the
+  keccak of its payload, and the chain never stores the payload, so it cannot be read back. List it
+  in `policy.crank.knownPayloads`; the actor sends it only when its keccak256 equals the proposal's
+  `actionHash` and the proposal is a Rebalance (type 0). A Passed proposal in its window with no
+  matching payload is reported with the reason and left alone. `finalize` and `markExpired` need
+  only the id.
+- **The clock is the chain's.** All three gates compare `block.timestamp`, so each tick reads the
+  latest block's timestamp and decides on it, whatever the local clock says. When that read fails
+  the local clock stands in, less `policy.timing.activateGraceSec`, so a call is never sent early.
+- **Every crank write is simulated before it is sent.** An `eth_call` of the exact calldata runs
+  first, in dry-run too (it signs nothing). A revert, such as `WrongPhase` after someone else
+  finalized first, drops the intent with its reason and spends no gas. A simulation that cannot run
+  drops it as well.
+- **The gas is the agent's.** A crank on a vault the agent holds nothing in spends gas for other
+  members' benefit, which is why `scope` defaults to `held`. A held vault outside the discovery
+  window is not read at all, so name it in `discovery.include`.
+
+A tick plans from one snapshot, so a `settleQueuedExit` appears on the tick after the `finalize` or
+`execute` that releases it is mined.
 
 ---
 
@@ -341,7 +388,7 @@ const myEvaluator = {
 `support: null` means "no view", and the agent then abstains by not committing.
 
 Modules are small and separately testable: `config` · `budget` · `salt` · `chain` · `evaluators` ·
-`policy` (pure) · `plan` · `act` · `perceive` · `agent` · `log`.
+`payloads` · `policy` (pure) · `plan` · `act` · `perceive` · `agent` · `log`.
 
 ```bash
 node --test packages/reference-agent/test/*.test.mjs
