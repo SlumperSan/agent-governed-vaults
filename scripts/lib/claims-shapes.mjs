@@ -331,3 +331,62 @@ export const GOVERNANCE_GATE =
 
 export const swapSitesOf = (src) => parseSolidityFns(src).filter((f) => EXECUTE_SWAP_REF.test(f.body));
 export const ungatedSwapSites = (sites) => sites.filter((f) => !GOVERNANCE_GATE.test(f.body));
+
+// ---------------------------------------------------------------------------------------------
+// Deploy-key power shapes (PR 462). Reasoning and the approved wording live in
+// `scripts/test/claims-deploy-key-truth.test.mjs`.
+// ---------------------------------------------------------------------------------------------
+
+/** A sentence naming the one privileged deployment key. "deployer" alone is NOT a key noun: it also
+ * names `VaultDeployer` and every `deployer()` getter. */
+export const DEPLOY_KEY_NOUN =
+  /\b(?:deploy(?:er)?|initiali[sz]er|privileged)\s+(?:key|caller|EOA)\b|\bPROTOCOL_INITIALIZER\b|\bDeployer EOA\b/gi;
+
+/** The cue that the sentence BOUNDS the key's power: "entire/whole/only power", "all it does",
+ * "spent at wiring", "three one-shot calls", "four address / registry-pointer slots", "exactly one
+ * privileged key", "no post-wiring authority". Matched by shape, never by one phrasing. */
+export const DEPLOY_KEY_BOUNDED =
+  /\b(?:entire|whole|only|sole|complete|full)\s+(?:power|authority)\b|\ball\s+(?:it|that)\s+(?:does|can\s+do)\b|\bspent\s+at\s+wiring\b|\b(?:three|3)\s+(?:one-shot\s+)?(?:wir\w*|calls)\b|\bfour\s+(?:registry-pointer|address)\s+slots?\b|\bexactly\s+one\s+privileged\b|\bno\s+post-wiring\s+(?:authority|power)\b/i;
+
+/** What an honest sentence of this kind must carry within its window: the fourth call (by name, or
+ * as "a fourth call" in copy that names no function), and which deployment each count describes. */
+export const DEPLOY_KEY_FOURTH_CALL = /\binitiali[sz]e\b|\bfourth\s+(?:one-shot\s+)?call\b/i;
+export const DEPLOY_KEY_VERSION_QUALIFIER = /\b(?:live|today|first set|v1|plain CREATE)\b/i;
+
+/**
+ * Sentences that bound the deploy key's power but do not carry the fourth call and the v1/v2
+ * qualifier. Positional rather than sentence-split so a table row (no full stop) is covered.
+ * @param {string} flatText whitespace-collapsed text
+ * @returns {string[]} the offending quotes
+ */
+export const deployKeyPowerHits = (flatText) => {
+  const hits = [];
+  for (const m of flatText.matchAll(DEPLOY_KEY_NOUN)) {
+    const at = m.index ?? 0;
+    const near = flatText.slice(at, at + 260);
+    if (!DEPLOY_KEY_BOUNDED.test(near)) continue;
+    const window = flatText.slice(Math.max(0, at - 200), at + 1400);
+    if (DEPLOY_KEY_FOURTH_CALL.test(window) && DEPLOY_KEY_VERSION_QUALIFIER.test(window)) continue;
+    hits.push(near);
+  }
+  return hits;
+};
+
+/** The factory allowlist said to be set by "initialize" with no deployment named. True of the
+ * same-address factory built from current source and false of the live Arc factory, which fixed it
+ * in its constructor. */
+export const ALLOWLIST_BY_INITIALIZE =
+  /\ballowlist\b(?:[^.]|\.(?=\w)){0,100}?\b(?:one-shot\s+)?initiali[sz]e\b|\binitiali[sz]e\b(?:[^.]|\.(?=\w)){0,100}?\ballowlist\b/gi;
+export const ALLOWLIST_DEPLOYMENT_QUALIFIER =
+  /\b(?:v1|v2|CREATE2|same-address|constructor|live (?:on|today)|current source|first set|plain CREATE|brought up|NotInitialized|PROTOCOL_INITIALIZER)\b/i;
+
+/** @param {string} flatText @returns {string[]} */
+export const unqualifiedInitializeHits = (flatText) => {
+  const hits = [];
+  for (const m of flatText.matchAll(ALLOWLIST_BY_INITIALIZE)) {
+    const at = m.index ?? 0;
+    const window = flatText.slice(Math.max(0, at - 500), at + m[0].length + 500);
+    if (!ALLOWLIST_DEPLOYMENT_QUALIFIER.test(window)) hits.push(m[0]);
+  }
+  return hits;
+};
