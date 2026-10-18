@@ -85,7 +85,7 @@ export function createAgent({
       budget.enabled
         ? `WILL sign x402 payment authorizations for metered reads, up to ${cap} this session.`
         : chainOnly
-          ? 'WILL NOT sign any x402 payment: the vault list and operator records are read from the chain, and no API is contacted.'
+          ? 'WILL NOT sign any x402 payment: the vault list and operator records are read from the chain, and no metered endpoint is contacted.'
           : 'WILL NOT sign any x402 payment (no payer configured) — free routes only.',
       // Deliberately does NOT claim "this process holds no key": the agent takes an account
       // OBJECT and never sees key material, but whoever constructed that object may hold one in

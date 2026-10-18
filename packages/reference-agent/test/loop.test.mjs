@@ -559,7 +559,7 @@ test('CHAIN-ONLY: a full tick with a preset and no API URL finds the vault on th
   assert.equal(deposit.args.amountUsdc, 100n * USDC, 'the preset deposit, which meets the vault minimum');
   assert.equal(r.results.every((x) => x.sent === false && x.dryRun === true), true, 'dry-run sends nothing');
   assert.ok(lines.some((l) => l.includes('discovery: chain-only')));
-  assert.ok(lines.some((l) => l.includes('no API is contacted')), 'the startup declaration says no API is read');
+  assert.ok(lines.some((l) => l.includes('no API is contacted')), 'the perception log says no API is read');
 });
 
 test('CHAIN-ONLY: the startup declaration promises no x402 payment even when a payer is injected', async () => {
@@ -579,5 +579,5 @@ test('CHAIN-ONLY: the startup declaration promises no x402 payment even when a p
   agent.declareScope();
   assert.equal(agent.budget.enabled, false);
   assert.ok(!lines.some((l) => /WILL sign x402/.test(l)));
-  assert.ok(lines.some((l) => /WILL NOT sign any x402 payment/.test(l) && /no API is contacted/.test(l)), 'the chain-only wording, not the generic no-payer one');
+  assert.ok(lines.some((l) => /WILL NOT sign any x402 payment/.test(l) && /no metered endpoint is contacted/.test(l)), 'the chain-only wording, not the generic no-payer one');
 });
