@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {Test, Vm} from "forge-std/Test.sol";
 import {RWAllyAgentRegistry, IERC721Receiver} from "../src/RWAllyAgentRegistry.sol";
+import {MockERC20} from "./mocks/Mocks.sol";
 
 contract GoodReceiver is IERC721Receiver {
     RWAllyAgentRegistry public reg;
@@ -64,7 +65,9 @@ contract Wallet1271 {
 
 contract RWAllyAgentRegistryTest is Test {
     RWAllyAgentRegistry reg;
+    MockERC20 usdc;
     address multisig = makeAddr("multisig");
+    address treasury = makeAddr("treasury");
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
     address carol = makeAddr("carol");
@@ -74,29 +77,20 @@ contract RWAllyAgentRegistryTest is Test {
     event MetadataSet(uint256 indexed agentId, string indexed k, string metadataKey, bytes metadataValue);
     event MetadataUpdate(uint256 _tokenId);
     event URIUpdated(uint256 indexed agentId, string newURI, address indexed updatedBy);
-    event Revoked(uint256 indexed agentId, address indexed holder);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
 
+    /// Fee 0 and no import window: this suite covers the ERC-8004 surface and ownership. The fee, the
+    /// import window, initialization and CREATE2 have their own suites below.
     function setUp() public {
         vm.warp(1_800_000_000);
-        reg = new RWAllyAgentRegistry(multisig);
+        reg = new RWAllyAgentRegistry();
+        usdc = new MockERC20("USDC", 6);
+        vm.prank(reg.INITIALIZER());
+        reg.initialize(multisig, address(usdc), treasury, 0, address(0), 0);
     }
 
-    // ── construction and metadata ────────────────────────────────────────────
-
-    function test_constructor_setsOwnerAndEmits() public {
-        vm.expectEmit(true, true, false, false);
-        emit OwnershipTransferred(address(0), multisig);
-        RWAllyAgentRegistry r = new RWAllyAgentRegistry(multisig);
-        assertEq(r.owner(), multisig);
-        assertEq(r.pendingOwner(), address(0));
-    }
-
-    function test_constructor_zeroOwnerReverts() public {
-        vm.expectRevert(RWAllyAgentRegistry.ZeroOwner.selector);
-        new RWAllyAgentRegistry(address(0));
-    }
+    // ── metadata ─────────────────────────────────────────────────────────────
 
     function test_identityStrings() public view {
         assertEq(reg.name(), "AgentIdentity");
@@ -496,47 +490,7 @@ contract RWAllyAgentRegistryTest is Test {
         reg.setAgentWallet(id, address(w), dl, hex"aabbcd");
     }
 
-    // ── owner powers: exactly three, nothing else ────────────────────────────
-
-    function test_revoke_burnsOneIdentity_idNeverReissued() public {
-        uint256 id = _alice();
-        vm.prank(alice);
-        reg.approve(bob, id);
-        vm.prank(alice);
-        uint256 id2 = reg.register();
-
-        vm.expectEmit(true, true, true, false);
-        emit Transfer(alice, address(0), id);
-        vm.expectEmit(true, true, false, false);
-        emit Revoked(id, alice);
-        vm.prank(multisig);
-        reg.revoke(id);
-
-        assertEq(reg.balanceOf(alice), 1);
-        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721NonexistentToken.selector, id));
-        reg.ownerOf(id);
-        assertEq(reg.getAgentWallet(id), address(0));
-        assertEq(reg.ownerOf(id2), alice, "other identities untouched");
-
-        vm.prank(bob);
-        uint256 next = reg.register();
-        assertEq(next, 2, "revoked id 0 is not reissued");
-
-        vm.prank(multisig);
-        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721NonexistentToken.selector, id));
-        reg.revoke(id);
-    }
-
-    function test_revoke_onlyOwner_notEvenTheHolder() public {
-        uint256 id = _alice();
-        vm.prank(alice);
-        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
-        reg.revoke(id);
-        vm.prank(bob);
-        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
-        reg.revoke(id);
-        assertEq(reg.balanceOf(alice), 1);
-    }
+    // ── owner powers: exactly four, nothing over any identity ────────────────
 
     /// The owner address, acting as the owner, cannot reach another holder's identity data or move it.
     function test_owner_hasNoPowerOverHoldersIdentities() public {
@@ -557,6 +511,24 @@ contract RWAllyAgentRegistryTest is Test {
         vm.stopPrank();
         assertEq(reg.ownerOf(id), alice);
         assertEq(reg.tokenURI(id), "ipfs://a");
+    }
+
+    /// There is no function on the registry that removes an identity: the old `revoke` selector is
+    /// gone, and so is every other selector that could burn a token.
+    function test_noRemovalFunctionExists() public {
+        uint256 id = _alice();
+        bytes[3] memory attempts = [
+            abi.encodeWithSignature("revoke(uint256)", id),
+            abi.encodeWithSignature("burn(uint256)", id),
+            abi.encodeWithSignature("remove(uint256)", id)
+        ];
+        for (uint256 i; i < attempts.length; ++i) {
+            vm.prank(multisig);
+            (bool ok,) = address(reg).call(attempts[i]);
+            assertFalse(ok);
+        }
+        assertEq(reg.ownerOf(id), alice);
+        assertEq(reg.balanceOf(alice), 1);
     }
 
     function test_ownership_twoStep() public {
@@ -601,43 +573,1057 @@ contract RWAllyAgentRegistryTest is Test {
         reg.acceptOwnership();
     }
 
-    function test_renounce_endsRevocationForever() public {
-        uint256 id = _alice();
-        vm.prank(multisig);
-        reg.transferOwnership(bob);
-        vm.prank(multisig);
+    function test_ownerFunctionsRefuseEveryoneElse() public {
+        vm.startPrank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+        reg.setFee(1);
+        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+        reg.setTreasury(alice);
+        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+        reg.transferOwnership(alice);
+        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
         reg.renounceOwnership();
-        assertEq(reg.owner(), address(0));
-        assertEq(reg.pendingOwner(), address(0));
+        vm.stopPrank();
+    }
 
+    // ── EIP-712 domain follows the live chain id ─────────────────────────────
+
+    function _digestFor(uint256 chainId, uint256 id, address wallet, address holder, uint256 deadline)
+        internal
+        view
+        returns (bytes32)
+    {
+        bytes32 domain = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256("ERC8004IdentityRegistry"),
+                keccak256("1"),
+                chainId,
+                address(reg)
+            )
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                keccak256("AgentWalletSet(uint256 agentId,address newWallet,address owner,uint256 deadline)"),
+                id,
+                wallet,
+                holder,
+                deadline
+            )
+        );
+        return keccak256(abi.encodePacked("\x19\x01", domain, structHash));
+    }
+
+    function test_domainSeparator_followsTheLiveChainId() public {
+        vm.chainId(5042);
+        bytes32 arc = reg.domainSeparator();
+        vm.chainId(8453);
+        bytes32 base = reg.domainSeparator();
+        assertTrue(arc != base, "two chain ids, two separators");
+        vm.chainId(5042);
+        assertEq(reg.domainSeparator(), arc, "and back again");
+        assertEq(
+            arc,
+            keccak256(
+                abi.encode(
+                    keccak256(
+                        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                    ),
+                    keccak256("ERC8004IdentityRegistry"),
+                    keccak256("1"),
+                    uint256(5042),
+                    address(reg)
+                )
+            )
+        );
+    }
+
+    /// A wallet signature made for one chain is refused on another and accepted on its own.
+    function test_agentWalletSignature_doesNotReplayAcrossChains() public {
+        uint256 id = _alice();
+        (address w, uint256 wk) = makeAddrAndKey("wallet");
+        uint256 dl = vm.getBlockTimestamp() + 4 minutes;
+
+        vm.chainId(5042);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(wk, _digestFor(5042, id, w, alice, dl));
+        bytes memory sigForArc = abi.encodePacked(r, s, v);
+
+        vm.chainId(8453);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+        reg.setAgentWallet(id, w, dl, sigForArc);
+
+        vm.chainId(5042);
+        vm.prank(alice);
+        reg.setAgentWallet(id, w, dl, sigForArc);
+        assertEq(reg.getAgentWallet(id), w);
+
+        // and the other way round
+        vm.prank(alice);
+        reg.unsetAgentWallet(id);
+        vm.chainId(8453);
+        (v, r, s) = vm.sign(wk, _digestFor(8453, id, w, alice, dl));
+        vm.chainId(5042);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+        reg.setAgentWallet(id, w, dl, abi.encodePacked(r, s, v));
+    }
+}
+
+// ───────────────────────────── test doubles ──────────────────────────────
+
+/// An outside ERC-8004 registry: `ownerOf` answers from a table; `getAgentWallet` and `getApproved`
+/// answer with other addresses so a test can prove only `ownerOf` counts.
+contract OutsideRegistryMock {
+    mapping(uint256 => address) public owners;
+    mapping(uint256 => address) public wallets;
+    mapping(uint256 => address) public approvals;
+    uint256 public ownerOfCalls;
+
+    function set(uint256 id, address owner_, address wallet_, address approved_) external {
+        owners[id] = owner_;
+        wallets[id] = wallet_;
+        approvals[id] = approved_;
+    }
+
+    function ownerOf(uint256 id) external view returns (address) {
+        address o = owners[id];
+        require(o != address(0), "nonexistent");
+        return o;
+    }
+
+    function getAgentWallet(uint256 id) external view returns (address) {
+        return wallets[id];
+    }
+
+    function getApproved(uint256 id) external view returns (address) {
+        return approvals[id];
+    }
+}
+
+/// An outside registry that misbehaves in a chosen way on every call.
+contract HostileOutside {
+    enum Mode {
+        Revert,
+        Revert32,
+        Empty,
+        Short,
+        Long,
+        Burn,
+        DirtyWord
+    }
+
+    Mode public mode;
+    address public victim;
+
+    constructor(Mode m, address victim_) {
+        mode = m;
+        victim = victim_;
+    }
+
+    fallback(bytes calldata) external returns (bytes memory) {
+        Mode m = mode;
+        if (m == Mode.Revert) revert("hostile");
+        if (m == Mode.Revert32) {
+            address v = victim;
+            assembly {
+                mstore(0, v)
+                revert(0, 32)
+            }
+        }
+        if (m == Mode.Burn) {
+            assembly {
+                for {} 1 {} {}
+            }
+        }
+        if (m == Mode.Short) return abi.encodePacked(bytes1(0x01));
+        if (m == Mode.Long) return abi.encode(victim, victim);
+        if (m == Mode.DirtyWord) return abi.encode(uint256(uint160(victim)) | (uint256(1) << 200));
+        return ""; // Empty
+    }
+}
+
+/// A fee token with settable transferFrom behaviour. Balances and allowances are real.
+contract ShapedToken {
+    enum Shape {
+        ReturnsTrue,
+        ReturnsFalse,
+        ReturnsNothing,
+        ReturnsTwo,
+        ReturnsShort
+    }
+
+    uint8 public decimals = 6;
+    Shape public shape;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    uint256 public calls;
+
+    function setShape(Shape s) external {
+        shape = s;
+    }
+
+    function mint(address to, uint256 a) external {
+        balanceOf[to] += a;
+    }
+
+    function approve(address s, uint256 a) external returns (bool) {
+        allowance[msg.sender][s] = a;
+        return true;
+    }
+
+    fallback(bytes calldata data) external returns (bytes memory) {
+        require(bytes4(data[0:4]) == 0x23b872dd, "only transferFrom");
+        calls++;
+        (address from, address to, uint256 amount) = abi.decode(data[4:], (address, address, uint256));
+        Shape s = shape;
+        if (s != Shape.ReturnsFalse) {
+            require(allowance[from][msg.sender] >= amount && balanceOf[from] >= amount, "no funds");
+            allowance[from][msg.sender] -= amount;
+            balanceOf[from] -= amount;
+            balanceOf[to] += amount;
+        }
+        if (s == Shape.ReturnsFalse) return abi.encode(false);
+        if (s == Shape.ReturnsNothing) return "";
+        if (s == Shape.ReturnsTwo) return abi.encode(uint256(2));
+        if (s == Shape.ReturnsShort) return abi.encodePacked(bytes1(0x01));
+        return abi.encode(true);
+    }
+}
+
+/// A token whose `decimals()` reverts.
+contract NoDecimalsToken {
+    function decimals() external pure returns (uint8) {
+        revert("none");
+    }
+}
+
+abstract contract RegistryTestBase is Test {
+    uint256 constant USDC_1 = 1e6;
+
+    address multisig = makeAddr("multisig");
+    address treasury = makeAddr("treasury");
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    address carol = makeAddr("carol");
+
+    function _fresh(address token, uint256 fee_, address outside, uint256 ceiling)
+        internal
+        returns (RWAllyAgentRegistry r)
+    {
+        r = new RWAllyAgentRegistry();
+        vm.prank(r.INITIALIZER());
+        r.initialize(multisig, token, treasury, fee_, outside, ceiling);
+    }
+
+    function _fund(MockERC20 t, RWAllyAgentRegistry r, address who, uint256 amount) internal {
+        t.mint(who, amount);
+        vm.prank(who);
+        t.approve(address(r), type(uint256).max);
+    }
+}
+
+// ───────────────────────────── initialization ────────────────────────────
+
+contract RWAllyAgentRegistryInitTest is RegistryTestBase {
+    event Initialized(
+        address indexed owner,
+        address indexed feeToken,
+        address indexed treasury,
+        uint256 fee,
+        address outsideRegistry,
+        uint256 importIdCeiling,
+        uint256 importEnd
+    );
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    RWAllyAgentRegistry reg;
+    MockERC20 usdc;
+    OutsideRegistryMock outside;
+    address initializer;
+
+    function setUp() public {
+        vm.warp(1_800_000_000);
+        reg = new RWAllyAgentRegistry();
+        usdc = new MockERC20("USDC", 6);
+        outside = new OutsideRegistryMock();
+        initializer = reg.INITIALIZER();
+    }
+
+    function test_initializerIsTheDeclaredConstant() public view {
+        assertEq(initializer, 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35);
+        assertFalse(reg.initialized());
+        assertEq(reg.owner(), address(0), "nobody holds a power before initialization");
+    }
+
+    function test_registerBeforeInit_reverts_allOverloads() public {
+        RWAllyAgentRegistry.MetadataEntry[] memory m = new RWAllyAgentRegistry.MetadataEntry[](0);
+        vm.startPrank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.NotInitialized.selector);
+        reg.register();
+        vm.expectRevert(RWAllyAgentRegistry.NotInitialized.selector);
+        reg.register("ipfs://a");
+        vm.expectRevert(RWAllyAgentRegistry.NotInitialized.selector);
+        reg.register("ipfs://a", m);
+        vm.expectRevert(RWAllyAgentRegistry.NotInitialized.selector);
+        reg.importAgent(0, "ipfs://a");
+        vm.stopPrank();
+        assertEq(reg.balanceOf(alice), 0);
+    }
+
+    function test_ownerPowersAreDeadBeforeInit() public {
+        address[3] memory who = [alice, initializer, multisig];
+        for (uint256 i; i < who.length; ++i) {
+            vm.startPrank(who[i]);
+            vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+            reg.setFee(1);
+            vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+            reg.setTreasury(alice);
+            vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+            reg.renounceOwnership();
+            vm.stopPrank();
+        }
+    }
+
+    function test_initialize_wrongSender_reverts() public {
+        address[3] memory wrong = [alice, multisig, address(this)];
+        for (uint256 i; i < wrong.length; ++i) {
+            vm.prank(wrong[i]);
+            vm.expectRevert(RWAllyAgentRegistry.NotInitializer.selector);
+            reg.initialize(multisig, address(usdc), treasury, USDC_1, address(0), 0);
+        }
+        assertFalse(reg.initialized());
+    }
+
+    function test_initialize_twice_reverts_evenForTheInitializer() public {
+        vm.startPrank(initializer);
+        reg.initialize(multisig, address(usdc), treasury, USDC_1, address(0), 0);
+        vm.expectRevert(RWAllyAgentRegistry.AlreadyInitialized.selector);
+        reg.initialize(bob, address(usdc), bob, 0, address(0), 0);
+        vm.stopPrank();
+        assertEq(reg.owner(), multisig, "the second call changed nothing");
+        assertEq(reg.treasury(), treasury);
+        assertEq(reg.fee(), USDC_1);
+    }
+
+    function test_initialize_setsStateAndEmits_withImportWindow() public {
+        outside.set(0, alice, alice, alice);
+        uint256 end = block.timestamp + 30 days;
+        vm.expectEmit(true, true, false, false);
+        emit OwnershipTransferred(address(0), multisig);
+        vm.expectEmit(true, true, true, true);
+        emit Initialized(multisig, address(usdc), treasury, USDC_1, address(outside), 2535, end);
+        vm.prank(initializer);
+        reg.initialize(multisig, address(usdc), treasury, USDC_1, address(outside), 2535);
+
+        assertTrue(reg.initialized());
+        assertEq(reg.owner(), multisig);
+        assertEq(reg.feeToken(), address(usdc));
+        assertEq(reg.treasury(), treasury);
+        assertEq(reg.fee(), USDC_1);
+        assertEq(reg.outsideRegistry(), address(outside));
+        assertEq(reg.importIdCeiling(), 2535);
+        assertEq(reg.importEnd(), end);
+        assertEq(reg.IMPORT_WINDOW(), 30 days);
+    }
+
+    function test_initialize_withoutOutsideRegistry_hasNoWindow() public {
+        vm.prank(initializer);
+        reg.initialize(multisig, address(usdc), treasury, 0, address(0), 0);
+        assertEq(reg.importEnd(), 0);
+        assertEq(reg.outsideRegistry(), address(0));
+    }
+
+    function test_initialize_feeAboveCap_reverts_atCapPasses() public {
+        uint256 cap = reg.MAX_FEE();
+        assertEq(cap, 10_000_000, "10 USDC");
+        vm.prank(initializer);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.FeeTooHigh.selector, cap + 1));
+        reg.initialize(multisig, address(usdc), treasury, cap + 1, address(0), 0);
+        assertFalse(reg.initialized(), "a refused initialize leaves it open");
+
+        vm.prank(initializer);
+        reg.initialize(multisig, address(usdc), treasury, cap, address(0), 0);
+        assertEq(reg.fee(), cap);
+    }
+
+    function test_initialize_feeTokenDecimalsMustBeSix() public {
+        MockERC20 eighteen = new MockERC20("DAI", 18);
+        MockERC20 zero = new MockERC20("Z", 0);
+        MockERC20 seven = new MockERC20("S", 7);
+        MockERC20[3] memory bad = [eighteen, zero, seven];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.prank(initializer);
+            vm.expectRevert(RWAllyAgentRegistry.BadFeeToken.selector);
+            reg.initialize(multisig, address(bad[i]), treasury, 0, address(0), 0);
+        }
+        assertFalse(reg.initialized());
+    }
+
+    function test_initialize_feeTokenMustBeAContractThatAnswersDecimals() public {
+        address broken = address(new NoDecimalsToken());
+        vm.startPrank(initializer);
+        vm.expectRevert(RWAllyAgentRegistry.BadFeeToken.selector);
+        reg.initialize(multisig, address(0), treasury, 0, address(0), 0);
+        vm.expectRevert(RWAllyAgentRegistry.BadFeeToken.selector);
+        reg.initialize(multisig, alice, treasury, 0, address(0), 0); // an EOA
+        vm.expectRevert(); // decimals() reverts
+        reg.initialize(multisig, broken, treasury, 0, address(0), 0);
+        vm.stopPrank();
+        assertFalse(reg.initialized());
+    }
+
+    function test_initialize_zeroOwnerZeroTreasuryAndSelfTreasury_revert() public {
+        vm.startPrank(initializer);
+        vm.expectRevert(RWAllyAgentRegistry.ZeroOwner.selector);
+        reg.initialize(address(0), address(usdc), treasury, 0, address(0), 0);
+        vm.expectRevert(RWAllyAgentRegistry.BadTreasury.selector);
+        reg.initialize(multisig, address(usdc), address(0), 0, address(0), 0);
+        vm.expectRevert(RWAllyAgentRegistry.BadTreasury.selector);
+        reg.initialize(multisig, address(usdc), address(reg), 0, address(0), 0);
+        vm.stopPrank();
+        assertFalse(reg.initialized());
+    }
+
+    function test_initialize_outsideRegistryMustHaveCode_andCeilingNeedsOne() public {
+        vm.startPrank(initializer);
+        vm.expectRevert(RWAllyAgentRegistry.BadOutsideRegistry.selector);
+        reg.initialize(multisig, address(usdc), treasury, 0, alice, 10); // an EOA
+        vm.expectRevert(RWAllyAgentRegistry.BadOutsideRegistry.selector);
+        reg.initialize(multisig, address(usdc), treasury, 0, address(0), 10); // ceiling with no registry
+        vm.stopPrank();
+        assertFalse(reg.initialized());
+    }
+}
+
+// ───────────────────────────── the registration fee ──────────────────────
+
+contract RWAllyAgentRegistryFeeTest is RegistryTestBase {
+    event FeeChanged(uint256 oldFee, uint256 newFee);
+    event TreasuryChanged(address indexed oldTreasury, address indexed newTreasury);
+
+    RWAllyAgentRegistry reg;
+    MockERC20 usdc;
+
+    function setUp() public {
+        vm.warp(1_800_000_000);
+        usdc = new MockERC20("USDC", 6);
+        reg = _fresh(address(usdc), USDC_1, address(0), 0);
+        _fund(usdc, reg, alice, 100 * USDC_1);
+    }
+
+    function test_register_pullsTheFeeStraightToTheTreasury_allOverloads() public {
+        RWAllyAgentRegistry.MetadataEntry[] memory m = new RWAllyAgentRegistry.MetadataEntry[](1);
+        m[0] = RWAllyAgentRegistry.MetadataEntry("k", hex"01");
+        vm.startPrank(alice);
+        reg.register();
+        assertEq(usdc.balanceOf(treasury), USDC_1);
+        reg.register("ipfs://a");
+        assertEq(usdc.balanceOf(treasury), 2 * USDC_1);
+        reg.register("ipfs://b", m);
+        vm.stopPrank();
+        assertEq(usdc.balanceOf(treasury), 3 * USDC_1);
+        assertEq(usdc.balanceOf(alice), 97 * USDC_1);
+        assertEq(usdc.balanceOf(address(reg)), 0, "the registry never holds funds");
+        assertEq(reg.balanceOf(alice), 3);
+    }
+
+    function test_register_withoutAllowance_orBalance_revertsAndMintsNothing() public {
+        vm.prank(bob); // no balance, no allowance
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        reg.register();
+        _fund(usdc, reg, bob, USDC_1 - 1);
+        vm.prank(bob);
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        reg.register("ipfs://x");
+        assertEq(reg.balanceOf(bob), 0);
+        // The next id was not consumed by the failed attempts.
+        vm.prank(alice);
+        assertEq(reg.register(), 0);
+    }
+
+    function test_register_feeZero_skipsTheTokenCallEntirely() public {
+        RWAllyAgentRegistry free = _fresh(address(usdc), 0, address(0), 0);
+        vm.expectCall(address(usdc), abi.encodeWithSelector(usdc.transferFrom.selector), 0);
+        vm.prank(bob); // holds nothing, approved nothing
+        uint256 id = free.register();
+        assertEq(id, 0);
+        assertEq(free.balanceOf(bob), 1);
+        assertEq(usdc.balanceOf(treasury), 0);
+    }
+
+    function test_register_isNotPayable_andTheRegistryHasNoReceive() public {
+        vm.deal(alice, 1 ether);
+        vm.prank(alice);
+        (bool ok,) = address(reg).call{value: 1}(abi.encodeWithSignature("register()"));
+        assertFalse(ok, "register is not payable");
+        vm.prank(alice);
+        (ok,) = address(reg).call{value: 1}("");
+        assertFalse(ok, "no receive or fallback");
+        assertEq(address(reg).balance, 0);
+    }
+
+    // ── fee token shapes ──────────────────────────────────────────────────
+
+    function _shaped(ShapedToken.Shape s) internal returns (RWAllyAgentRegistry r, ShapedToken t) {
+        t = new ShapedToken();
+        t.setShape(s);
+        r = _fresh(address(t), USDC_1, address(0), 0);
+        t.mint(alice, 10 * USDC_1);
+        vm.prank(alice);
+        t.approve(address(r), type(uint256).max);
+    }
+
+    function test_transferFromReturningFalse_isRefused() public {
+        (RWAllyAgentRegistry r, ShapedToken t) = _shaped(ShapedToken.Shape.ReturnsFalse);
+        vm.expectCall(address(t), abi.encodeWithSelector(0x23b872dd, alice, treasury, USDC_1));
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        r.register();
+        assertEq(r.balanceOf(alice), 0, "no identity without a fee");
+    }
+
+    function test_transferFromReturningTwoOrShortData_isRefused() public {
+        (RWAllyAgentRegistry r,) = _shaped(ShapedToken.Shape.ReturnsTwo);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        r.register();
+        (r,) = _shaped(ShapedToken.Shape.ReturnsShort);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        r.register();
+    }
+
+    function test_transferFromReturningNothing_isAccepted_whenItSucceeded() public {
+        (RWAllyAgentRegistry r, ShapedToken t) = _shaped(ShapedToken.Shape.ReturnsNothing);
+        vm.prank(alice);
+        r.register();
+        assertEq(t.balanceOf(treasury), USDC_1);
+        assertEq(r.balanceOf(alice), 1);
+    }
+
+    function test_transferFromReturningTrue_isAccepted() public {
+        (RWAllyAgentRegistry r, ShapedToken t) = _shaped(ShapedToken.Shape.ReturnsTrue);
+        vm.prank(alice);
+        r.register();
+        assertEq(t.balanceOf(treasury), USDC_1);
+    }
+
+    // ── setFee ────────────────────────────────────────────────────────────
+
+    function test_setFee_aboveCap_reverts_atCapPasses_emits() public {
+        uint256 cap = reg.MAX_FEE();
+        vm.prank(multisig);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.FeeTooHigh.selector, cap + 1));
+        reg.setFee(cap + 1);
+        assertEq(reg.fee(), USDC_1);
+
+        vm.expectEmit(false, false, false, true);
+        emit FeeChanged(USDC_1, cap);
+        vm.prank(multisig);
+        reg.setFee(cap);
+        assertEq(reg.fee(), cap);
+
+        vm.expectEmit(false, false, false, true);
+        emit FeeChanged(cap, 0);
+        vm.prank(multisig);
+        reg.setFee(0);
+    }
+
+    function test_setFee_appliesToTheNextRegistrationOnly_existingIdentitiesUntouched() public {
+        vm.prank(alice);
+        uint256 first = reg.register();
+        vm.prank(multisig);
+        reg.setFee(5 * USDC_1);
+        assertEq(reg.ownerOf(first), alice, "an existing identity is untouched");
+        uint256 before = usdc.balanceOf(treasury);
+        vm.prank(alice);
+        reg.register();
+        assertEq(usdc.balanceOf(treasury) - before, 5 * USDC_1);
+    }
+
+    function test_setTreasury_nonzero_notSelf_emits_andRedirectsTheNextFee() public {
+        address next = makeAddr("next treasury");
+        vm.startPrank(multisig);
+        vm.expectRevert(RWAllyAgentRegistry.BadTreasury.selector);
+        reg.setTreasury(address(0));
+        vm.expectRevert(RWAllyAgentRegistry.BadTreasury.selector);
+        reg.setTreasury(address(reg));
+        vm.expectEmit(true, true, false, false);
+        emit TreasuryChanged(treasury, next);
+        reg.setTreasury(next);
+        vm.stopPrank();
+        vm.prank(alice);
+        reg.register();
+        assertEq(usdc.balanceOf(next), USDC_1);
+        assertEq(usdc.balanceOf(treasury), 0);
+    }
+
+    function test_renounce_freezesFeeAndTreasury_registrationStillWorks() public {
+        vm.startPrank(multisig);
+        reg.setFee(2 * USDC_1);
+        reg.renounceOwnership();
+        vm.stopPrank();
+        assertEq(reg.owner(), address(0));
+
+        vm.startPrank(multisig);
+        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+        reg.setFee(0);
+        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+        reg.setTreasury(bob);
+        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
+        reg.transferOwnership(bob);
+        vm.stopPrank();
+
+        vm.prank(alice);
+        reg.register();
+        assertEq(usdc.balanceOf(treasury), 2 * USDC_1, "the frozen fee and treasury still apply");
+    }
+
+    function test_renounce_clearsAPendingNomination() public {
+        vm.startPrank(multisig);
+        reg.transferOwnership(bob);
+        reg.renounceOwnership();
+        vm.stopPrank();
         vm.prank(bob);
         vm.expectRevert(RWAllyAgentRegistry.NotPendingOwner.selector);
         reg.acceptOwnership();
-        vm.prank(multisig);
-        vm.expectRevert(RWAllyAgentRegistry.NotOwner.selector);
-        reg.revoke(id);
-        assertEq(reg.ownerOf(id), alice);
     }
 
-    // ── fuzz ─────────────────────────────────────────────────────────────────
+    function testFuzz_feeIsPulledExactly(uint256 fee_) public {
+        fee_ = bound(fee_, 0, reg.MAX_FEE());
+        vm.prank(multisig);
+        reg.setFee(fee_);
+        uint256 t0 = usdc.balanceOf(treasury);
+        uint256 a0 = usdc.balanceOf(alice);
+        vm.prank(alice);
+        reg.register();
+        assertEq(usdc.balanceOf(treasury) - t0, fee_);
+        assertEq(a0 - usdc.balanceOf(alice), fee_);
+        assertEq(usdc.balanceOf(address(reg)), 0);
+    }
 
-    function testFuzz_balancesTrackRegistrationsTransfersAndRevokes(uint8 nRegs, uint8 revokeMask) public {
-        uint256 n = bound(nRegs, 1, 12);
-        for (uint256 i; i < n; ++i) {
-            vm.prank(i % 2 == 0 ? alice : bob);
-            reg.register();
+    function testFuzz_feeAboveCapIsNeverAccepted(uint256 fee_) public {
+        fee_ = bound(fee_, reg.MAX_FEE() + 1, type(uint256).max);
+        vm.prank(multisig);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.FeeTooHigh.selector, fee_));
+        reg.setFee(fee_);
+        RWAllyAgentRegistry r = new RWAllyAgentRegistry();
+        vm.prank(r.INITIALIZER());
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.FeeTooHigh.selector, fee_));
+        r.initialize(multisig, address(usdc), treasury, fee_, address(0), 0);
+    }
+}
+
+// ───────────────────────────── the import window ─────────────────────────
+
+contract RWAllyAgentRegistryImportTest is RegistryTestBase {
+    event Imported(uint256 indexed agentId, uint256 indexed externalAgentId, address indexed holder);
+    event Registered(uint256 indexed agentId, string agentURI, address indexed owner);
+
+    uint256 constant CEILING = 2535;
+
+    RWAllyAgentRegistry reg;
+    MockERC20 usdc;
+    OutsideRegistryMock outside;
+    uint256 end;
+
+    function setUp() public {
+        vm.warp(1_800_000_000);
+        usdc = new MockERC20("USDC", 6);
+        outside = new OutsideRegistryMock();
+        reg = _fresh(address(usdc), USDC_1, address(outside), CEILING);
+        end = reg.importEnd();
+        outside.set(7, alice, bob, carol); // alice owns 7; bob is its agent wallet; carol is approved
+        outside.set(CEILING - 1, alice, alice, address(0));
+        outside.set(CEILING, alice, alice, address(0));
+        outside.set(CEILING + 100, alice, alice, address(0));
+    }
+
+    function test_import_happyPath_isFree_mintsToTheOutsideOwner() public {
+        vm.expectEmit(true, true, true, false);
+        emit Imported(0, 7, alice);
+        vm.prank(alice);
+        uint256 id = reg.importAgent(7, "ipfs://imported");
+
+        assertEq(id, 0);
+        assertEq(reg.ownerOf(0), alice);
+        assertEq(reg.tokenURI(0), "ipfs://imported");
+        assertEq(reg.getAgentWallet(0), alice);
+        assertEq(reg.balanceOf(alice), 1);
+        (bool imported, uint256 local) = reg.localIdOfOrigin(block.chainid, address(outside), 7);
+        assertTrue(imported);
+        assertEq(local, id);
+        assertEq(usdc.balanceOf(treasury), 0, "no fee");
+        assertEq(usdc.balanceOf(alice), 0);
+    }
+
+    function test_import_doesNotConsumeOrDisturbPaidRegistrations() public {
+        _fund(usdc, reg, bob, USDC_1);
+        vm.prank(bob);
+        assertEq(reg.register(), 0);
+        vm.prank(alice);
+        assertEq(reg.importAgent(7, ""), 1);
+        assertEq(usdc.balanceOf(treasury), USDC_1);
+    }
+
+    function test_import_windowEdge_lastSecondWorks_thenClosed() public {
+        vm.warp(end - 1);
+        vm.prank(alice);
+        reg.importAgent(7, "");
+
+        vm.warp(end);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.ImportClosed.selector);
+        reg.importAgent(CEILING - 1, "");
+
+        vm.warp(end + 365 days);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.ImportClosed.selector);
+        reg.importAgent(CEILING - 1, "");
+    }
+
+    function test_import_afterTheWindow_theOutsideRegistryIsNeverCalled() public {
+        vm.warp(end);
+        vm.expectCall(address(outside), abi.encodeWithSelector(0x6352211e), 0);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.ImportClosed.selector);
+        reg.importAgent(7, "");
+    }
+
+    function test_import_afterTheWindow_aBurningOrRevertingOutsideRegistryChangesNothing() public {
+        HostileOutside burn = new HostileOutside(HostileOutside.Mode.Burn, alice);
+        RWAllyAgentRegistry r = _fresh(address(usdc), USDC_1, address(burn), 100);
+        vm.warp(r.importEnd());
+        uint256 g = gasleft();
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.ImportClosed.selector);
+        r.importAgent(1, "");
+        assertLt(g - gasleft(), 100_000, "a closed window costs almost nothing, no burn is reached");
+
+        // and ordinary registration never touches the outside registry at any time
+        _fund(usdc, r, alice, USDC_1);
+        vm.expectCall(address(burn), "", 0);
+        vm.prank(alice);
+        r.register();
+    }
+
+    function test_import_atOrAboveTheCeiling_reverts_belowItWorks() public {
+        vm.startPrank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ImportIdNotEligible.selector, CEILING));
+        reg.importAgent(CEILING, "");
+        vm.expectRevert(
+            abi.encodeWithSelector(RWAllyAgentRegistry.ImportIdNotEligible.selector, CEILING + 100)
+        );
+        reg.importAgent(CEILING + 100, "");
+        vm.expectRevert(
+            abi.encodeWithSelector(RWAllyAgentRegistry.ImportIdNotEligible.selector, type(uint256).max)
+        );
+        reg.importAgent(type(uint256).max, "");
+        reg.importAgent(CEILING - 1, "");
+        vm.stopPrank();
+        assertEq(reg.balanceOf(alice), 1);
+        (bool imported,) = reg.localIdOfOrigin(block.chainid, address(outside), CEILING);
+        assertFalse(imported);
+    }
+
+    function test_import_sameOutsideIdTwice_reverts() public {
+        vm.prank(alice);
+        reg.importAgent(7, "");
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.AlreadyImported.selector, 7));
+        reg.importAgent(7, "");
+    }
+
+    /// Selling the outside token on does not sell a second free import of it, and moving the
+    /// imported identity on does not reopen the outside id.
+    function test_import_sameOutsideIdByTheNextOutsideOwner_reverts() public {
+        vm.prank(alice);
+        uint256 id = reg.importAgent(7, "");
+        outside.set(7, bob, bob, address(0)); // the outside token changes hands
+        vm.prank(alice);
+        reg.transferFrom(alice, carol, id);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.AlreadyImported.selector, 7));
+        reg.importAgent(7, "");
+    }
+
+    /// The origin record: an import stores (chain id, outside registry, outside id) against the local
+    /// id; a registered identity has none; the record follows the token; one origin mints once, and
+    /// the same outside id on another chain or another outside registry is a different origin.
+    function test_import_recordsItsOrigin_andOneOriginMintsOnce() public {
+        _fund(usdc, reg, bob, USDC_1);
+        vm.prank(bob);
+        uint256 registered = reg.register();
+        (uint256 c0, address r0, uint256 a0) = reg.originOf(registered);
+        assertEq(c0, 0);
+        assertEq(r0, address(0));
+        assertEq(a0, 0);
+
+        vm.prank(alice);
+        uint256 id = reg.importAgent(7, "");
+        (uint256 c, address r, uint256 a) = reg.originOf(id);
+        assertEq(c, block.chainid);
+        assertEq(r, address(outside));
+        assertEq(a, 7);
+
+        vm.prank(alice);
+        reg.transferFrom(alice, carol, id);
+        (c, r, a) = reg.originOf(id);
+        assertEq(a, 7, "the origin follows the token");
+
+        (bool imported, uint256 local) = reg.localIdOfOrigin(block.chainid, address(outside), 7);
+        assertTrue(imported);
+        assertEq(local, id);
+        (imported,) = reg.localIdOfOrigin(block.chainid + 1, address(outside), 7);
+        assertFalse(imported, "another chain is another origin");
+        (imported,) = reg.localIdOfOrigin(block.chainid, address(this), 7);
+        assertFalse(imported, "another registry is another origin");
+
+        outside.set(7, alice, alice, address(0));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.AlreadyImported.selector, 7));
+        reg.importAgent(7, "");
+
+        // local id 0 is a real id: the +1 encoding does not make it look unimported
+        RWAllyAgentRegistry r2 = _fresh(address(usdc), 0, address(outside), CEILING);
+        vm.prank(alice);
+        uint256 first = r2.importAgent(7, "");
+        assertEq(first, 0);
+        (imported, local) = r2.localIdOfOrigin(block.chainid, address(outside), 7);
+        assertTrue(imported);
+        assertEq(local, 0);
+    }
+
+    function test_import_notTheOutsideOwner_reverts_andDoesNotBurnTheId() public {
+        vm.prank(bob);
+        vm.expectRevert(RWAllyAgentRegistry.NotOutsideOwner.selector);
+        reg.importAgent(7, "");
+        (bool imported,) = reg.localIdOfOrigin(block.chainid, address(outside), 7);
+        assertFalse(imported, "a refused import leaves the id claimable by its owner");
+        vm.prank(alice);
+        reg.importAgent(7, "");
+    }
+
+    /// Only `ownerOf` counts. The outside agent wallet and an approved operator are refused.
+    function test_import_neverViaAgentWalletOrApproval() public {
+        assertEq(outside.getAgentWallet(7), bob);
+        assertEq(outside.getApproved(7), carol);
+        vm.prank(bob);
+        vm.expectRevert(RWAllyAgentRegistry.NotOutsideOwner.selector);
+        reg.importAgent(7, "");
+        vm.prank(carol);
+        vm.expectRevert(RWAllyAgentRegistry.NotOutsideOwner.selector);
+        reg.importAgent(7, "");
+        assertEq(reg.balanceOf(bob) + reg.balanceOf(carol), 0);
+        // the identity lands with the outside owner, not with the wallet
+        vm.prank(alice);
+        uint256 id = reg.importAgent(7, "");
+        assertEq(reg.ownerOf(id), alice);
+        assertEq(reg.getAgentWallet(id), alice);
+    }
+
+    function test_import_nonexistentOutsideId_reverts() public {
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.NotOutsideOwner.selector);
+        reg.importAgent(8, ""); // below the ceiling, but the outside registry reverts
+    }
+
+    function _hostile(HostileOutside.Mode m) internal returns (RWAllyAgentRegistry r) {
+        HostileOutside h = new HostileOutside(m, alice);
+        r = _fresh(address(usdc), USDC_1, address(h), 100);
+    }
+
+    function test_import_hostileOutsideRegistries_areRefused() public {
+        HostileOutside.Mode[7] memory modes = [
+            HostileOutside.Mode.Revert,
+            HostileOutside.Mode.Revert32,
+            HostileOutside.Mode.Empty,
+            HostileOutside.Mode.Short,
+            HostileOutside.Mode.Long,
+            HostileOutside.Mode.Burn,
+            HostileOutside.Mode.DirtyWord
+        ];
+        for (uint256 i; i < modes.length; ++i) {
+            RWAllyAgentRegistry r = _hostile(modes[i]);
+            vm.prank(alice);
+            vm.expectRevert(RWAllyAgentRegistry.NotOutsideOwner.selector);
+            r.importAgent(1, "");
+            assertEq(r.balanceOf(alice), 0);
         }
-        uint256 a = reg.balanceOf(alice);
-        uint256 b = reg.balanceOf(bob);
-        assertEq(a + b, n);
-        for (uint256 i; i < n; ++i) {
-            if ((revokeMask >> (i % 8)) & 1 == 1) {
-                address holder = reg.ownerOf(i);
-                uint256 before = reg.balanceOf(holder);
-                vm.prank(multisig);
-                reg.revoke(i);
-                assertEq(reg.balanceOf(holder), before - 1);
-            }
-        }
+    }
+
+    function test_import_gasBurningOutsideRegistry_costsTheCallerUnderTheBound() public {
+        RWAllyAgentRegistry r = _hostile(HostileOutside.Mode.Burn);
+        uint256 g = gasleft();
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.NotOutsideOwner.selector);
+        r.importAgent(1, "");
+        uint256 used = g - gasleft();
+        assertGt(used, 250_000, "the allowance was spent");
+        assertLt(used, 400_000, "and not a unit more than the bound");
+    }
+
+    function test_import_hostileOutsideRegistry_cannotBlockPaidRegistration() public {
+        RWAllyAgentRegistry r = _hostile(HostileOutside.Mode.Burn);
+        _fund(usdc, r, bob, USDC_1);
+        vm.prank(bob);
+        assertEq(r.register(), 0);
+    }
+
+    function test_import_noOutsideRegistry_isClosedFromTheStart() public {
+        RWAllyAgentRegistry r = _fresh(address(usdc), USDC_1, address(0), 0);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.ImportClosed.selector);
+        r.importAgent(0, "");
+    }
+
+    function test_import_toAContractWithoutAReceiver_reverts() public {
+        NoReceiver n = new NoReceiver();
+        outside.set(9, address(n), address(n), address(0));
+        vm.prank(address(n));
+        vm.expectRevert(
+            abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InvalidReceiver.selector, address(n))
+        );
+        reg.importAgent(9, "");
+        (bool imported,) = reg.localIdOfOrigin(block.chainid, address(outside), 9);
+        assertFalse(imported, "the revert rolled the claim back");
+    }
+
+    function test_import_identityIsAnOrdinaryIdentityAfterwards() public {
+        vm.prank(alice);
+        uint256 id = reg.importAgent(7, "ipfs://x");
+        vm.prank(alice);
+        reg.setAgentURI(id, "ipfs://y");
+        vm.prank(alice);
+        reg.transferFrom(alice, bob, id);
+        assertEq(reg.ownerOf(id), bob);
+        assertEq(reg.getAgentWallet(id), address(0), "wallet cleared on transfer, as for any identity");
+    }
+}
+
+// ───────────────────────────── same address through CREATE2 ──────────────
+
+contract RWAllyAgentRegistryCreate2Test is RegistryTestBase {
+    address constant ARACHNID = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+    /// Runtime code of the Arachnid deterministic deployment proxy, byte for byte as read from Arc
+    /// mainnet (`cast code 0x4e59...956c`) on both RPC endpoints.
+    bytes constant ARACHNID_RUNTIME =
+        hex"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3";
+
+    string cfg;
+
+    function setUp() public {
+        cfg = vm.readFile("config/agent-registry-create2.json");
+        vm.etch(ARACHNID, ARACHNID_RUNTIME);
+    }
+
+    function _salt() internal view returns (bytes32) {
+        return vm.parseJsonBytes32(cfg, ".salt");
+    }
+
+    function _predict(bytes32 salt, bytes memory initcode) internal pure returns (address) {
+        return address(
+            uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), ARACHNID, salt, keccak256(initcode)))))
+        );
+    }
+
+    function _deploy(bytes32 salt, bytes memory initcode) internal returns (address deployed) {
+        (bool ok, bytes memory ret) = ARACHNID.call(abi.encodePacked(salt, initcode));
+        require(ok && ret.length == 20, "create2 proxy failed");
+        deployed = address(bytes20(ret));
+    }
+
+    /// The recorded hash is the hash of the code this source builds. When the contract changes, this
+    /// goes red until contracts/config/agent-registry-create2.json is regenerated (and the deploy
+    /// address with it): the address is a function of the exact bytes.
+    function test_recordedInitcodeHash_matchesTheBuild() public view {
+        bytes memory initcode = type(RWAllyAgentRegistry).creationCode;
+        assertEq(
+            keccak256(initcode),
+            vm.parseJsonBytes32(cfg, ".initcodeHash"),
+            "initcode changed: regenerate contracts/config/agent-registry-create2.json"
+        );
+    }
+
+    function test_recordedAddress_isTheCreate2AddressOfTheRecordedInputs() public view {
+        assertEq(vm.parseJsonAddress(cfg, ".factory"), ARACHNID);
+        assertEq(
+            vm.parseJsonAddress(cfg, ".address"),
+            _predict(_salt(), type(RWAllyAgentRegistry).creationCode),
+            "recorded address is not the CREATE2 address of (factory, salt, initcode hash)"
+        );
+    }
+
+    function test_deployThroughTheProxy_landsAtThePredictedAddress() public {
+        bytes memory initcode = type(RWAllyAgentRegistry).creationCode;
+        address predicted = _predict(_salt(), initcode);
+        assertEq(predicted.code.length, 0);
+        address deployed = _deploy(_salt(), initcode);
+        assertEq(deployed, predicted);
+        assertEq(deployed, vm.parseJsonAddress(cfg, ".address"));
+        assertGt(deployed.code.length, 0);
+        assertEq(
+            keccak256(deployed.code),
+            keccak256(vm.getDeployedCode("RWAllyAgentRegistry.sol:RWAllyAgentRegistry"))
+        );
+        // It arrives uninitialized, ownerless and closed.
+        RWAllyAgentRegistry r = RWAllyAgentRegistry(deployed);
+        assertFalse(r.initialized());
+        assertEq(r.owner(), address(0));
+        // The same salt and code cannot be deployed twice at the address.
+        (bool ok,) = ARACHNID.call(abi.encodePacked(_salt(), initcode));
+        assertFalse(ok);
+    }
+
+    function test_theAddressDoesNotDependOnTheChain() public {
+        bytes memory initcode = type(RWAllyAgentRegistry).creationCode;
+        uint256 snap = vm.snapshotState();
+        vm.chainId(5042);
+        address onArc = _deploy(_salt(), initcode);
+        assertTrue(vm.revertToState(snap));
+        vm.etch(ARACHNID, ARACHNID_RUNTIME);
+        vm.chainId(8453);
+        address onBase = _deploy(_salt(), initcode);
+        assertEq(onArc, onBase, "one address on every chain");
+    }
+
+    function test_aDifferentSaltOrCodeIsADifferentAddress() public view {
+        bytes memory initcode = type(RWAllyAgentRegistry).creationCode;
+        assertTrue(_predict(_salt(), initcode) != _predict(bytes32(uint256(_salt()) + 1), initcode));
+        assertTrue(_predict(_salt(), initcode) != _predict(_salt(), abi.encodePacked(initcode, hex"00")));
+    }
+
+    function test_initializeAfterDeploy_onlyTheInitializerCan_andAnyoneCanSendTheDeploy() public {
+        address anyone = makeAddr("anyone sends the deploy");
+        MockERC20 usdc = new MockERC20("USDC", 6);
+        vm.prank(anyone);
+        address deployed = _deploy(_salt(), type(RWAllyAgentRegistry).creationCode);
+        RWAllyAgentRegistry r = RWAllyAgentRegistry(deployed);
+
+        vm.prank(anyone); // the deploy sender has no claim on the registry
+        vm.expectRevert(RWAllyAgentRegistry.NotInitializer.selector);
+        r.initialize(anyone, address(usdc), anyone, USDC_1, address(0), 0);
+
+        vm.prank(r.INITIALIZER());
+        r.initialize(multisig, address(usdc), treasury, USDC_1, address(0), 0);
+        assertEq(r.owner(), multisig);
+        assertEq(r.fee(), USDC_1);
+    }
+
+    // ── the recorded initializer ─────────────────────────────────────────
+
+    function test_initializerConstant_equalsTheRecordedInitializer() public {
+        RWAllyAgentRegistry r = new RWAllyAgentRegistry();
+        assertEq(r.INITIALIZER(), vm.parseJsonAddress(cfg, ".initializer"));
+    }
+
+    /// The initializer is the owner-held protocol deployer key, the same address the Arc deployment
+    /// record names as `deployer`.
+    function test_initializer_isTheProtocolDeployer() public view {
+        string memory deployment = vm.readFile("config/deployments/arc-mainnet.json");
+        assertEq(vm.parseJsonAddress(cfg, ".initializer"), vm.parseJsonAddress(deployment, ".deployer"));
     }
 }

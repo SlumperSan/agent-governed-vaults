@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {BoundedCall} from "./lib/BoundedCall.sol";
+
 interface IERC721Receiver {
     function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data)
         external
@@ -11,43 +13,68 @@ interface IERC1271 {
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4);
 }
 
+interface IERC20Decimals {
+    function decimals() external view returns (uint8);
+}
+
 /// @title RWAllyAgentRegistry
 /// @notice A fresh, minimal implementation of the ERC-8004 Identity Registry surface: an ERC-721
 /// whose token is an agent identity, with an agent URI, on-chain metadata and a designated agent
 /// wallet. It is written against the ERC text and the reference registry's external interface
 /// (https://eips.ethereum.org/EIPS/eip-8004), imports no third-party code, and shares no storage
 /// layout with the canonical deployment. It is NOT the canonical ERC-8004 registry: the ids it
-/// issues are its own, and an identity registered on another registry is not recognised here.
+/// issues are its own, and an identity registered on another registry is recognised here only
+/// through `importAgent`, during the import window.
 ///
-/// @dev REGISTRATION IS PERMISSIONLESS, as in ERC-8004. `register` mints to `msg.sender` and
-/// checks nothing about the caller, so holding an identity here is a registration, not evidence of
-/// who or what controls the address.
+/// @dev REGISTRATION IS OPEN AND PAID. `register` mints to `msg.sender` and checks nothing about the
+/// caller beyond the fee: it pulls a flat `fee` of the fee token from the caller straight to the
+/// treasury (`transferFrom(msg.sender, treasury, fee)`, return value checked), so the registry never
+/// holds funds. The fee is set by the owner and can never exceed `MAX_FEE` (10 USDC, 10_000_000
+/// raw units of a 6-decimal token), a constant in the bytecode. It is charged once, at registration;
+/// a later fee change touches no existing identity. Holding an identity here is a registration, not
+/// evidence of who or what controls the address.
+///
+/// IMPORT WINDOW. For `IMPORT_WINDOW` (30 days) after `initialize`, a holder of an identity on the
+/// outside ERC-8004 registry named at initialization can claim one free identity here per outside
+/// id with `importAgent`, only for outside ids below `importIdCeiling` (so ids minted on the free
+/// outside registry after the ceiling was read do not qualify). The check is a gas-bounded
+/// `ownerOf(externalAgentId)` static call that must return `msg.sender` exactly (never an agent
+/// wallet or an approved operator). After the window closes the outside registry is never called.
+/// Each import records its origin (chain id, outside registry, outside id), readable with
+/// `originOf(localId)`, and one origin can mint at most once.
+///
+/// SAME ADDRESS ON EVERY CHAIN. There are no constructor arguments, so the creation code, and
+/// therefore the CREATE2 address through the same factory and salt, is identical on every chain.
+/// Per-chain configuration is supplied once through `initialize`, callable only by `INITIALIZER`.
+/// Until it is called, `register` and `importAgent` revert and nobody holds any owner power.
+/// `INITIALIZER` is the owner-held protocol deployer key (0x0f80...9f35), used for `initialize`
+/// only through the owner's sign queue. Whoever holds that key can initialize any chain where the
+/// registry is deployed and not yet initialized, with their own treasury; the key has no power on
+/// an initialized chain. If it is lost, no new chain can be initialized at this address (a new
+/// address is needed there) and nothing changes on chains already initialized.
 ///
 /// UPGRADEABILITY: none. The contract has no proxy, no `delegatecall`, no `selfdestruct` and no
 /// code-replacement hook. Its code is fixed at deployment.
 ///
-/// OWNER POWERS. The owner is one address, passed at construction and intended to be a multisig.
-/// The complete list of what the owner address can do through this contract is:
-///   1. `revoke(agentId)`: burn one identity. Clears that token's owner, approval, agent URI and
-///      `agentWallet`, lowers the holder's balance by one, emits `Transfer(holder, 0, id)` and
-///      `Revoked`. The id is never reissued. This exists so that an identity that falsely claims to
-///      be protocol-operated can be removed from the pinned registry.
-///   2. `transferOwnership(newOwner)`: nominate a successor. Takes effect only when that address
-///      calls `acceptOwnership`; the nomination can be replaced or cleared (nominate address(0))
-///      by the owner at any time before acceptance.
-///   3. `renounceOwnership()`: set the owner to address(0), after which power 1 can never be
-///      exercised again.
-/// The owner address holds no other privileged entry point. Specifically, there is no function by
-/// which the owner registers, transfers, approves, re-points or edits another holder's identity,
-/// URI, metadata or agent wallet, pauses or gates registration, changes the name, symbol or
-/// version, upgrades or replaces code, or receives or moves any asset (the contract holds none and
-/// has no payable function). Revocation affects only whether an address still holds an identity
-/// token here; a contract that reads this registry's `balanceOf` sees the holder's balance fall.
-/// The owner's address is public in `owner()`; changing the multisig's signers or threshold happens
-/// inside the multisig and is invisible to this contract.
+/// OWNER POWERS. The owner is one address, set by `initialize` and intended to be a multisig. The
+/// complete list of what the owner address can do through this contract is:
+///   1. `setFee(newFee)`: set the registration fee, at most `MAX_FEE`; emits `FeeChanged(old, new)`.
+///   2. `setTreasury(newTreasury)`: set the address that receives fees, nonzero and not this
+///      contract; emits `TreasuryChanged(old, new)`.
+///   3. `transferOwnership(newOwner)` then the nominee's `acceptOwnership()`: two-step handover. The
+///      nomination can be replaced or cleared (nominate address(0)) by the owner before acceptance.
+///   4. `renounceOwnership()`: set the owner to address(0), which freezes the fee and the treasury
+///      at their current values for good.
+/// There is no function by which the owner removes, registers, transfers, approves, re-points or
+/// edits any identity, URI, metadata or agent wallet, pauses or gates registration, changes the
+/// name, symbol or version, upgrades or replaces code, or receives or moves any asset (the
+/// contract holds none and has no payable function). The owner's address is public in `owner()`;
+/// changing the multisig's signers or threshold happens inside the multisig and is invisible here.
 ///
 /// Ids start at 0 and increase by one, as in the reference registry.
 contract RWAllyAgentRegistry {
+    using BoundedCall for address;
+
     // ───────────────────────────── types ─────────────────────────────
 
     struct MetadataEntry {
@@ -66,7 +93,18 @@ contract RWAllyAgentRegistry {
     );
     event URIUpdated(uint256 indexed agentId, string newURI, address indexed updatedBy);
     event MetadataUpdate(uint256 _tokenId); // ERC-4906, emitted whenever an agent URI is written
-    event Revoked(uint256 indexed agentId, address indexed holder);
+    event Imported(uint256 indexed agentId, uint256 indexed externalAgentId, address indexed holder);
+    event Initialized(
+        address indexed owner,
+        address indexed feeToken,
+        address indexed treasury,
+        uint256 fee,
+        address outsideRegistry,
+        uint256 importIdCeiling,
+        uint256 importEnd
+    );
+    event FeeChanged(uint256 oldFee, uint256 newFee);
+    event TreasuryChanged(address indexed oldTreasury, address indexed newTreasury);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
@@ -88,16 +126,66 @@ contract RWAllyAgentRegistry {
     error NotOwner();
     error NotPendingOwner();
     error ZeroOwner();
+    error NotInitializer();
+    error AlreadyInitialized();
+    error NotInitialized();
+    error BadFeeToken();
+    error BadTreasury();
+    error BadOutsideRegistry();
+    error FeeTooHigh(uint256 fee);
+    error FeeNotPaid();
+    error ImportClosed();
+    error ImportIdNotEligible(uint256 externalAgentId);
+    error AlreadyImported(uint256 externalAgentId);
+    error NotOutsideOwner();
 
     // ───────────────────────────── storage ───────────────────────────
 
     string public constant name = "AgentIdentity";
     string public constant symbol = "AGENT";
 
-    /// @notice Address holding the three owner powers listed in the contract NatSpec.
+    /// @notice The only address that can call `initialize`, once: the owner-held protocol deployer
+    /// key, used only through the owner's sign queue (recorded in
+    /// `contracts/config/agent-registry-create2.json`).
+    address public constant INITIALIZER = 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35;
+    /// @notice Hard cap on the registration fee: 10 USDC in raw units of a 6-decimal token.
+    uint256 public constant MAX_FEE = 10_000_000;
+    /// @notice How long after `initialize` the free import window stays open.
+    uint256 public constant IMPORT_WINDOW = 30 days;
+    /// @dev Gas allowance for the outside registry's `ownerOf`, the same figure and style as
+    /// VaultCore's MODULE_CALL_GAS.
+    uint256 private constant OUTSIDE_CALL_GAS = 300_000;
+
+    /// @notice Address holding the owner powers listed in the contract NatSpec. Zero until
+    /// `initialize`, and again after `renounceOwnership`.
     address public owner;
     /// @notice Address nominated by `transferOwnership`, not yet in office.
     address public pendingOwner;
+    /// @notice True once `initialize` has run. `register` and `importAgent` revert until then.
+    bool public initialized;
+    /// @notice ERC-20 (6 decimals) the registration fee is paid in.
+    address public feeToken;
+    /// @notice Receives every registration fee directly from the registrant.
+    address public treasury;
+    /// @notice Current flat registration fee in raw units of `feeToken`, at most `MAX_FEE`.
+    uint256 public fee;
+    /// @notice The outside ERC-8004 registry consulted by `importAgent`, or zero for no import window.
+    address public outsideRegistry;
+    /// @notice Outside ids strictly below this value may be imported.
+    uint256 public importIdCeiling;
+    /// @notice Timestamp at which the import window closes. Zero when there is no outside registry.
+    uint256 public importEnd;
+
+    struct Origin {
+        uint256 chainId;
+        address registry;
+        uint256 agentId;
+    }
+
+    /// @dev local id => where an imported identity came from; all zero for a registered one.
+    mapping(uint256 => Origin) private _origins;
+    /// @dev keccak256(abi.encode(originChainId, originRegistry, originAgentId)) => local id + 1.
+    mapping(bytes32 => uint256) private _importedAs;
 
     uint256 private _nextId;
     mapping(uint256 => address) private _owners;
@@ -119,14 +207,47 @@ contract RWAllyAgentRegistry {
     /// @dev secp256k1 group order / 2: signatures with a larger `s` are malleable twins and are refused.
     uint256 private constant HALF_N = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
 
-    // ──────────────────────────── construction ────────────────────────
+    // ──────────────────────────── initialization ──────────────────────
 
-    /// @param owner_ the multisig that holds the owner powers. Not required to have code yet (a
-    /// multisig may be deployed counterfactually); required to be nonzero.
-    constructor(address owner_) {
+    /// @notice One-shot per-chain configuration. Only `INITIALIZER`, only once.
+    /// @param owner_ the multisig that holds the owner powers; nonzero.
+    /// @param feeToken_ the fee token; must have code and report `decimals() == 6`.
+    /// @param treasury_ where fees go; nonzero and not this contract.
+    /// @param initialFee the starting fee, at most `MAX_FEE`; zero is allowed.
+    /// @param outsideRegistry_ the outside ERC-8004 registry to import from, or zero for no import
+    /// window; if nonzero it must have code.
+    /// @param importIdCeiling_ outside ids strictly below this qualify for import. Typed by the
+    /// initializer: the outside registry has no next-id view, so it is read off-chain (see the
+    /// finding note); it must be zero when there is no outside registry.
+    function initialize(
+        address owner_,
+        address feeToken_,
+        address treasury_,
+        uint256 initialFee,
+        address outsideRegistry_,
+        uint256 importIdCeiling_
+    ) external {
+        require(msg.sender == INITIALIZER, NotInitializer());
+        require(!initialized, AlreadyInitialized());
+        initialized = true;
         require(owner_ != address(0), ZeroOwner());
+        require(feeToken_.code.length > 0 && IERC20Decimals(feeToken_).decimals() == 6, BadFeeToken());
+        require(treasury_ != address(0) && treasury_ != address(this), BadTreasury());
+        require(initialFee <= MAX_FEE, FeeTooHigh(initialFee));
+        require(
+            outsideRegistry_ == address(0) ? importIdCeiling_ == 0 : outsideRegistry_.code.length > 0,
+            BadOutsideRegistry()
+        );
         owner = owner_;
+        feeToken = feeToken_;
+        treasury = treasury_;
+        fee = initialFee;
+        outsideRegistry = outsideRegistry_;
+        importIdCeiling = importIdCeiling_;
+        uint256 end = outsideRegistry_ == address(0) ? 0 : block.timestamp + IMPORT_WINDOW;
+        importEnd = end;
         emit OwnershipTransferred(address(0), owner_);
+        emit Initialized(owner_, feeToken_, treasury_, initialFee, outsideRegistry_, importIdCeiling_, end);
     }
 
     modifier onlyOwner() {
@@ -134,29 +255,34 @@ contract RWAllyAgentRegistry {
         _;
     }
 
-    // ───────────────────────────── owner powers ──────────────────────
-
-    /// @notice Owner power 1: burn one identity. See the contract NatSpec for exactly what it clears.
-    function revoke(uint256 agentId) external onlyOwner {
-        address holder = _requireOwned(agentId);
-        delete _approved[agentId];
-        delete _uris[agentId];
-        delete _metadata[agentId]["agentWallet"];
-        unchecked {
-            _balances[holder] -= 1;
-        }
-        delete _owners[agentId];
-        emit Transfer(holder, address(0), agentId);
-        emit Revoked(agentId, holder);
+    modifier whenInitialized() {
+        require(initialized, NotInitialized());
+        _;
     }
 
-    /// @notice Owner power 2, step one: nominate a successor (address(0) clears a nomination).
+    // ───────────────────────────── owner powers ──────────────────────
+
+    /// @notice Owner power 1: set the registration fee, at most `MAX_FEE`.
+    function setFee(uint256 newFee) external onlyOwner {
+        require(newFee <= MAX_FEE, FeeTooHigh(newFee));
+        emit FeeChanged(fee, newFee);
+        fee = newFee;
+    }
+
+    /// @notice Owner power 2: set the fee recipient.
+    function setTreasury(address newTreasury) external onlyOwner {
+        require(newTreasury != address(0) && newTreasury != address(this), BadTreasury());
+        emit TreasuryChanged(treasury, newTreasury);
+        treasury = newTreasury;
+    }
+
+    /// @notice Owner power 3, step one: nominate a successor (address(0) clears a nomination).
     function transferOwnership(address newOwner) external onlyOwner {
         pendingOwner = newOwner;
         emit OwnershipTransferStarted(owner, newOwner);
     }
 
-    /// @notice Owner power 2, step two: the nominee takes office.
+    /// @notice Owner power 3, step two: the nominee takes office.
     function acceptOwnership() external {
         require(msg.sender == pendingOwner, NotPendingOwner());
         emit OwnershipTransferred(owner, msg.sender);
@@ -164,7 +290,7 @@ contract RWAllyAgentRegistry {
         delete pendingOwner;
     }
 
-    /// @notice Owner power 3: give up the owner powers permanently.
+    /// @notice Owner power 4: give up the owner powers permanently, freezing fee and treasury.
     function renounceOwnership() external onlyOwner {
         emit OwnershipTransferred(owner, address(0));
         owner = address(0);
@@ -173,16 +299,17 @@ contract RWAllyAgentRegistry {
 
     // ───────────────────────────── registration ──────────────────────
 
-    function register() external returns (uint256 agentId) {
+    function register() external whenInitialized returns (uint256 agentId) {
         agentId = _register("", false);
     }
 
-    function register(string calldata agentURI) external returns (uint256 agentId) {
+    function register(string calldata agentURI) external whenInitialized returns (uint256 agentId) {
         agentId = _register(agentURI, true);
     }
 
     function register(string calldata agentURI, MetadataEntry[] calldata metadata)
         external
+        whenInitialized
         returns (uint256 agentId)
     {
         agentId = _nextId;
@@ -194,13 +321,73 @@ contract RWAllyAgentRegistry {
                 agentId, metadata[i].metadataKey, metadata[i].metadataKey, metadata[i].metadataValue
             );
         }
+        _collectFee();
         _checkReceiver(address(0), msg.sender, agentId, "");
     }
 
     function _register(string memory agentURI, bool hasUri) private returns (uint256 agentId) {
         agentId = _nextId;
         _mintTo(msg.sender, agentURI, hasUri);
+        _collectFee();
         _checkReceiver(address(0), msg.sender, agentId, "");
+    }
+
+    /// @notice Claim a free identity here for an identity you hold on the outside registry. Only
+    /// while the import window is open, only for outside ids below `importIdCeiling`, once per
+    /// outside id, and only if the outside registry's `ownerOf(externalAgentId)` is `msg.sender`.
+    function importAgent(uint256 externalAgentId, string calldata agentURI)
+        external
+        whenInitialized
+        returns (uint256 agentId)
+    {
+        require(block.timestamp < importEnd, ImportClosed());
+        require(externalAgentId < importIdCeiling, ImportIdNotEligible(externalAgentId));
+        bytes32 originKey = keccak256(abi.encode(block.chainid, outsideRegistry, externalAgentId));
+        require(_importedAs[originKey] == 0, AlreadyImported(externalAgentId));
+        (bool ok, uint256 word, uint256 retSize) = outsideRegistry.boundedStaticCall(
+            abi.encodeWithSelector(0x6352211e, externalAgentId),
+            OUTSIDE_CALL_GAS // ownerOf(uint256)
+        );
+        require(ok && retSize == 32 && word == uint256(uint160(msg.sender)), NotOutsideOwner());
+        agentId = _nextId;
+        _importedAs[originKey] = agentId + 1;
+        _origins[agentId] = Origin(block.chainid, outsideRegistry, externalAgentId);
+        _mintTo(msg.sender, agentURI, true);
+        emit Imported(agentId, externalAgentId, msg.sender);
+        _checkReceiver(address(0), msg.sender, agentId, "");
+    }
+
+    /// @notice Where local identity `localId` was imported from: (chain id, outside registry, outside
+    /// id). All zero for an identity that was registered here.
+    function originOf(uint256 localId)
+        external
+        view
+        returns (uint256 originChainId, address originRegistry, uint256 originAgentId)
+    {
+        Origin storage o = _origins[localId];
+        return (o.chainId, o.registry, o.agentId);
+    }
+
+    /// @notice The local identity that an origin was imported as, if any.
+    function localIdOfOrigin(uint256 originChainId, address originRegistry, uint256 originAgentId)
+        external
+        view
+        returns (bool imported, uint256 localId)
+    {
+        uint256 v = _importedAs[keccak256(abi.encode(originChainId, originRegistry, originAgentId))];
+        return (v != 0, v == 0 ? 0 : v - 1);
+    }
+
+    /// @dev Pulls `fee` from the registrant straight to the treasury. A token that returns nothing
+    /// counts as success only if the call succeeded; a token that returns data must return true.
+    function _collectFee() private {
+        uint256 f = fee;
+        if (f == 0) return;
+        (bool ok, uint256 word, uint256 retSize) = feeToken.boundedCall(
+            abi.encodeWithSelector(0x23b872dd, msg.sender, treasury, f),
+            gasleft() // transferFrom
+        );
+        require(ok && (retSize == 0 || (retSize >= 32 && word == 1)), FeeNotPaid());
     }
 
     /// @dev State first, receiver callback last (the caller then runs with the identity in place).
@@ -262,7 +449,7 @@ contract RWAllyAgentRegistry {
         bytes32 digest = keccak256(
             abi.encodePacked(
                 "\x19\x01",
-                keccak256(abi.encode(DOMAIN_TYPEHASH, NAME_HASH, VERSION_HASH, block.chainid, address(this))),
+                domainSeparator(),
                 keccak256(abi.encode(AGENT_WALLET_SET_TYPEHASH, agentId, newWallet, holder, deadline))
             )
         );
@@ -276,6 +463,12 @@ contract RWAllyAgentRegistry {
         }
         _metadata[agentId]["agentWallet"] = abi.encodePacked(newWallet);
         emit MetadataSet(agentId, "agentWallet", "agentWallet", abi.encodePacked(newWallet));
+    }
+
+    /// @notice The EIP-712 domain separator, computed from the live `block.chainid` on every call (never
+    /// cached), so a signature made for one chain is invalid on any other.
+    function domainSeparator() public view returns (bytes32) {
+        return keccak256(abi.encode(DOMAIN_TYPEHASH, NAME_HASH, VERSION_HASH, block.chainid, address(this)));
     }
 
     function unsetAgentWallet(uint256 agentId) external {

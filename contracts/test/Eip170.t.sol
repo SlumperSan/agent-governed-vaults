@@ -159,7 +159,7 @@ contract Eip170Test is Test {
     /// has quietly re-embedded something large in it.
     function test_agentRegistryStaysSmall() public view {
         assertLt(
-            vm.getDeployedCode("RWAllyAgentRegistry.sol:RWAllyAgentRegistry").length, 12_000, "registry grew"
+            vm.getDeployedCode("RWAllyAgentRegistry.sol:RWAllyAgentRegistry").length, 13_000, "registry grew"
         );
     }
 

@@ -17,6 +17,7 @@ interface IErc20Like {
     function balanceOf(address) external view returns (uint256);
     function approve(address, uint256) external returns (bool);
     function transfer(address, uint256) external returns (bool);
+    function decimals() external view returns (uint8);
 }
 
 interface IFactoryView {
@@ -68,7 +69,8 @@ contract NativeTransferStub is CommonBase {
 
 /// A contract account that registers an identity and deposits from itself (the P2 shape).
 contract ForkContractAgent {
-    function register(RWAllyAgentRegistry reg) external returns (uint256) {
+    function register(RWAllyAgentRegistry reg, IErc20Like usdc) external returns (uint256) {
+        usdc.approve(address(reg), type(uint256).max); // the registration fee, in the real USDC
         return reg.register("RWAlly contract-account agent");
     }
 
@@ -91,6 +93,12 @@ contract ForkContractAgent {
 /// so the gas snapshot excludes them.
 contract AgentVaultCoreForkTest is Test {
     uint256 constant ARC_CHAIN_ID = 5042;
+    address constant ARACHNID = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+    address constant CANONICAL = 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432;
+    /// ERC-7201 slot of the canonical registry's _lastId: the next id it will mint (see the finding note).
+    bytes32 constant CANONICAL_LAST_ID_SLOT =
+        0xa040f782729de4970518741823ec1276cbcd41a0c7493f62d173341566a04e00;
+    uint256 constant REG_FEE = 1_000_000; // 1 USDC, the recommended initial fee
     bytes32 constant SALT = keccak256("salt");
 
     bool forked;
@@ -112,6 +120,9 @@ contract AgentVaultCoreForkTest is Test {
     uint256 minDeposit;
 
     address multisig = makeAddr("registry multisig");
+    address regTreasury = makeAddr("registry treasury");
+    uint256 importCeiling;
+    string create2Cfg;
     address agentA = makeAddr("agent A");
     address agentB = makeAddr("agent B");
     address agentC = makeAddr("agent C");
@@ -154,7 +165,23 @@ contract AgentVaultCoreForkTest is Test {
 
         // Mirror the first vault's launch parameters (read from chain, not typed in).
         minDeposit = IVaultParams(firstVault).minDepositUsdc();
-        idReg = new RWAllyAgentRegistry(multisig);
+
+        // The registry is deployed the way it will ship: through the Arachnid CREATE2 proxy that is
+        // already on Arc, then initialized by INITIALIZER with the real Arc USDC as the fee token.
+        create2Cfg = vm.readFile("config/agent-registry-create2.json");
+        address predicted = vm.parseJsonAddress(create2Cfg, ".address");
+        require(
+            predicted.code.length == 0, "registry already deployed at this fork block: pin ARC_FORK_BLOCK"
+        );
+        (bool deployed, bytes memory ret) = ARACHNID.call(
+            abi.encodePacked(vm.parseJsonBytes32(create2Cfg, ".salt"), type(RWAllyAgentRegistry).creationCode)
+        );
+        require(deployed && ret.length == 20, "CREATE2 deploy through the Arachnid proxy failed");
+        idReg = RWAllyAgentRegistry(address(bytes20(ret)));
+        assertEq(address(idReg), predicted, "not at the recorded CREATE2 address");
+        importCeiling = uint256(vm.load(CANONICAL, CANONICAL_LAST_ID_SLOT));
+        vm.prank(idReg.INITIALIZER());
+        idReg.initialize(multisig, usdc, regTreasury, REG_FEE, CANONICAL, importCeiling);
 
         address[] memory basket = new address[](1);
         basket[0] = cirBtc;
@@ -220,9 +247,15 @@ contract AgentVaultCoreForkTest is Test {
         IErc20Like(usdc).approve(address(vault), type(uint256).max);
     }
 
+    /// Registers through the real Arc USDC: approve, then register pulls the fee with transferFrom.
     function _register(address who, string memory label) internal returns (uint256 id) {
-        vm.prank(who);
+        vm.deal(who, who.balance + REG_FEE * 1e12); // Arc USDC balance is the native balance, 18 to 6 decimals
+        uint256 treasuryBefore = IErc20Like(usdc).balanceOf(regTreasury);
+        vm.startPrank(who);
+        IErc20Like(usdc).approve(address(idReg), REG_FEE);
         id = idReg.register(label);
+        vm.stopPrank();
+        assertEq(IErc20Like(usdc).balanceOf(regTreasury) - treasuryBefore, REG_FEE, "fee not paid in USDC");
     }
 
     /// Register, fund, deposit and open the position at once.
@@ -233,6 +266,19 @@ contract AgentVaultCoreForkTest is Test {
         vault.deposit(amount);
         vault.skipWindow();
         vm.stopPrank();
+    }
+
+    /// The fee transfer emits the token's own logs; the compatibility check is about this registry's events.
+    function _onlyFrom(Vm.Log[] memory all, address emitter) internal pure returns (Vm.Log[] memory out) {
+        uint256 n;
+        for (uint256 i; i < all.length; ++i) {
+            if (all[i].emitter == emitter) n++;
+        }
+        out = new Vm.Log[](n);
+        n = 0;
+        for (uint256 i; i < all.length; ++i) {
+            if (all[i].emitter == emitter) out[n++] = all[i];
+        }
     }
 
     function _commitment(uint256 pid, address voter, bool support) internal pure returns (bytes32) {
@@ -307,7 +353,7 @@ contract AgentVaultCoreForkTest is Test {
         );
         emit log_named_uint("AgentVaultCore deploy gas (fork, constructor included)", g0 - gasleft());
         g0 = gasleft();
-        new RWAllyAgentRegistry(multisig);
+        new RWAllyAgentRegistry();
         emit log_named_uint("RWAllyAgentRegistry deploy gas (fork)", g0 - gasleft());
     }
 
@@ -331,7 +377,7 @@ contract AgentVaultCoreForkTest is Test {
         IErc20Like(usdc).approve(address(vault), type(uint256).max);
         vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
         a.deposit(IErc20Like(usdc), vault, minDeposit);
-        a.register(idReg);
+        a.register(idReg, IErc20Like(usdc));
         a.deposit(IErc20Like(usdc), vault, minDeposit);
         assertEq(vault.totalPendingUsdc(), minDeposit);
     }
@@ -551,11 +597,83 @@ contract AgentVaultCoreForkTest is Test {
         assertEq(uint8(_status(pid)), uint8(Governance.Status.Executed));
     }
 
+    // -- the registry: same-address deploy, the fee in the real USDC, the import window -----------
+
+    function testFork_registry_isAtTheRecordedCreate2Address_andInitialized() public onFork {
+        assertEq(address(idReg), vm.parseJsonAddress(create2Cfg, ".address"));
+        assertEq(
+            keccak256(ARACHNID.code),
+            keccak256(
+                hex"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3"
+            ),
+            "Arachnid proxy code differs from the one the unit test etches"
+        );
+        assertTrue(idReg.initialized());
+        assertEq(idReg.owner(), multisig);
+        assertEq(idReg.feeToken(), usdc);
+        assertEq(idReg.treasury(), regTreasury);
+        assertEq(idReg.fee(), REG_FEE);
+        assertEq(IErc20Like(usdc).decimals(), 6);
+        // The ceiling: the highest minted canonical id is ceiling - 1, and ceiling itself is unminted.
+        assertGt(importCeiling, 0);
+        (bool ok,) = CANONICAL.staticcall(abi.encodeWithSignature("ownerOf(uint256)", importCeiling - 1));
+        assertTrue(ok, "the id below the ceiling is minted");
+        (ok,) = CANONICAL.staticcall(abi.encodeWithSignature("ownerOf(uint256)", importCeiling));
+        assertFalse(ok, "the ceiling id is not minted");
+        emit log_named_uint("canonical registry importIdCeiling at this block", importCeiling);
+    }
+
+    function testFork_register_pullsRealUsdcWithApproveAndTransferFrom() public onFork {
+        vm.deal(agentA, 5 * REG_FEE * 1e12);
+        assertEq(IErc20Like(usdc).balanceOf(agentA), 5 * REG_FEE);
+        // no allowance: the real USDC refuses, the registry reports FeeNotPaid, nothing is minted
+        vm.prank(agentA);
+        vm.expectRevert(RWAllyAgentRegistry.FeeNotPaid.selector);
+        idReg.register("no allowance");
+        assertEq(idReg.balanceOf(agentA), 0);
+
+        uint256 id = _register(agentA, "paid");
+        assertEq(idReg.ownerOf(id), agentA);
+        // _register tops up one fee, then the registry pulls one fee: the balance is back where it was.
+        assertEq(IErc20Like(usdc).balanceOf(agentA), 5 * REG_FEE);
+        assertEq(IErc20Like(usdc).balanceOf(regTreasury), REG_FEE);
+        assertEq(IErc20Like(usdc).balanceOf(address(idReg)), 0, "the registry holds no USDC");
+    }
+
+    function testFork_import_aRealCanonicalHolderImportsFree_othersAndLaterAreRefused() public onFork {
+        address holder = ICanonicalRegistry(CANONICAL).ownerOf(0);
+        assertEq(holder.code.length, 0, "id 0 is held by an EOA on this fork");
+        vm.prank(agentA);
+        vm.expectRevert(RWAllyAgentRegistry.NotOutsideOwner.selector);
+        idReg.importAgent(0, "not the holder");
+
+        vm.prank(holder);
+        uint256 id = idReg.importAgent(0, "ipfs://imported");
+        assertEq(idReg.ownerOf(id), holder);
+        assertEq(IErc20Like(usdc).balanceOf(regTreasury), 0, "no fee on import");
+
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.AlreadyImported.selector, 0));
+        idReg.importAgent(0, "again");
+
+        // canonical ids at or above the ceiling do not qualify
+        vm.expectRevert(
+            abi.encodeWithSelector(RWAllyAgentRegistry.ImportIdNotEligible.selector, importCeiling)
+        );
+        idReg.importAgent(importCeiling, "");
+
+        vm.warp(idReg.importEnd());
+        address other = ICanonicalRegistry(CANONICAL).ownerOf(1);
+        vm.prank(other);
+        vm.expectRevert(RWAllyAgentRegistry.ImportClosed.selector);
+        idReg.importAgent(1, "too late");
+    }
+
     // -- compatibility with the canonical ERC-8004 registry -----------------------------
 
     /// Our registry answers the same reads, with the same event shapes, as the canonical one on this chain.
     function testFork_compat_ourRegistryMatchesTheCanonicalErc8004Surface() public onFork {
-        ICanonicalRegistry canon = ICanonicalRegistry(0x8004A169FB4a3325136EB29fA0ceB6D2e539a432);
+        ICanonicalRegistry canon = ICanonicalRegistry(CANONICAL);
         ICanonicalRegistry ours = ICanonicalRegistry(address(idReg));
         assertEq(ours.name(), canon.name());
         assertEq(ours.symbol(), canon.symbol());
@@ -571,10 +689,13 @@ contract AgentVaultCoreForkTest is Test {
         vm.prank(agentA);
         uint256 canonId = canon.register("ipfs://compat");
         Vm.Log[] memory canonLogs = vm.getRecordedLogs();
+        vm.deal(agentA, agentA.balance + REG_FEE * 1e12);
+        vm.prank(agentA);
+        IErc20Like(usdc).approve(address(idReg), REG_FEE);
         vm.recordLogs();
         vm.prank(agentA);
         uint256 ourId = ours.register("ipfs://compat");
-        Vm.Log[] memory ourLogs = vm.getRecordedLogs();
+        Vm.Log[] memory ourLogs = _onlyFrom(vm.getRecordedLogs(), address(idReg));
 
         assertEq(canon.ownerOf(canonId), agentA);
         assertEq(ours.ownerOf(ourId), agentA);

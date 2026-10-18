@@ -375,6 +375,7 @@ contract SmartAgent {
     }
 
     function register() external returns (uint256) {
+        usdc.approve(address(reg), type(uint256).max);
         return reg.register();
     }
 
@@ -388,8 +389,9 @@ contract SmartAgent {
     }
 }
 
-/// The same gate against the real RWAllyAgentRegistry: registration admits, transfer and revocation
-/// stop only new deposits, a smart-account depositor works, and nothing else changes.
+/// The same gate against the real RWAllyAgentRegistry, initialised with a 1 USDC fee: registration
+/// admits, transfer stops only new deposits, a smart-account depositor works, the owner has no power
+/// to stop a deposit, and nothing else changes.
 contract AgentVaultCoreRealRegistryTest is Test {
     uint256 constant USDC_1 = 1e6;
 
@@ -413,7 +415,9 @@ contract AgentVaultCoreRealRegistryTest is Test {
         gov = new StubGovernance();
         fees = new StubFeeEngine();
         opRegistry = new StubRegistry();
-        idReg = new RWAllyAgentRegistry(multisig);
+        idReg = new RWAllyAgentRegistry();
+        vm.prank(idReg.INITIALIZER());
+        idReg.initialize(multisig, address(usdc), makeAddr("treasury"), USDC_1, address(0), 0);
         vault = new AgentVaultCore(
             address(usdc),
             new address[](0),
@@ -433,8 +437,10 @@ contract AgentVaultCoreRealRegistryTest is Test {
         address[4] memory who = [alice, bob, human, creator];
         for (uint256 i; i < who.length; ++i) {
             usdc.mint(who[i], 1_000_000 * USDC_1);
-            vm.prank(who[i]);
+            vm.startPrank(who[i]);
             usdc.approve(address(vault), type(uint256).max);
+            usdc.approve(address(idReg), type(uint256).max);
+            vm.stopPrank();
         }
     }
 
@@ -445,6 +451,7 @@ contract AgentVaultCoreRealRegistryTest is Test {
 
         vm.prank(alice);
         idReg.register();
+        assertEq(usdc.balanceOf(makeAddr("treasury")), USDC_1, "the fee went to the treasury");
         vm.prank(alice);
         vault.deposit(100 * USDC_1);
         assertEq(vault.totalPendingUsdc(), 100 * USDC_1);
@@ -499,23 +506,28 @@ contract AgentVaultCoreRealRegistryTest is Test {
         vm.prank(alice);
         vault.requestExit(shares);
         assertEq(vault.sharesOf(alice), 0);
-        assertEq(usdc.balanceOf(alice), 1_000_000 * USDC_1, "alice made whole");
+        assertEq(usdc.balanceOf(alice), 1_000_000 * USDC_1 - USDC_1, "alice made whole, less the 1 USDC fee");
     }
 
-    /// The registry owner's one coercive power, exercised: it stops new deposits and nothing else.
-    function test_ownerRevocation_stopsNewDepositsOnly() public {
+    /// The registry owner has no power over an identity: raising the fee to the cap, handing the
+    /// registry to someone else and renouncing change what a new registrant pays, never whether an
+    /// existing holder can deposit, hold or exit.
+    function test_ownerPowers_doNotTouchAnExistingHolder() public {
         uint256 id = _aliceIn();
         uint256 shares = vault.sharesOf(alice);
-        vm.prank(multisig);
-        idReg.revoke(id);
+        vm.startPrank(multisig);
+        idReg.setFee(idReg.MAX_FEE());
+        idReg.setTreasury(makeAddr("newTreasury"));
+        idReg.renounceOwnership();
+        vm.stopPrank();
 
+        assertEq(idReg.ownerOf(id), alice);
         vm.prank(alice);
-        vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
-        vault.deposit(10 * USDC_1);
-        assertEq(vault.sharesOf(alice), shares);
-        assertGt(vault.votingEligibleShares(alice), 0);
+        vault.deposit(10 * USDC_1); // a top-up still works
+        assertGe(vault.sharesOf(alice), shares);
+        uint256 all = vault.sharesOf(alice);
         vm.prank(alice);
-        vault.requestExit(shares);
+        vault.requestExit(all);
         assertEq(vault.sharesOf(alice), 0);
     }
 
