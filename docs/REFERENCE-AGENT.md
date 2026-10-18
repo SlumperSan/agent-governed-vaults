@@ -183,8 +183,10 @@ for example `docs/seeded-addresses.json`). Two properties of that list matter. I
 realizations from the figure and never adds trust, so using it takes no trust in whoever maintains
 it. And an address that is not on it is counted as an outside member, so
 the figure is a ceiling on outside activity, not proof of it. While the list is empty (the shipped
-`docs/seeded-addresses.json` has no addresses), every member counts as outside and the figure equals
-the registry's own.
+`docs/seeded-addresses.json` has no addresses), every member counts as outside and the figure is
+the sum over every realization the scan read, from this vault's creation block to the head. That equals
+the registry's own figure unless the operator realized before that block, in an older vault, and
+then the two differ (the paragraph below says how the check reports it).
 
 The figure is read when the profile is on or the list is not empty, and only for a vault the agent
 could still join. It adds one check, `outside-track-record`:

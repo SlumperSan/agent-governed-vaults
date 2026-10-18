@@ -81,6 +81,16 @@ test('the profile is exactly requireProvenOperator: false; the deposit pin and t
     assert.ok(section.includes(claim), `REFERENCE-AGENT.md no longer says: ${claim}`);
 });
 
+test('the empty-list sentence does not say the outside figure equals the registry own: the window starts at this vault, the registry accumulators are lifetime', () => {
+  const flat = reference.replace(/\s+/g, ' ');
+  const at = flat.indexOf('While the list is empty');
+  assert.ok(at > 0, 'the empty-list sentence is missing');
+  const sentence = flat.slice(at, flat.indexOf('The figure is read when', at));
+  assert.doesNotMatch(sentence, /figure equals the registry/, 'the figure covers only the blocks from this vault creation, so it is not unconditionally the registry figure');
+  assert.match(sentence, /sum over every realization the scan read, from this vault's creation block to the head/);
+  assert.match(sentence, /equals the registry's own figure unless the operator realized before that block, in an older vault, and then the two differ/);
+});
+
 test('the discovery.logs table in REFERENCE-AGENT.md carries the config defaults', () => {
   const logs = DEFAULT_CONFIG.discovery.logs;
   for (const [knob, value] of Object.entries(logs)) {
