@@ -320,6 +320,7 @@ test('a snapshot written by pre-size-book code never tells a locked member their
     eventStats: [],
     adapters: [],
     queuedExits: [[V, [A]]],
+    pendingMembers: [], // written by the build that added the set; this fixture is only behind on the size book
   };
   // A file that no longer resembles what this build writes would stop testing the upgrade path and
   // start testing a museum piece. Today's keys, minus the one the old writer did not have.
@@ -343,4 +344,49 @@ test('a snapshot written by pre-size-book code never tells a locked member their
   assert.notEqual(pos.votingEligibleNote, null, 'a null note means nothing is withheld — it is not');
   assert.match(pos.votingEligibleNote, /queued Mode-F exit/);
   assert.match(pos.votingEligibleNote, /settleQueuedExit/, 'and how the lock ends');
+});
+
+/**
+ * `state.pendingMembers` is the durable state behind `pendingCount`: it says which DepositActivated
+ * events were the window path. Losing it across a restart does not throw. The next activate() for a
+ * member who was pending BEFORE the restart would skip its decrement and the count would stay too
+ * high for good, so it goes through JSON, not just through the two functions.
+ */
+test('pendingMembers survives serialize -> JSON -> deserialize, and the count stays exact after a restart', () => {
+  const s0 = applyAll([
+    ev('VaultCreated', 1, 0, V, { creator: A, usdc: A, capacityCapUsdc: 0n }),
+    ev('DepositActivated', 2, 0, V, { member: B, sharesMinted: 50n }),
+    ev('DepositPending', 3, 0, V, { member: A }),
+    // B's repeat deposit while A's window is open: immediate path, must not clear A.
+    ev('DepositActivated', 3, 1, V, { member: B, sharesMinted: 80n }),
+  ]);
+  assert.equal(vaultView(s0, V).pendingCount, 1);
+
+  const json = JSON.parse(JSON.stringify(serializeState(s0)));
+  assert.deepEqual(json.pendingMembers, [[V, [A]]], 'the Set must reach disk as an array of members');
+
+  const s1 = deserializeState(json);
+  assert.deepEqual([...s1.pendingMembers.get(V)], [A]);
+  assert.equal(vaultView(s1, V).pendingCount, 1);
+  // A's window path after the restart decrements; B's repeat deposit still does not.
+  apply(s1, ev('DepositActivated', 4, 0, V, { member: B, sharesMinted: 90n }));
+  assert.equal(vaultView(s1, V).pendingCount, 1);
+  apply(s1, ev('DepositActivated', 5, 0, V, { member: A, sharesMinted: 100n }));
+  assert.equal(vaultView(s1, V).pendingCount, 0);
+  assert.equal(s1.pendingMembers.get(V).size, 0);
+});
+
+test('a snapshot that indexed events but predates pendingMembers is refused, not resumed with a guessed set', () => {
+  const s0 = applyAll([
+    ev('VaultCreated', 1, 0, V, { creator: A, usdc: A, capacityCapUsdc: 0n }),
+    ev('DepositPending', 2, 0, V, { member: A }),
+  ]);
+  const json = JSON.parse(JSON.stringify(serializeState(s0)));
+  delete json.pendingMembers; // what the pre-fix writer produced
+  assert.throws(() => deserializeState(json), /predates the pendingMembers set/);
+
+  // A snapshot that folded nothing is exactly the empty state, so it still resumes.
+  const empty = JSON.parse(JSON.stringify(serializeState(emptyState())));
+  delete empty.pendingMembers;
+  assert.equal(deserializeState(empty).pendingMembers.size, 0);
 });

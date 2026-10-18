@@ -49,6 +49,8 @@ export function serializeState(state) {
     queuedExits: mapEntries(state.queuedExits, (members) => [...members]),
     // Same nested shape as `shares`, bigints as strings: vault -> [[member, "amount"], ...].
     queuedExitShares: mapEntries(state.queuedExitShares, (book) => mapEntries(book, (b) => b.toString())),
+    // vault -> [member, ...] with an open DepositPending row; `pendingCount` equals its size.
+    pendingMembers: mapEntries(state.pendingMembers, (members) => [...members]),
   };
 }
 
@@ -147,6 +149,27 @@ export function deserializeState(obj) {
   // gap is DETECTABLE in place, so the in-place upgrade is graceful rather than merely quiet.
   for (const [k, book] of obj.queuedExitShares ?? []) {
     s.queuedExitShares.set(k, new Map(book.map(([m, b]) => [m, BigInt(b)])));
+  }
+  // `pendingMembers` is the one added field where an absent key must NOT default to empty, and it
+  // is why this is a refusal rather than a quiet migration. A snapshot written before it existed
+  // folded `pendingCount` with an unconditional decrement on every DepositActivated, so its count
+  // can sit BELOW the number of open rows (never above), and a stored 0 does not prove there are no
+  // open rows. Resuming with an empty set would make a still-open row's later DepositActivated skip
+  // its decrement; resuming with a set rebuilt from the count is impossible (the members are not
+  // recorded). Neither is correct, and a wrong count is silent. So a snapshot that has indexed
+  // anything (lastBlock > 0) and lacks the field is refused, loudly, and must be rebuilt from the
+  // start block. VERSION stays 1: this is an additive field, and a version bump would refuse the
+  // same files with a less useful message. A snapshot with lastBlock 0 has folded no events and is
+  // exactly the empty state, so it resumes.
+  if (obj.pendingMembers === undefined) {
+    if (obj.lastBlock > 0) {
+      throw new Error(
+        'snapshot predates the pendingMembers set (pendingCount fix): its pendingCount may be too low ' +
+        'and the open pending deposits are not recorded; re-index from the start block instead of resuming',
+      );
+    }
+  } else {
+    for (const [k, members] of obj.pendingMembers) s.pendingMembers.set(k, new Set(members));
   }
   return s;
 }

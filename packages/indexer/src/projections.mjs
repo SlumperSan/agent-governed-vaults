@@ -22,7 +22,7 @@
  * @property {bigint} totalShares
  * @property {bigint} idleUsdc
  * @property {number} memberCount        // holders with shares > 0
- * @property {number} pendingCount       // deposits in the observation window
+ * @property {number} pendingCount       // open pending deposits (== size of state.pendingMembers for this vault)
  * @property {bigint} capacityCapUsdc
  * @property {string|null} parent        // sub-vault parent, or null for a root
  * @property {number} depth
@@ -132,6 +132,11 @@ export function emptyState() {
     // would turn an observability fix into a snapshot-format migration. The two are written and
     // cleared in the same two `apply` cases, and store.test.mjs pins both round-trips.
     queuedExitShares: new Map(),
+    /** @type {Map<string, Set<string>>} */
+    // vault -> members with an OPEN DepositPending row (see `pendingMemberSet`). This, not the
+    // `pendingCount` counter, is the source of truth for which DepositActivated events were the
+    // window path; the counter is kept equal to its size.
+    pendingMembers: new Map(),
     lastBlock: 0,
     lastLogIndex: -1,
   };
@@ -186,6 +191,26 @@ function queuedExitSet(state, vault) {
     state.queuedExits.set(vault, q);
   }
   return q;
+}
+
+/**
+ * The set of members with an open `DepositPending` row in `vault` (created on demand).
+ *
+ * VaultCore emits `DepositActivated` from two places with the same fields: the immediate-mint path
+ * of `_deposit` (returning or window-cleared member, no pending row ever existed) and
+ * `_activatePending` (called by `activate` and by `skipWindow`, each of which clears a pending row).
+ * The event carries no path flag, so the only discriminator is whether the member had an open row.
+ * A member with an open row cannot take the immediate path: `_deposit` mints immediately only when
+ * `windowCleared[member] || sharesOf[member] > 0`, and both are first set by `_activatePending`
+ * after it has deleted the row; a second deposit while a row is open reverts `PendingExists`.
+ */
+function pendingMemberSet(state, vault) {
+  let p = state.pendingMembers.get(vault);
+  if (!p) {
+    p = new Set();
+    state.pendingMembers.set(vault, p);
+  }
+  return p;
 }
 
 /** Member -> outstanding queued-exit size for `vault` (created on demand). */
@@ -281,18 +306,23 @@ export function apply(state, e) {
       if (op) op.lifetimeFeesUsdc += big(a.amountUsdc ?? 0);
       break;
     }
-    case 'DepositPending':
+    case 'DepositPending': {
+      // One open row per member (VaultCore reverts PendingExists), so add-then-count is exact.
+      if (pendingMemberSet(state, e.vault).has(a.member)) break;
+      pendingMemberSet(state, e.vault).add(a.member);
       ensureVault(state, e.vault).pendingCount += 1;
       break;
-    case 'PendingCancelled':
-      ensureVault(state, e.vault).pendingCount = Math.max(
-        0,
-        ensureVault(state, e.vault).pendingCount - 1,
-      );
+    }
+    case 'PendingCancelled': {
+      // Decrement only for a member whose open row this clears.
+      if (pendingMemberSet(state, e.vault).delete(a.member)) ensureVault(state, e.vault).pendingCount -= 1;
       break;
+    }
     case 'DepositActivated': {
       const v = ensureVault(state, e.vault);
-      if (v.pendingCount > 0) v.pendingCount -= 1; // window path; repeat deposits had none
+      // Window path only (activate / skipWindow clearing an open row). An immediate-path repeat
+      // deposit emits the same event with no row behind it and must not touch the count.
+      if (pendingMemberSet(state, e.vault).delete(a.member)) v.pendingCount -= 1;
       // The event's third field is NOT a delta. VaultCore emits it as `sharesOf[member]`, the
       // member's balance AFTER the mint (VaultCore.sol:427 on the immediate path, :478 in
       // _activatePending), although the Solidity parameter is named `sharesMinted`. The contract

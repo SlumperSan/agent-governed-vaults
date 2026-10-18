@@ -439,3 +439,68 @@ test('DepositActivated after a partial exit sets the new balance, not the old pl
   assert.equal(vaultView(s, V).totalShares, 80n);
   assert.equal(vaultView(s, V).memberCount, 1);
 });
+
+/**
+ * VaultCore emits `DepositActivated` from the immediate-mint path of `_deposit` (a repeat deposit,
+ * no pending row ever existed) as well as from `_activatePending` (an open row clearing). The event
+ * has no path flag, so decrementing on every one of them under-counted whenever a repeat deposit
+ * landed while another member's window was open. The single-row test above cannot see it.
+ */
+const C = '0x' + 'c'.repeat(40);
+
+test('pendingCount: an immediate-path repeat deposit does not clear another member\'s open window', () => {
+  const s = emptyState();
+  // A, first deposit: pending (window opens).
+  apply(s, ev('DepositPending', 1, 0, V, { member: A }));
+  // B, already a member, deposits again: immediate path, DepositActivated with no pending row.
+  apply(s, ev('DepositActivated', 2, 0, V, { member: B, sharesMinted: 50n }));
+  assert.equal(vaultView(s, V).pendingCount, 1, 'A\'s row is still open');
+  // A's window elapses and activate(A) runs.
+  apply(s, ev('DepositActivated', 3, 0, V, { member: A, sharesMinted: 100n }));
+  assert.equal(vaultView(s, V).pendingCount, 0);
+});
+
+test('pendingCount: the same sequence ending in cancelPending', () => {
+  const s = emptyState();
+  apply(s, ev('DepositPending', 1, 0, V, { member: A }));
+  apply(s, ev('DepositActivated', 2, 0, V, { member: B, sharesMinted: 50n }));
+  assert.equal(vaultView(s, V).pendingCount, 1);
+  apply(s, ev('PendingCancelled', 3, 0, V, { member: A }));
+  assert.equal(vaultView(s, V).pendingCount, 0);
+  // A repeat deposit afterwards still cannot take the count negative.
+  apply(s, ev('DepositActivated', 4, 0, V, { member: B, sharesMinted: 80n }));
+  assert.equal(vaultView(s, V).pendingCount, 0);
+});
+
+test('pendingCount: two open rows survive repeat deposits and clear one by one', () => {
+  const s = emptyState();
+  apply(s, ev('DepositPending', 1, 0, V, { member: A }));
+  apply(s, ev('DepositPending', 1, 1, V, { member: C }));
+  apply(s, ev('DepositActivated', 2, 0, V, { member: B, sharesMinted: 50n }));
+  assert.equal(vaultView(s, V).pendingCount, 2);
+  apply(s, ev('DepositActivated', 3, 0, V, { member: A, sharesMinted: 100n }));
+  assert.equal(vaultView(s, V).pendingCount, 1, 'C is still pending');
+  apply(s, ev('PendingCancelled', 4, 0, V, { member: C }));
+  assert.equal(vaultView(s, V).pendingCount, 0);
+});
+
+test('pendingCount: the open-row set is per vault', () => {
+  const W = '0x' + '2'.repeat(40);
+  const s = emptyState();
+  apply(s, ev('DepositPending', 1, 0, V, { member: A }));
+  // The same address activating in a DIFFERENT vault is not V's window path.
+  apply(s, ev('DepositActivated', 2, 0, W, { member: A, sharesMinted: 10n }));
+  assert.equal(vaultView(s, V).pendingCount, 1);
+  assert.equal(vaultView(s, W).pendingCount, 0);
+});
+
+test('pendingCount: a PendingCancelled for a member with no open row leaves the count alone', () => {
+  const s = emptyState();
+  apply(s, ev('DepositPending', 1, 0, V, { member: A }));
+  apply(s, ev('DepositPending', 1, 1, V, { member: C }));
+  apply(s, ev('PendingCancelled', 2, 0, V, { member: A }));
+  assert.equal(vaultView(s, V).pendingCount, 1);
+  // A second delivery of A's cancel (a replayed log) must not eat C's open row.
+  apply(s, ev('PendingCancelled', 2, 0, V, { member: A }));
+  assert.equal(vaultView(s, V).pendingCount, 1, 'C is still pending');
+});
