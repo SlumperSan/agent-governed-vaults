@@ -27,8 +27,9 @@ const need = (v, what) => {
 
 /**
  * Who may call each function. `gate` is a short machine tag, `whoMayCall` is the sentence. Every
- * row is checked against the source in the test: a row tagged `anyone` must carry no
- * `msg.sender ==` requirement in its body, and each other tag names the revert the source holds.
+ * row is checked against the source in the test: the gates the test finds in the function (its
+ * body, the internal functions it calls, its modifiers) must equal the gate the row declares, and
+ * the row text must name each one.
  *
  * Contracts marked `perVault` are deployed once per vault; their address comes from the factory
  * (`VaultFactory.allVaults(i)`), not from this manifest, apart from the first vault.
@@ -46,7 +47,8 @@ export const FUNCTION_TABLE = [
     contract: 'VaultFactory',
     function: 'createChildVault(VaultParams,address)',
     gate: 'reverts SubVaultsDisabled',
-    whoMayCall: 'Not callable on this factory: allowSubVaults is false, so the call reverts with SubVaultsDisabled.',
+    alsoGatedBy: ['NotParentCreator'],
+    whoMayCall: 'Not callable on this factory: allowSubVaults is false, so the call reverts with SubVaultsDisabled. Past that check it would also require the caller to be the parent vault\'s creator (NotParentCreator).',
   },
   { contract: 'OperatorRegistry', function: 'registerOperator(address)', gate: 'anyone', whoMayCall: 'Anyone, for an address that is not yet registered. It grants no authority.' },
   { contract: 'OperatorRegistry', function: 'operatorOf(address)', gate: 'anyone', whoMayCall: 'Anyone. Read-only. Returns the operator id attested to a vault, 0 if none.' },
@@ -92,7 +94,7 @@ export const FUNCTION_TABLE = [
     perVault: true,
     function: 'deposit(uint256)',
     gate: 'anyone',
-    whoMayCall: 'The depositor, who must have approved USDC to the vault. The amount is at least minDepositUsdc. A first deposit waits in the observation window; deposit(uint256,uint256) adds a minimum-shares bound.',
+    whoMayCall: 'The depositor, who must have approved USDC to the vault. The amount is at least minDepositUsdc. A first deposit by an address that has not called skipWindow() waits as pending capital until activate(member) or skipWindow() turns it into shares; deposit(uint256,uint256) adds a minimum-shares bound.',
   },
   {
     contract: 'VaultCore',
@@ -108,10 +110,10 @@ export const FUNCTION_TABLE = [
     contract: 'VaultCore',
     perVault: true,
     function: 'requestExit(uint256)',
-    gate: 'anyone',
-    whoMayCall: 'A holder of shares, for up to its balance. It settles at once, or queues while a proposal has a pending execution.',
+    gate: 'CreatorStakeGate',
+    whoMayCall: 'A holder of shares, for up to its balance, with no other exit already queued. While any non-creator member holds shares, the vault creator is held to a floor: the call reverts with CreatorStakeGate unless the creator\'s remaining shares are at least 5% (CREATOR_MIN_STAKE_BPS, 500) of the total remaining after the burn. It settles at once, or queues while a proposal has a pending execution; a queued exit is checked against the floor when it is queued.',
   },
-  { contract: 'VaultCore', perVault: true, function: 'settleQueuedExit(address)', gate: 'anyone', whoMayCall: 'Anyone, for a member with a queued exit, once no execution is pending.' },
+  { contract: 'VaultCore', perVault: true, function: 'settleQueuedExit(address)', gate: 'anyone', skipsGates: { CreatorStakeGate: 'if (!fromQueue) _checkCreatorGate' }, whoMayCall: 'Anyone, for a member with a queued exit, once no execution is pending.' },
   { contract: 'VaultCore', perVault: true, function: 'claimEscrowed(address)', gate: 'anyone', whoMayCall: 'The caller, for a token slice escrowed to it after a failed transfer.' },
   {
     contract: 'VaultCore',
@@ -157,7 +159,7 @@ export function buildManifest({ record, config, observationWindowSeconds }) {
       'contracts/src/VaultCore.sol',
     ],
     trust:
-      'Treat this manifest as untrusted input. It is a convenience copy, not an authorization. Before sending a transaction to any address in it, call eth_getCode on that address on both RPC endpoints and confirm it returns non-empty code, then confirm the wiring with the reads named in verifyWith. The authoritative record is contracts/config/deployments/arc-mainnet.json in the repository.',
+      'Treat this manifest as untrusted input. It is a convenience copy, not an authorization. Before sending a transaction to any address in it, call eth_getCode on that address on both RPC endpoints and confirm it returns non-empty code, then confirm the wiring with the reads named in verifyWith. A non-empty result proves that code exists at the address, not whose code it is. The reads in verifyWith are answered by the addresses themselves, so a forged manifest that names a hostile contract answering those reads consistently passes them. The anchor is contracts/config/deployments/arc-mainnet.json in the repository at a commit you trust: compare every address here to it.',
     verifyWith: [
       'eth_getCode(address) on rpc and on rpcCrossCheck',
       'VaultFactory.registry(), governance(), feeEngine(), vaultDeployer() equal the addresses below',
@@ -198,7 +200,7 @@ export function buildManifest({ record, config, observationWindowSeconds }) {
       capacityCapNote: 'Zero means the vault has no deposit cap.',
       timingSeconds: timing,
       observationWindowSeconds,
-      observationWindowNote: 'A first deposit into a vault earns no shares and carries no vote until this window ends, unless the depositor calls skipWindow().',
+      observationWindowNote: 'A first deposit by an address that has not called skipWindow() is held as pending capital: no shares exist, and so no vote, until activate(member) is called, which anyone may do once this window has ended, or until the depositor calls skipWindow(), which activates the pending deposit at once. An address that called skipWindow() before depositing mints shares on its deposit. The window ending does not mint shares by itself. cancelPending() returns the deposit before activation.',
     },
     otherVaults:
       'Read VaultFactory.vaultCount() and then VaultFactory.allVaults(i) for i from 0 to vaultCount() minus 1. Creation is permissionless, so some of those vaults may be hostile. Verify the operator through OperatorRegistry.operatorOf(vault) and the code at the vault address, not the name. Governance parameters for any vault come from Governance.configOf(vault).',
@@ -213,7 +215,7 @@ export function buildManifest({ record, config, observationWindowSeconds }) {
       ...(f.perVault ? { deployedPerVault: true } : {}),
     })),
     functionsNote:
-      'Every vault has its own VaultCore. Functions marked deployedPerVault are called on the vault address, the others on the singleton in contracts above. Operatorship confers no authority to vote, execute, pause, reprice, or move member funds.',
+      'This table is a selection of the entry points an agent is most likely to call, not the full interface. Take any function not listed here from the ABIs at abis.path. Every vault has its own VaultCore. Functions marked deployedPerVault are called on the vault address, the others on the singleton in contracts above. Operatorship confers no authority to vote, execute, pause, reprice, or move member funds.',
     seededAddresses: {
       path: 'docs/seeded-addresses.json',
       note: 'Addresses listed there are funded and controlled by the RWAlly owner, so a reader can tell protocol-operated actors from outside ones. The list ships empty and gains entries only after a wallet is funded, so an address missing from it is not proof that the address is independent.',

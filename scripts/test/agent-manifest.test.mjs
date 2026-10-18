@@ -8,9 +8,13 @@
  *   2. DERIVATION. Every address and number the manifest carries equals the field of the deployment
  *      record it claims to come from, and every address-shaped string in it exists in the record.
  *   3. THE FUNCTION TABLE IS READ AGAINST THE SOLIDITY. Each row names a function that exists in the
- *      named contract with the stated parameter count, a row tagged `anyone` carries no
- *      `msg.sender ==` requirement in its body, and a gated row carries the revert the source has.
- *      The checker is itself probed on fixtures, so a checker that stops checking goes red.
+ *      named contract with the stated parameter count. The gates found in the function's whole reach
+ *      (its body, the internal functions it calls, its modifiers) must equal the gates the row
+ *      declares, and the row text must name each one. A gate is found by name (CreatorStakeGate,
+ *      OnlyGovernance, ...) and an unregistered one is found by shape: a comparison with the caller
+ *      in either operand order or through a local, tx.origin, a role helper, a modifier, or an
+ *      access-shaped custom error. The checker is itself probed on fixtures, so a checker that stops
+ *      checking goes red.
  *   4. POINTERS. Both `llms.txt` copies point at the manifest and name a file that exists.
  *
  * The prose in the manifest is walked by `claims-lede-truth` (it takes every `.json`), so wording
@@ -138,21 +142,104 @@ const paramCount = (list) => {
   return n;
 };
 
-/** What each non-`anyone` gate must look like in the function body. */
-const GATE_EVIDENCE = {
-  OnlyFactory: /require\([^;]*OnlyFactory\(\)/,
-  OnlyAttestedVault: /require\([^;]*OnlyAttestedVault\(\)/,
-  OnlyGovernance: /require\([^;]*OnlyGovernance\(\)/,
-  NotVaultCreator: /require\([^;]*NotVaultCreator\(\)/,
-  'reverts SubVaultsDisabled': /require\([^;]*SubVaultsDisabled\(\)/,
-  stake: /NoWeight\(\)/,
-  committer: /commitOf\[pid\]\[msg\.sender\]/,
+/**
+ * Every gate the table can name. `evidence` is read against the function's WHOLE reach (its body,
+ * every internal function it calls, transitively, and its modifiers), because a gate can live in a
+ * helper: `requestExit` carries no `msg.sender` check and no revert of its own for the creator
+ * stake floor, it calls `_checkCreatorGate`. `text` is what the row's `whoMayCall` must say, so the
+ * sentence names the gate the source holds.
+ */
+const GATES = {
+  OnlyFactory: { evidence: /require\([^;]*OnlyFactory\(\)/, text: /VaultFactory/ },
+  OnlyAttestedVault: { evidence: /require\([^;]*OnlyAttestedVault\(\)/, text: /attested vault/ },
+  OnlyGovernance: { evidence: /require\([^;]*OnlyGovernance\(\)/, text: /Governance contract/ },
+  NotVaultCreator: { evidence: /require\([^;]*NotVaultCreator\(\)/, text: /vault creator/ },
+  'reverts SubVaultsDisabled': { evidence: /require\([^;]*SubVaultsDisabled\(\)/, text: /SubVaultsDisabled/ },
+  stake: { evidence: /NoWeight\(\)/, text: /stake|voting weight/ },
+  committer: { evidence: /NoCommit\(\)/, text: /address that committed/ },
+  NotParentCreator: { evidence: /require\([^;]*NotParentCreator\(\)/, text: /parent vault's creator/ },
+  CreatorStakeGate: { evidence: /require\([^;]*CreatorStakeGate\(\)/, text: /^(?=[\s\S]*CreatorStakeGate)(?=[\s\S]*5%)/ },
+};
+
+/** Custom errors that read as access or eligibility gates. One that is not in GATES is unclassified. */
+const ACCESS_ERROR = /\b(Only\w+|Not(?:Vault)?(?:Creator|Owner|Operator|Authori[sz]ed|Allowed|Member|Committer)\w*|Unauthori[sz]ed\w*|Forbidden\w*|\w+Gate)\(\)/g;
+
+const KEYWORDS = new Set([
+  'external', 'public', 'internal', 'private', 'view', 'pure', 'payable', 'virtual', 'override', 'returns',
+  'memory', 'calldata', 'storage', 'nonReentrant',
+]);
+
+const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+
+/** `{ name, mods, body }` for every function, bodies by brace depth. */
+const fnsWithModifiers = (src) => {
+  const clean = stripComments(src);
+  const out = [];
+  for (const m of clean.matchAll(/function\s+(\w+)\s*\(([^)]*)\)([^{;]*)\{/g)) {
+    let depth = 0;
+    let i = m.index + m[0].length - 1;
+    const start = i;
+    for (; i < clean.length; i++) {
+      if (clean[i] === '{') depth++;
+      else if (clean[i] === '}') { depth--; if (depth === 0) break; }
+    }
+    const mods = m[3].replace(/returns\s*\([^)]*\)/g, ' ').replace(/override\s*\([^)]*\)/g, ' ').match(/[A-Za-z_]\w*/g) ?? [];
+    out.push({ name: m[1], mods: mods.filter((w) => !KEYWORDS.has(w)), body: clean.slice(start, i + 1) });
+  }
+  return out;
+};
+
+/**
+ * The text a call to `name` can run: its own body and the bodies of every function in the same file
+ * it calls, transitively. Modifiers are returned apart, since a modifier's effect is not in a body.
+ */
+const reach = (name, fns) => {
+  const seen = new Set();
+  const queue = [name];
+  let text = '';
+  const mods = [];
+  while (queue.length) {
+    const n = queue.pop();
+    if (seen.has(n)) continue;
+    seen.add(n);
+    for (const f of fns.filter((x) => x.name === n)) {
+      text += `${f.body}\n`;
+      mods.push(...f.mods);
+      for (const c of f.body.matchAll(/(?<![.\w])(\w+)\s*\(/g)) if (fns.some((x) => x.name === c[1])) queue.push(c[1]);
+    }
+  }
+  return { text, mods };
+};
+
+/**
+ * Gates in `text` that GATES does not know: a comparison with msg.sender (either operand order, or
+ * through a local it was copied to) in a statement that names no registered gate, tx.origin, a
+ * role helper, or an access-shaped custom error that is not registered.
+ */
+const unclassifiedGates = (text) => {
+  const found = [];
+  const known = Object.values(GATES).map((g) => g.evidence);
+  const aliases = [...text.matchAll(/\b(\w+)\s*=\s*msg\.sender\s*;/g)].map((m) => m[1]);
+  const who = ['msg\\.sender', ...aliases].join('|');
+  const compare = new RegExp(`(?:${who})\\s*[!=]=|[!=]=\\s*(?:${who})\\b`, 'g');
+  for (const m of text.matchAll(compare)) {
+    const from = Math.max(text.lastIndexOf(';', m.index), text.lastIndexOf('{', m.index), text.lastIndexOf('}', m.index)) + 1;
+    const to = text.indexOf(';', m.index);
+    const stmt = text.slice(from, to === -1 ? undefined : to);
+    if (!known.some((e) => e.test(stmt))) found.push(`comparison with the caller: ${stmt.trim().replace(/\s+/g, ' ')}`);
+  }
+  if (/tx\.origin/.test(text)) found.push('tx.origin');
+  if (/\b(hasRole|_checkRole|_checkOwner|_onlyOwner)\s*\(/.test(text)) found.push('role helper');
+  for (const m of text.matchAll(ACCESS_ERROR)) {
+    if (!Object.values(GATES).some((g) => g.evidence.test(`require(x, ${m[0]})`))) found.push(`access-shaped error ${m[0]}`);
+  }
+  return found;
 };
 
 /**
  * Problems with one table row against one contract's source. Pure, so the probes below can feed it
  * fixtures. Returns an array of strings, empty when the row is true to the source.
- * @param {{contract: string, function: string, gate: string}} row
+ * @param {{contract: string, function: string, gate: string, alsoGatedBy?: string[], skipsGates?: Record<string, string>, whoMayCall?: string}} row
  * @param {string} src
  */
 export const rowProblems = (row, src) => {
@@ -160,23 +247,41 @@ export const rowProblems = (row, src) => {
   const rowParams = row.function.slice(row.function.indexOf('(') + 1, row.function.lastIndexOf(')'));
   const want = paramCount(rowParams);
   const problems = [];
-  const fns = parseSolidityFns(src).filter((f) => f.name === name);
+  const fns = fnsWithModifiers(src);
+  const own = fns.filter((f) => f.name === name);
+  const declared = new Set([row.gate, ...(row.alsoGatedBy ?? [])].filter((g) => g !== 'anyone'));
   const publicGetter = new RegExp(`\\bpublic\\s+${name}\\b`).test(src);
-  if (fns.length === 0) {
+  if (own.length === 0) {
     if (!publicGetter) problems.push(`${row.contract}.${name} does not exist in the source`);
+    else if (declared.size) problems.push(`${row.contract}.${name} is a public getter but the row declares gate(s) ${[...declared].join(', ')}`);
     return problems;
   }
   // Arity: find every `function name(` in the source and compare counts.
   const sigs = [...src.matchAll(new RegExp(`function\\s+${name}\\s*\\(([^)]*)\\)`, 'g'))].map((m) => paramCount(m[1]));
   if (!sigs.includes(want)) problems.push(`${row.contract}.${name} has no overload with ${want} parameter(s); source has ${sigs.join(', ')}`);
-  const bodies = fns.map((f) => f.body);
-  if (row.gate === 'anyone') {
-    if (bodies.some((b) => /msg\.sender\s*[!=]=/.test(b))) problems.push(`${row.contract}.${name} is tagged anyone but its body compares msg.sender`);
-  } else {
-    const evidence = GATE_EVIDENCE[row.gate];
-    if (!evidence) problems.push(`${row.contract}.${name}: unknown gate tag "${row.gate}"`);
-    else if (!bodies.some((b) => evidence.test(b))) problems.push(`${row.contract}.${name}: gate "${row.gate}" has no matching requirement in the source`);
+
+  const { text, mods } = reach(name, fns);
+  for (const t of declared) if (!GATES[t]) problems.push(`${row.contract}.${name}: unknown gate tag "${t}"`);
+  const reached = new Set(Object.entries(GATES).filter(([, g]) => g.evidence.test(text)).map(([t]) => t));
+  // A gate the function reaches but does not apply on this path (settleQueuedExit reaches the
+  // creator floor and skips it): the row must quote the source line that skips it.
+  const flat = text.replace(/\s+/g, ' ');
+  const detected = new Set(reached);
+  for (const [t, snippet] of Object.entries(row.skipsGates ?? {})) {
+    if (!reached.has(t)) problems.push(`${row.contract}.${name}: skipsGates names "${t}" but the source never reaches it`);
+    else if (!flat.includes(snippet)) problems.push(`${row.contract}.${name}: skipsGates "${t}" quotes "${snippet}", which is not in the source`);
+    else detected.delete(t);
   }
+  for (const t of detected) {
+    if (!declared.has(t)) problems.push(`${row.contract}.${name}: the source holds gate "${t}" that the row does not declare`);
+  }
+  for (const t of declared) {
+    if (!GATES[t]) continue;
+    if (!detected.has(t)) problems.push(`${row.contract}.${name}: gate "${t}" has no matching requirement in the source`);
+    if (row.whoMayCall !== undefined && !GATES[t].text.test(row.whoMayCall)) problems.push(`${row.contract}.${name}: whoMayCall does not name gate "${t}"`);
+  }
+  for (const mod of mods) problems.push(`${row.contract}.${name}: modifier ${mod} is a gate the table does not classify`);
+  for (const u of unclassifiedGates(text)) problems.push(`${row.contract}.${name}: unclassified gate in the source (${u})`);
   return problems;
 };
 
@@ -248,4 +353,95 @@ test('the manifest carries the untrusted-input rule, the ABI path, the seeded-ad
     assert.ok(status.includes(needle), `launchStatus must mention ${needle}`);
   }
   assert.match(manifest.functionsNote, /Operatorship confers no authority to vote, execute, pause, reprice, or move member funds\./);
+});
+
+// ---------------------------------------------------------------------------------------------
+// PR 455 review round 1: gates that do not mention msg.sender, and the three prose defects.
+// ---------------------------------------------------------------------------------------------
+
+test('the requestExit row names the creator stake floor, and the old "anyone" row is red against VaultCore', () => {
+  const core = read('contracts/src/VaultCore.sol');
+  const row = FUNCTION_TABLE.find((r) => r.function === 'requestExit(uint256)');
+  assert.equal(row.gate, 'CreatorStakeGate');
+  assert.match(row.whoMayCall, /CreatorStakeGate/);
+  assert.match(row.whoMayCall, /5%/);
+  assert.deepEqual(rowProblems(row, core), []);
+  // The shape that shipped in a16ec576: tagged anyone, text silent on the floor. requestExit holds
+  // no msg.sender comparison of its own, so only a checker that follows _checkCreatorGate sees it.
+  const shipped = { ...row, gate: 'anyone', whoMayCall: 'A holder of shares, for up to its balance.' };
+  assert.ok(
+    rowProblems(shipped, core).some((p) => /CreatorStakeGate/.test(p)),
+    'requestExit tagged anyone must be reported as holding CreatorStakeGate',
+  );
+  // The floor in the source is the one the row quotes: 500 basis points.
+  assert.match(core, /CREATOR_MIN_STAKE_BPS\s*=\s*500\s*;/);
+  // settleQueuedExit reaches the floor and skips it on the queue path; the row says so by quoting the line.
+  const settle = FUNCTION_TABLE.find((r) => r.function === 'settleQueuedExit(address)');
+  assert.deepEqual(rowProblems(settle, core), []);
+  assert.ok(rowProblems({ ...settle, skipsGates: undefined }, core).some((p) => /CreatorStakeGate/.test(p)));
+});
+
+test('probe: the row checker sees gates that are not "msg.sender ==": helpers, reversed operands, aliases, modifiers, access errors', () => {
+  const src = `
+    contract C {
+      address creator; address owner;
+      error CreatorStakeGate(); error NotOwner(); error OnlyKeeper();
+      function viaHelper(uint256 a) external { _gate(msg.sender, a); }
+      function _gate(address m, uint256 a) internal view { if (m == creator) { require(a > 5, CreatorStakeGate()); } }
+      function reversed(uint256 a) external { require(owner == msg.sender, NotOwner()); }
+      function aliased(uint256 a) external { address who = msg.sender; require(who == owner, NotOwner()); }
+      function viaModifier(uint256 a) external onlyKeeperMod { x = a; }
+      function unregistered(uint256 a) external { if (a == 0) revert OnlyKeeper(); }
+      function plain(uint256 a) external nonReentrant { x[msg.sender] = a; }
+    }`;
+  const row = (fn, extra = {}) => ({ contract: 'C', function: `${fn}(uint256)`, gate: 'anyone', ...extra });
+  assert.deepEqual(rowProblems(row('plain'), src), [], 'a function that only keys a mapping by msg.sender is open');
+  const red = (fn, re) => assert.ok(rowProblems(row(fn), src).some((p) => re.test(p)), `${fn}: ${JSON.stringify(rowProblems(row(fn), src))}`);
+  red('viaHelper', /CreatorStakeGate/); // gate lives in an internal helper, no msg.sender comparison in the body
+  red('reversed', /comparison with the caller/); // owner == msg.sender
+  red('aliased', /comparison with the caller/); // address who = msg.sender; who == owner
+  red('viaModifier', /modifier onlyKeeperMod/);
+  red('unregistered', /access-shaped error OnlyKeeper/);
+  // Declared and named: clean. Declared but the text is silent: red. Declared but absent from the source: red.
+  const viaHelper = row('viaHelper', { gate: 'CreatorStakeGate', whoMayCall: 'The creator is held to CreatorStakeGate, a 5% floor.' });
+  assert.deepEqual(rowProblems(viaHelper, src), []);
+  assert.ok(rowProblems({ ...viaHelper, whoMayCall: 'A holder.' }, src).some((p) => /does not name gate/.test(p)));
+  assert.ok(rowProblems(row('plain', { gate: 'CreatorStakeGate', whoMayCall: 'CreatorStakeGate 5%' }), src).some((p) => /no matching requirement/.test(p)));
+  // skipsGates must quote a line that exists.
+  assert.ok(rowProblems(row('viaHelper', { skipsGates: { CreatorStakeGate: 'if (!nothing) _gate' } }), src).some((p) => /not in the source/.test(p)));
+});
+
+test('the observation-window note says shares come from activate(member) or skipWindow(), not from the window ending', () => {
+  const core = read('contracts/src/VaultCore.sol');
+  // The sequence the note describes, read from the source: a first deposit is pending, activate
+  // needs the window to have elapsed, skipWindow activates a pending deposit at once.
+  assert.match(core, /pendingDeposit\[msg\.sender\]\s*=\s*PendingDeposit\(received,\s*availableAt\)/);
+  assert.match(core, /function activate\(address member\)[\s\S]*?WindowNotElapsed\(\)[\s\S]*?_activatePending/);
+  assert.match(core, /function skipWindow\(\)[\s\S]*?_activatePending\(msg\.sender,\s*amt\)/);
+  const note = manifest.firstVault.observationWindowNote;
+  assert.match(note, /activate\(member\)/);
+  assert.match(note, /skipWindow\(\)/);
+  assert.match(note, /window ending does not mint shares by itself/);
+  // The qualifier: _deposit mints at once for an address with windowCleared, and skipWindow sets it
+  // with no deposit required, so "a first deposit is pending" is false for skipWindow-then-deposit.
+  assert.match(core, /if \(windowCleared\[msg\.sender\] \|\| sharesOf\[msg\.sender\] > 0\) \{\s*uint256 minted = _mintShares/);
+  assert.match(core, /function skipWindow\(\)[\s\S]*?windowCleared\[msg\.sender\] = true/);
+  assert.match(note, /that has not called skipWindow\(\)/);
+  assert.match(note, /called skipWindow\(\) before depositing mints shares on its deposit/);
+  assert.match(FUNCTION_TABLE.find((r) => r.function === 'deposit(uint256)').whoMayCall, /has not called skipWindow\(\)/);
+  assert.doesNotMatch(note, /until this window ends/, 'the pre-fix wording implied the window ending grants shares');
+  assert.match(FUNCTION_TABLE.find((r) => r.function === 'deposit(uint256)').whoMayCall, /activate\(member\)/);
+});
+
+test('the trust text says eth_getCode proves code, not identity, and that a forged manifest passes the reads', () => {
+  assert.match(manifest.trust, /non-empty result proves that code exists at the address, not whose code it is/);
+  assert.match(manifest.trust, /forged manifest/);
+  assert.match(manifest.trust, /anchor is contracts\/config\/deployments\/arc-mainnet\.json/);
+});
+
+test('the functions note says the table is a selection and points at the ABIs', () => {
+  assert.match(manifest.functionsNote, /table is a selection/);
+  assert.match(manifest.functionsNote, /not the full interface/);
+  assert.match(manifest.functionsNote, /ABIs at abis\.path/);
+  assert.ok(manifest.abis.path);
 });
