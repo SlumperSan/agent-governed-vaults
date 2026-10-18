@@ -16,7 +16,7 @@
  */
 
 import { createBudget } from './budget.mjs';
-import { createApiClient, perceive } from './perceive.mjs';
+import { createApiClient, discoverySource, perceive } from './perceive.mjs';
 import { plan, partitionDue } from './plan.mjs';
 import { createActor } from './act.mjs';
 import { fromBaseUnits, gateMode, redact } from './config.mjs';
@@ -49,10 +49,13 @@ export function createAgent({
   // The gate throws rather than downgrading — see config.gateMode.
   const gated = gateMode({ mode: config.mode, account, env });
 
+  // Chain-only discovery contacts no API, so there is nothing to pay for: the budget is off and
+  // the startup declaration says so, rather than promising a spend the run cannot make.
+  const chainOnly = discoverySource(config) === 'chain';
   const budget = createBudget({
     maxSessionSpendUsdc: config.api.payments.maxSessionSpendUsdc,
     maxSingleReadUsdc: config.api.payments.maxSingleReadUsdc,
-    enabled: config.api.payments.enabled && payer != null,
+    enabled: config.api.payments.enabled && payer != null && !chainOnly,
   });
 
   const client = createApiClient({ config, payer, budget, fetchImpl });
@@ -81,7 +84,9 @@ export function createAgent({
         : 'WILL sign and send on-chain transactions that move real funds.',
       budget.enabled
         ? `WILL sign x402 payment authorizations for metered reads, up to ${cap} this session.`
-        : 'WILL NOT sign any x402 payment (no payer configured) — free routes only.',
+        : chainOnly
+          ? 'WILL NOT sign any x402 payment: the vault list and operator records are read from the chain, and no metered endpoint is contacted.'
+          : 'WILL NOT sign any x402 payment (no payer configured) — free routes only.',
       // Deliberately does NOT claim "this process holds no key": the agent takes an account
       // OBJECT and never sees key material, but whoever constructed that object may hold one in
       // the same process. Overclaiming here would be the kind of reassuring lie this codebase

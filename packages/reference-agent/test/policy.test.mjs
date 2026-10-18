@@ -156,6 +156,21 @@ test('join: sub-vault depth beyond the configured ceiling is refused', () => {
   assert.equal(join({ fees: goodFees({ depth: 1 }) }).join, false);
 });
 
+test('join: a depth that was never measured is refused, not read as 0', () => {
+  // Neither the stacked read nor the discovery row carries a depth: unknown, so refuse.
+  const r = join({ vault: { ...goodVault(), depth: null }, fees: goodFees({ depth: null }) });
+  assert.equal(r.join, false);
+  assert.ok(failed(r).includes('depth-within-limit'));
+  assert.match(r.checks.find((c) => c.name === 'depth-within-limit').detail, /unreadable/);
+  const absent = join({ vault: { vault: VAULT, operatorId: 1, attested: true }, fees: goodFees({ depth: null }) });
+  assert.ok(failed(absent).includes('depth-within-limit'), 'a row with no depth field is unmeasured too');
+});
+
+test('join: a failed stacked depth read falls back to the row depth only when the row has one', () => {
+  assert.equal(join({ vault: { ...goodVault(), depth: 0 }, fees: goodFees({ depth: null }) }).join, true);
+  assert.ok(failed(join({ vault: { ...goodVault(), depth: 1 }, fees: goodFees({ depth: null }) })).includes('depth-within-limit'));
+});
+
 test('join: the concurrency limit stops the agent holding everything at once', () => {
   assert.equal(join({ heldVaultCount: 3 }).join, false);
   assert.equal(join({ heldVaultCount: 2 }).join, true);

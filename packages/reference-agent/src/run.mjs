@@ -15,7 +15,9 @@
  *     const agent = createAgent({ config: {...config, mode:'execute'}, account: privateKeyToAccount(key), ... });
  *
  * Flags:
- *   --api=<url>        metered API base URL          (default http://127.0.0.1:8402)
+ *   --api=<url>        metered API base URL          (default http://127.0.0.1:8402). With --preset and
+ *                      no --api there is no API at all: the vault list and operator records are read
+ *                      from the chain (see perceive.mjs, discoverySource)
  *   --rpc=<url>        JSON-RPC endpoint for chain reads. Omitted ⇒ the STUB reader, whose values
  *                      are marked [stub-chain] in the narrative. `config.mjs` defaults
  *                      `chain.rpcUrl` to null, so the stub is what a demo run gets unless you

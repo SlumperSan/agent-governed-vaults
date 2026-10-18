@@ -133,8 +133,13 @@ export function decideJoin({ vault, chain, operatorRow, registryOperatorId = nul
     );
 
   // ── the agent's own limits ─────────────────────────────────────────────────
-  const depth = fees.depth ?? Number(vault?.depth ?? 0);
-  checks.push(check('depth-within-limit', depth <= config.maxDepth, `vault depth ${depth}, max ${config.maxDepth}`));
+  // The stacked read wins; the discovery row's own depth is the fallback. When neither was
+  // measured the depth is UNKNOWN, and an unknown depth is refused like an unreadable fee, never
+  // taken as 0 (a child vault at depth 1 against maxDepth 0 must not pass on a failed read).
+  const rawDepth = fees.depth ?? vault?.depth ?? null;
+  const depth = rawDepth === null ? NaN : Number(rawDepth);
+  if (!Number.isFinite(depth)) checks.push(check('depth-within-limit', false, 'vault depth unreadable (SubVaultRegistry.depthOf): refusing to join blind to depth'));
+  else checks.push(check('depth-within-limit', depth <= config.maxDepth, `vault depth ${depth}, max ${config.maxDepth}`));
   checks.push(
     check('concurrency-limit', heldVaultCount < config.maxConcurrentVaults, `holding ${heldVaultCount} of max ${config.maxConcurrentVaults} vaults`),
   );
