@@ -17,10 +17,11 @@ Include, as far as you can:
 
 - A clear description of the issue and its impact (funds at risk, data exposure, availability).
 - Steps to reproduce, or a proof-of-concept (a Foundry test, an HTTP request, a transcript).
-- The commit hash, contract address, or deployed chain the finding applies to. **No deployment of
-  this protocol is live on any mainnet.** The running stack is Base Sepolia testnet
-  (`contracts/config/deployments/base-sepolia.json`); the contracts left on Robinhood Chain (chain
-  4663) are immutable and hold nothing, and that chain is no longer a target — `docs/INCIDENTS.md`
+- The commit hash, contract address, or deployed chain the finding applies to. **The protocol is
+  deployed on Arc mainnet (chain 5042) since 2026-09-24**
+  (`contracts/config/deployments/arc-mainnet.json`). The Base Sepolia testnet stack
+  (`contracts/config/deployments/base-sepolia.json`) holds no member money; the contracts left on
+  Robinhood Chain (chain 4663) are immutable and hold nothing, and that chain is no longer a target; `docs/INCIDENTS.md`
   §0 carries the readings.
 - Whether the issue is, to your knowledge, being actively exploited.
 
@@ -93,7 +94,7 @@ authority if the two ever disagree.
   "Named residual" paragraph and [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md) (residual
   12, "curation immobility").
 - **Launch verdict:** the protocol is live on Arc mainnet by owner decision, with the soak and
-  canary gates not re-run on the current source. The verdict and the residual risk to depositors are
+  canary gates not re-run on the Arc source commit. The verdict and the residual risk to depositors are
   at the top of [`docs/LAUNCH-READINESS.md`](docs/LAUNCH-READINESS.md), which is the authority on
   go/no-go; `npm run cc` prints the current computed state. A clean security posture does not by
   itself mean "launched with no open gates". Read the board, not just this file.

@@ -78,7 +78,7 @@ it went too.) `VaultFactory` measured 27,241 B and was undeployable on any chain
 
 Stated because the absence is easy to misread.
 
-- **A Base Sepolia deployment exists; no Base mainnet deployment does, and none exists on Arc or any other mainnet.** The protocol is built for Arc, not yet deployed there.
+- **A Base Sepolia deployment exists; no Base mainnet deployment does.** At the Sprint-10 freeze no Arc deployment existed either; since 2026-09-24 the protocol is deployed on Arc mainnet (`contracts/config/deployments/arc-mainnet.json`), which postdates this document.
   [TESTNET-REPORT.md](TESTNET-REPORT.md) *was* a pre-flight record only, and this section said so
   for the life of the freeze. That is **no longer true**: PR #18 deployed the protocol to Base
   Sepolia (17 transactions, deploy block 45784186, every address and wire confirmed by direct

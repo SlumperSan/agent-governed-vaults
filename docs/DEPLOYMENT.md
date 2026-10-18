@@ -292,7 +292,7 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > which is only appropriate once that mechanism has shipped and been audited. See
 > [LAUNCH-READINESS.md](LAUNCH-READINESS.md) §2 and [INCIDENTS.md](INCIDENTS.md) §8. The
 > Arc mainnet deployment (2026-09-24) went ahead by owner decision of 2026-09-23 without re-running
-> the operational gates, soak and canary, on the current source; [LAUNCH-READINESS.md](LAUNCH-READINESS.md)
+> the operational gates, soak and canary, on the Arc source commit; [LAUNCH-READINESS.md](LAUNCH-READINESS.md)
 > carries the verdict and the residual risk to depositors. The external audit is complete on owner
 > attestation. Enabling sub-vaults is additionally gated on the post-launch look-through mechanism
 > shipping and being audited.

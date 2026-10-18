@@ -42,7 +42,7 @@ reader can run. Never state a recovery time you cannot evidence.
 > ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) is closed at launch by
 > root-only**, C-6 is resolved by the Chainlink-direct pivot, and the external audit is complete on
 > owner attestation, so gates 0 and 1 are **GO**. The soak and canary (gates 3 and 6) were not
-> re-run on the current source before the Arc mainnet deployment of 2026-09-24, by owner decision of
+> re-run on the Arc source commit before the Arc mainnet deployment of 2026-09-24, by owner decision of
 > 2026-09-23; the residual risk that leaves is stated in
 > [LAUNCH-READINESS.md](LAUNCH-READINESS.md).
 >
@@ -84,11 +84,14 @@ reader can run. Never state a recovery time you cannot evidence.
 > has been stopped for more than a day. Neither the ceiling nor its line is quoted here: both have
 > moved once already.
 >
-> **Arc (chain 5042) is the direction and is NOT deployed.** Settlement there is USDC, which is also
-> the native gas asset. What exists is a survey read off the chain,
-> [`evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json), and the open blockers in
-> [`evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md). Nothing in this playbook has
-> been exercised on Arc.
+> **Arc (chain 5042) is where the protocol is deployed, since 2026-09-24**
+> ([`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)).
+> Settlement there is USDC, which is also the native gas asset. The survey read off the chain before
+> the deploy is [`evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json), and the
+> blockers that preceded it are in [`evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md).
+> The restore drill's chain-dependent inputs were measured on Arc
+> ([LAUNCH-READINESS.md](LAUNCH-READINESS.md) §0a); no other drill of this playbook is recorded as
+> run there.
 >
 > §8 still carries its own warning: its defences are now materially stronger, but not complete.
 > Read it before relying on any "the contract's own defences are the response" line here.
