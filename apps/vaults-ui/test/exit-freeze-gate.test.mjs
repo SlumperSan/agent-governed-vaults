@@ -224,7 +224,7 @@ test('MUTATION: removing the frozen-preview branch is caught', () => {
 });
 
 // ─────────────── the DEPOSIT button carries the same freeze gate (same rule, other flow) ───────────────
-// `VaultCore._deposit` calls `navWad()` UNCONDITIONALLY at VaultCore.sol:412 -- above the
+// `VaultCore._deposit` calls `navWad()` UNCONDITIONALLY at VaultCore.sol:434 -- above the
 // `capacityCapUsdc != 0` branch -- so a deposit reverts while frozen on EVERY vault, including an
 // uncapped one that runs no capacity check at all. The deposit button was gated only on
 // pending-deposit state and never referenced `vault.frozen`, so a member could pay gas to learn

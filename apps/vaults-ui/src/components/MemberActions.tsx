@@ -322,7 +322,7 @@ export function MemberActions({ vault }: Props) {
 
   const disabled = !connected;
 
-  // VaultCore._deposit (VaultCore.sol:429): `require(pendingDeposit[msg.sender].amountUsdc == 0,
+  // VaultCore._deposit (VaultCore.sol:451): `require(pendingDeposit[msg.sender].amountUsdc == 0,
   // PendingExists())` — a SECOND deposit while one is already escrowed in the four-hour
   // observation window always reverts, contract-first, regardless of amount. Block it in the UI
   // rather than let a member pay gas to learn it. Also block while the read is missing or
@@ -336,7 +336,7 @@ export function MemberActions({ vault }: Props) {
     // refusal survives a failed exit-side read (`queuedExitShares`, `shares`) that nulls the
     // verdict object entirely. A refusal that disappears because an unrelated call reverted is the
     // same defect as a caveat that disappears. `VaultCore._deposit` calls `navWad()`
-    // UNCONDITIONALLY (VaultCore.sol:412), above the `capacityCapUsdc != 0` branch, so this
+    // UNCONDITIONALLY (VaultCore.sol:434), above the `capacityCapUsdc != 0` branch, so this
     // reverts on every vault while frozen — including an uncapped one with no capacity check to
     // run. vault-state.mjs's own reason text attributes the read to the capacity check; that is
     // true of a capped vault and understates the reach.
@@ -425,7 +425,7 @@ export function MemberActions({ vault }: Props) {
           totalShares: vault.totalShares,
           idleUsdc: vault.idleUsdc,
           // exit-preview.mjs wants `decimals`; this app's live basket carries `assetUnit`
-          // instead (VaultCore.sol:97, `assetUnit[a] = 10 ** ad` -- read off the contract rather
+          // instead (VaultCore.sol:118, `assetUnit[a] = 10 ** ad` -- read off the contract rather
           // than trusted from the token's own decimals()). Always an exact power of ten, so
           // log10 recovers it exactly for every decimals count this basket can hold.
           basket: vault.basket.map((leg) => ({
@@ -588,7 +588,7 @@ export function MemberActions({ vault }: Props) {
       {sizeImpactNotice(depositForecast, 'deposit')}
       <p className="note dim">
         Two signatures: an ERC-20 approve, then <code>deposit(amountUsdc)</code>. A first-time deposit escrows for a
-        4-hour observation window before it mints shares — it does not mint immediately (VaultCore.sol:52).
+        4-hour observation window before it mints shares — it does not mint immediately (VaultCore.sol:54).
       </p>
       {vault.frozen ? (
         // The refusal states its reason, same rule as the exit button's. Wording comes from

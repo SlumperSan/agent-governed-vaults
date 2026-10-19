@@ -42,16 +42,16 @@
     "VaultDeployer": {
       "salt": "0x4da370845b1209e6d554c694ba2509b1774fd6a747163c88a467823a3477f13f",
       "saltPreimage": "rwally.protocol.v2.VaultDeployer",
-      "initcodeBytes": 23937,
-      "initcodeHash": "0xca020a3451c1ec1eace68297b8119d9329fbfaf716b65e02c9a958da0c02a63b",
-      "address": "0x6a31cA2d9e901730e6B634f1a1698AB20B66E513"
+      "initcodeBytes": 24078,
+      "initcodeHash": "0x3c0f163000e4e38559bd28a078085a90b9c41ee3b38744884274732382b8367e",
+      "address": "0x9d24cef2bC101CBc02303819ac8f611eA7cbAC23"
     },
     "VaultFactory": {
       "salt": "0xe1f58806a42a380b2f3c321f838c429518693322bf2171d5c223b66eb7f97058",
       "saltPreimage": "rwally.protocol.v2.VaultFactory",
       "initcodeBytes": 4473,
-      "initcodeHash": "0xadf9d17ccd2adc4a479d4173d19b98be109c9bfc203ebc5ee5fdb41327fa2399",
-      "address": "0xe17B45a6240eE74Cda48a1d44a27bfF9f6c79F3d"
+      "initcodeHash": "0x56a0cb7290cc91b322545e55ec8646c4762b0a1b616648fda4e4c529848ce3e5",
+      "address": "0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d"
     }
   }
 }

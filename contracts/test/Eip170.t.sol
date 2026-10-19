@@ -105,10 +105,12 @@ contract Eip170Test is Test {
     /// (both together measure +1,016 B; the figure was 283 B when the deferral was recorded, and
     /// #97 returned 6). Reclaiming duplicated call shapes bought that back.
     ///
-    /// Current margin is **3,926 B** — VaultCore 20,650 B runtime against the 24,576 B cap,
-    /// measured with `forge build --sizes` at `protocol/main` `16050be0` on 2026-09-02. Earlier
-    /// figures recorded here (4,132 B pre-#97, then 4,095 B on the merged tree) are superseded and
-    /// are kept only in this sentence, so nobody re-derives a stale one. **Re-measure rather than
+    /// Current margin is **3,602 B** — VaultCore 20,974 B runtime against the 24,576 B cap,
+    /// measured with `forge build --sizes` on `fix/exit-ratchet-supply-floor` (the position
+    /// floor, +141 B over the 20,833 B and 3,743 B of `feat/protocol-create2` `0049e14df`)
+    /// on 2026-10-18. Earlier figures recorded here (3,926 B at `protocol/main` `16050be0`, 4,132 B
+    /// pre-#97, then 4,095 B on the merged tree) are superseded and are kept only in this sentence,
+    /// so nobody re-derives a stale one. **Re-measure rather than
     /// copy this number.** No guard checks it: `.sol` is outside `PUBLIC_EXT` in
     /// `scripts/test/claims-lede-truth.test.mjs`, so a stale figure here goes unnoticed until a
     /// person reads it — which is how the 4,095 B survived.

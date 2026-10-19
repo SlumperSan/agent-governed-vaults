@@ -23,7 +23,7 @@ interface Props {
  * cannot be exact), never a claim that the remainder is confirmed organic.
  *
  * `organicMemberBound` is fed `v.nonCreatorMemberCount`, NEVER `v.holderCount` (security review on
- * PR #391 caught this before merge) — `holderCount` is "creator included" (VaultCore.sol:128), and
+ * PR #391 caught this before merge) — `holderCount` is "creator included" (VaultCore.sol:149), and
  * the vault's creator is the RWAlly team's own Safe, not on the seeded-persona list, so the raw
  * count alone would have silently counted it as non-seeded.
  */

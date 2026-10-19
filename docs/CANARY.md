@@ -297,7 +297,7 @@ Three-way classification:
 
 | Revert | Status | Why |
 |---|---|---|
-| `ZeroAmount`, `InsufficientShares`, `ExitAlreadyQueued`, `CreatorStakeGate`, `ExitNeedsChildSettlement`, `ChildSettlementPending` | **OK** | gates on the caller's own position, expected |
+| `ZeroAmount`, `InsufficientShares`, `ExitAlreadyQueued`, `CreatorStakeGate`, `ExitNeedsChildSettlement`, `ChildSettlementPending`, `PositionBelowFloor` | **OK** | gates on the caller's own position, expected (`PositionBelowFloor`: `_checkPositionFloor` found a nonzero remainder below `MIN_POSITION_SHARES`) |
 | `StaleOracle` | **DEGRADED** | the SF-2/K-4 breaker. By design, but it *is* a live capital freeze, so it never reads as OK. Attributed to the oracle signal, which pages for it, one root cause, one page |
 | anything else: `Reentrancy`, `Panic`, `Error(string)`, an unrecognized selector, or **empty returndata** | **ALERT** | a non-gate revert means members cannot exit |
 
@@ -585,7 +585,7 @@ actually reads**, which is not the same book for both:
    the **raw** book, because `_checkCreatorGate` reads exactly that.
 
 **Why the two books matter.** A queued Mode-F exit removes voting weight the instant it is queued
-(`requestExit`, `VaultCore.sol:562`, "locked shares leave eligible stake immediately"). A creator holding 2,000
+(`requestExit`, `VaultCore.sol:587`, "locked shares leave eligible stake immediately"). A creator holding 2,000
 of 10,000 shares who queues a 1,500-share exit still reads 20.00% on the raw book while their
 eligible weight is 500 of 8,500 = 5.88%, so against a 10.00% `proposalThresholdBps` their
 `propose()` reverts `BelowProposalThreshold` **right now**, which is precisely the failure G1 exists
@@ -636,8 +636,8 @@ smaller by that much; and NAV moving from trading between a pending deposit and 
 
 **The capacity trap, and it is wider than "the vault is full".** Restoring the fraction to a gate
 needs a deposit of at least `detail.thresholds[].topUpDeficitUsdc`; `_deposit` rejects anything below
-`minDepositUsdc` (`VaultCore.sol:86`) and anything that pushes `navUsdc + totalPendingUsdc` past
-`capacityCapUsdc` (`_deposit`, `VaultCore.sol:415`). So `detail.noTopUpPath` is true whenever
+`minDepositUsdc` (`VaultCore.sol:107`) and anything that pushes `navUsdc + totalPendingUsdc` past
+`capacityCapUsdc` (`_deposit`, `VaultCore.sol:437`). So `detail.noTopUpPath` is true whenever
 `max(deficit, minDeposit) > cap - committed`, which is the "**the top-up must lead the fill, not
 chase it**" point of no return in `Business/Finance/Operator Capital Requirement.md`, not the much
 later moment the vault reaches its cap. Worked case from that note: cap 50,000, operator 2,000,

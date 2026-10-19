@@ -21,6 +21,7 @@ const REENTRANCY = '0xab143c06';
 const STALE_ORACLE = '0xa2671f4b';
 const INSUFFICIENT_SHARES = '0x39996567';
 const CREATOR_GATE = '0xa428ab2d';
+const POSITION_BELOW_FLOOR = '0x9dc3430e'; // the exit-fee ratchet floor: the exiter's own remainder, a caller-position gate
 
 const book = new Map([[MEMBER, 400n], [CREATOR, 100n]]);
 
@@ -74,6 +75,13 @@ test('OK on the creator stake gate (CM-1) — a gate, not a liveness fault', asy
   const [r] = await checkExitLiveness({ reader, vault: VAULT, shareBook: new Map([[CREATOR, 100n]]), creator: CREATOR });
   assert.equal(r.status, 'ok');
   assert.equal(r.detail.revertName, 'CreatorStakeGate');
+});
+
+test('OK on the position floor (exit-fee ratchet defence) — a gate on the exiter remainder, not a liveness fault', async () => {
+  const reader = readerReturning({ ok: false, data: POSITION_BELOW_FLOOR });
+  const [r] = await checkExitLiveness({ reader, vault: VAULT, shareBook: book, creator: CREATOR });
+  assert.equal(r.status, 'ok');
+  assert.equal(r.detail.revertName, 'PositionBelowFloor');
 });
 
 test('probes as a real member, with a nonzero share amount, against the vault', async () => {

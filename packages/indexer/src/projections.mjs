@@ -324,7 +324,7 @@ export function apply(state, e) {
       // deposit emits the same event with no row behind it and must not touch the count.
       if (pendingMemberSet(state, e.vault).delete(a.member)) v.pendingCount -= 1;
       // The event's third field is NOT a delta. VaultCore emits it as `sharesOf[member]`, the
-      // member's balance AFTER the mint (VaultCore.sol:427 on the immediate path, :478 in
+      // member's balance AFTER the mint (VaultCore.sol:449 on the immediate path, :500 in
       // _activatePending), although the Solidity parameter is named `sharesMinted`. The contract
       // is deployed and immutable, so the consumer reads it as an absolute balance: summing it as
       // a delta double-counts every member's second activation.
@@ -341,7 +341,7 @@ export function apply(state, e) {
       ensureVault(state, e.vault).exitQueuedCount += 1;
       queuedExitSet(state, e.vault).add(a.member);
       // The SIZE of the entry, not only its existence: `requestExit(shares)` accepts any amount up
-      // to the balance, so a queued exit subtracts from voting-eligible stake rather than zeroing
+      // to the balance (a v2-source vault also requires it to leave nothing or at least MIN_POSITION_SHARES; the live Arc set has no floor), so a queued exit subtracts from voting-eligible stake rather than zeroing
       // it, and `memberPosition` cannot state the withheld weight without this.
       //
       // An ABSENT amount is recorded as absent, not as 0n. `abis.mjs` decodes `shares` from a

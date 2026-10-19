@@ -2,7 +2,7 @@
 /**
  * A member's deposit status across the four-hour observation window, from chain-read fields.
  *
- * `VaultCore._deposit` (contracts/src/VaultCore.sol:420-434): a first deposit from a member with
+ * `VaultCore._deposit` (contracts/src/VaultCore.sol:442-456): a first deposit from a member with
  * no shares and no cleared window does NOT mint. It escrows the USDC into `pendingDeposit[member]`
  * with `availableAt = block.timestamp + OBSERVATION_WINDOW` (4 hours, line 52) and mints nothing
  * until someone calls `activate(member)` (line 441-446) — PERMISSIONLESS, callable by anyone, but

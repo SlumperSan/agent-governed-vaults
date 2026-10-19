@@ -82,8 +82,8 @@ export function planCore(vault) {
     call(vault, 'VAULT_VIEWS', 'creator'),
     call(vault, 'VAULT_VIEWS', 'operatorRegistry'),
     // Card 210 (seeded-disclosure): TWO counters, not one. `holderCount` is "addresses with
-    // shares > 0, creator included" (VaultCore.sol:128); `nonCreatorMemberCount` excludes the
-    // creator (VaultCore.sol:107), maintained by the contract itself on every share-balance
+    // shares > 0, creator included" (VaultCore.sol:149); `nonCreatorMemberCount` excludes the
+    // creator (VaultCore.sol:128), maintained by the contract itself on every share-balance
     // crossing (`if (member != creator) ++nonCreatorMemberCount`). Appended at the END of this
     // list, never inserted earlier — callers destructure `planCore`'s results positionally.
     call(vault, 'VAULT_VIEWS', 'holderCount'),

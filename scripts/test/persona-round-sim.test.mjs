@@ -36,7 +36,7 @@
  *
  * THE SPEC CORRECTION THIS FILE EXISTS TO PROVE (2026-09-23, corrected from an earlier draft of
  * the persona-seeding decision): "The Safe does not need to deposit first." `_checkCreatorGate`
- * (`VaultCore.sol:601-607`) is called ONLY from the creator's own exit path, and only once a
+ * (`VaultCore.sol:626-632`) is called ONLY from the creator's own exit path, and only once a
  * non-creator member already holds shares — never from `deposit`/`activate`. Every vault below is
  * created by a Safe that NEVER deposits, and Ballast/Momentum deposit and activate first, with the
  * Safe holding exactly 0 shares throughout — asserted explicitly, not merely assumed.
@@ -173,7 +173,7 @@ test('Vault 3: a frozen oracle (warped past the heartbeat) blocks a second-mint 
   assert.ok(chain.sharesOf(fork3.rpcUrl, vault3, member.address) > 0n, 'the first deposit, oracle-independent, must succeed');
   assert.doesNotThrow(() => chain.oraclePriceWad(fork3.rpcUrl, dep3.aggregator, WETH), 'sanity: the oracle must read as fresh at this point, before any deliberate warp');
 
-  // `VaultCore._deposit` computes `navWad()` UNCONDITIONALLY on every call (VaultCore.sol:413,
+  // `VaultCore._deposit` computes `navWad()` UNCONDITIONALLY on every call (VaultCore.sol:435,
   // ahead of the capacity-cap branch — not only when a cap is set), so the SECOND deposit below
   // will call it regardless. But `navWad()`'s own asset loop only calls `oracle.priceWad(asset)`
   // for a basket asset whose `assetBalance[asset]` is nonzero — with a purely-idle-USDC vault that

@@ -1692,7 +1692,7 @@ test('drill3 restart re-enters from propose, so proveModeIWindow is re-proved ag
 
 test('drill3 restart refuses once the Mode-F exit has queued, rather than restarting into an unreachable quorum', () => {
   // The Mode-F-specific guard #2: votingEligibleShares = sharesOf - queuedExitShares
-  // (VaultCore.sol:1025-1028,1039-1041), so a restart against a signer with queued shares could
+  // (VaultCore.sol:1060-1063,1074-1076), so a restart against a signer with queued shares could
   // never supply quorum again. Structurally unreachable at this step (reveal precedes
   // requestExitModeF), but checked live rather than assumed.
   const drill3 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill3-modef.mjs'), 'utf8');
@@ -1700,7 +1700,7 @@ test('drill3 restart refuses once the Mode-F exit has queued, rather than restar
     'recovery must read queuedExitShares live and refuse to restart if any are queued');
   assert.match(drill3, /votingEligibleShares = sharesOf -/,
     'the refusal must name the reason a restart would be unwinnable, not just fail opaquely');
-  assert.match(drill3, /queuedExitShares, VaultCore\.sol:1025-1028,1039-1041/,
+  assert.match(drill3, /queuedExitShares, VaultCore\.sol:1060-1063,1074-1076/,
     'the refusal must cite the contract lines backing the claim');
 });
 

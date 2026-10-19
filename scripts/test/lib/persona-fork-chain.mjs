@@ -358,7 +358,7 @@ const toHex32 = (n) => `0x${n.toString(16).padStart(64, '0')}`;
  * Gives `vault`'s OWN internal `assetBalance[asset]` accounting a nonzero value by writing the
  * storage slot directly — the same brute-force technique `safe-fork-chain.mjs`'s `dealErc20` uses
  * for an ERC20's `balanceOf`, retargeted at `VaultCore.assetBalance` (a public mapping,
- * VaultCore.sol:99), read back through its own public getter rather than assumed. This is a
+ * VaultCore.sol:120), read back through its own public getter rather than assumed. This is a
  * DELIBERATE FORK ADAPTATION, not a real rebalance: `navWad()` only calls `oracle.priceWad(asset)`
  * when `assetBalance[asset] != 0` (VaultCore.sol's own NAV walk), so the frozen-oracle test needs
  * a vault that genuinely HOLDS the basket asset internally before it can demonstrate the freeze

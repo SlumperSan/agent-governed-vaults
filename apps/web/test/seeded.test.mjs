@@ -6,7 +6,7 @@
  * activity into a community-demand signal, the exact failure the decision doc names.
  *
  * SECOND FINDING, caught in PR #391's security review before merge: `holderCount` is "addresses
- * with shares > 0, creator included" (VaultCore.sol:128) — the vault's creator is the RWAlly
+ * with shares > 0, creator included" (VaultCore.sol:149) — the vault's creator is the RWAlly
  * team's own Safe, a DIFFERENT address from the two seeded personas, and it is never on
  * `docs/seeded-addresses.json`. `organicMemberBound`/`organicStakeWeightedClaim` now take
  * `nonCreatorHolderCount` (VaultCore's own `nonCreatorMemberCount`, creator already excluded) as

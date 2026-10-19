@@ -13,13 +13,13 @@
  *      `approve(vault, amount)`.
  *   2. `persona-<name>-deposit`: EOA -> VaultCore `deposit(uint256)` — NOT the `(uint256,uint256)`
  *      slippage overload; that one is for the immediate-mint path only
- *      (VaultCore.sol:396-401), and a fresh EOA's first-ever deposit always takes the pending path.
+ *      (VaultCore.sol:418-423), and a fresh EOA's first-ever deposit always takes the pending path.
  *   3. `persona-<name>-activate`: EOA -> VaultCore `activate(member)`. ALWAYS NEEDED HERE: `_deposit`
- *      (VaultCore.sol:407-435) mints immediately only when `windowCleared[msg.sender] ||
+ *      (VaultCore.sol:429-457) mints immediately only when `windowCleared[msg.sender] ||
  *      sharesOf[msg.sender] > 0` — both false for a brand-new persona wallet — so the deposit is
- *      escrowed pending for `OBSERVATION_WINDOW` (VaultCore.sol:52, 4 hours) and `activate` is the
- *      one call that mints shares (`_activatePending`, VaultCore.sol:473-479). `activate` is
- *      natspec'd "Callable by anyone" (VaultCore.sol:438), but this builder has the persona itself
+ *      escrowed pending for `OBSERVATION_WINDOW` (VaultCore.sol:54, 4 hours) and `activate` is the
+ *      one call that mints shares (`_activatePending`, VaultCore.sol:495-501). `activate` is
+ *      natspec'd "Callable by anyone" (VaultCore.sol:460), but this builder has the persona itself
  *      call it, matching who signs the other two items in the sequence.
  *
  * `expectedNonce` is frozen ONCE per persona from that EOA's own live pending nonce, exactly the

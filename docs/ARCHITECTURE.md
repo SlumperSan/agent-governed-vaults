@@ -105,7 +105,7 @@ minted at the NAV of the activation transaction; forward pricing on entry, so a 
 never mint against a stale valuation they observed 4 hours earlier.
 
 The `DepositActivated` event's third field, named `sharesMinted` in the Solidity source, carries the
-member's share balance after the mint (`sharesOf[member]`, `VaultCore.sol:427` and `:478`), not the
+member's share balance after the mint (`sharesOf[member]`, `VaultCore.sol:449` and `:500`), not the
 amount minted. A consumer sets the member's balance to it; adding it to a running total double-counts
 the member's second and later activations.
 

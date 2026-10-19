@@ -281,7 +281,7 @@ export function activateVault(rpcUrl, privateKey, vault, member) {
  * touch scripts/smoke-test.mjs — a different entrypoint, its own review) rather than fixed here.
  */
 export function proposeNoOpRebalance(rpcUrl, privateKey, governance, vault, adapter) {
-  // maxSlippageBps = 100 (1%), not 0: VaultCore.sol:909 rejects zero outright (BadSlippageBound —
+  // maxSlippageBps = 100 (1%), not 0: VaultCore.sol:944 rejects zero outright (BadSlippageBound —
   // "a bound of zero would demand exact oracle parity and make every real swap unexecutable"), and
   // the ceiling is MAX_REBALANCE_SLIPPAGE_BPS = 200 (2%). Orders stays empty either way, so no swap
   // is actually attempted — this bound only has to be IN RANGE for execute() to accept the payload.

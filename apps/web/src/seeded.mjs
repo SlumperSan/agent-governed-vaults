@@ -52,8 +52,8 @@ export function isSeeded(address, entries) {
  * A LOWER BOUND on non-seeded ("organic") members.
  *
  * `nonCreatorHolderCount` MUST ALREADY EXCLUDE THE VAULT'S CREATOR — it is `Governance.sol`'s /
- * `VaultCore.nonCreatorMemberCount` (VaultCore.sol:107), never `VaultCore.holderCount`
- * (VaultCore.sol:128), whose own doc comment reads "addresses with shares > 0, creator included".
+ * `VaultCore.nonCreatorMemberCount` (VaultCore.sol:128), never `VaultCore.holderCount`
+ * (VaultCore.sol:149), whose own doc comment reads "addresses with shares > 0, creator included".
  * The creator is the RWAlly team's own Safe (`contracts/config/deployments/*.json`'s
  * `operatorPayoutNote`), not one of the seeded personas on `docs/seeded-addresses.json` — a
  * DIFFERENT address, on a DIFFERENT list — so passing the creator-inclusive `holderCount` here

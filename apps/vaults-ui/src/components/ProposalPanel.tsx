@@ -75,7 +75,7 @@ export function ProposalPanel({ vault, nowSec }: Props) {
   // to `readout.met`. Never asserted from `null` — an unread holder count is not evidence FOR it.
   //
   // `vault.nonCreatorMemberCount`, NEVER `vault.holderCount` — security review on PR #391 caught
-  // this before merge. `holderCount` is "creator included" (VaultCore.sol:128) and the creator is
+  // this before merge. `holderCount` is "creator included" (VaultCore.sol:149) and the creator is
   // the RWAlly team's own Safe, not one of the seeded personas on `SEEDED_ADDRESSES`, so passing
   // `holderCount` here would silently count the team's Safe as an organic member.
   const stakeWeighted = organicStakeWeightedClaim(vault.nonCreatorMemberCount, SEEDED_ADDRESSES.length) === true;

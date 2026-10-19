@@ -196,8 +196,8 @@ export interface AssembledVault {
   readonly holderCount: number;
   /**
    * `null` — never `0` — when unread (card 210). "addresses with shares > 0, EXCLUDING the
-   * creator" (VaultCore.sol:107), as distinct from `holderCount`'s "creator included"
-   * (VaultCore.sol:128). This is the count `apps/web/src/seeded.mjs`'s `organicMemberBound`
+   * creator" (VaultCore.sol:128), as distinct from `holderCount`'s "creator included"
+   * (VaultCore.sol:149). This is the count `apps/web/src/seeded.mjs`'s `organicMemberBound`
    * expects, never `holderCount` itself — the creator is the RWAlly team's own Safe, not on the
    * seeded-persona list, so subtracting only seeded addresses from `holderCount` would silently
    * count the creator as organic.

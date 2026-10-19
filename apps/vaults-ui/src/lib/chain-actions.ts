@@ -7,7 +7,7 @@
  * why, and `packages/reference-agent/src/act.mjs` / `salt.mjs` for the originals this app's
  * `@chain/act` alias and `apps/web/src/vote-custody.mjs` (`@atlas/vote-custody`) mirror.
  *
- * `deposit(uint256)`, NOT `deposit(uint256,uint256)`. VaultCore has both (VaultCore.sol:392-403);
+ * `deposit(uint256)`, NOT `deposit(uint256,uint256)`. VaultCore has both (VaultCore.sol:414-425);
  * the two-argument overload adds `minSharesOut` slippage protection (M-15) on the immediate-mint
  * path only — a first-time deposit is escrowed pending and prices at ACTIVATION regardless, so
  * `minSharesOut` cannot protect that path either way, live NAV or not. This app now reads live NAV
@@ -20,7 +20,7 @@
  * `VAULT_WRITE_ABI` in act.mjs, which declares only that fragment.
  *
  * `requestExit` is IRREVOCABLE once it queues (a proposal past its commit deadline turns the call
- * into a Mode-F queue, VaultCore.sol:551-567) — there is no cancel. This module does not decide
+ * into a Mode-F queue, VaultCore.sol:575-592) — there is no cancel. This module does not decide
  * whether that applies; the caller (MemberActions.tsx) is responsible for warning before the
  * signature is requested, and mutation-testing that warning is part of this card's own gate.
  */
@@ -63,7 +63,7 @@ export interface ExitGateInputs {
    *  bound the performance-fee range; the six fields above predate it and never needed it. */
   readonly costBasisUsdc: bigint | null;
   /** `VaultCore.queuedExitShares(member)` — nonzero means a Mode-F exit is already queued for this
-   *  member (one at a time, VaultCore.sol:553). `vault-state.mjs`'s `actions().exit` needs this to
+   *  member (one at a time, VaultCore.sol:577). `vault-state.mjs`'s `actions().exit` needs this to
    *  refuse a second queue attempt before it ever reaches the frozen/mode checks below it. */
   readonly queuedExitShares: bigint | null;
 }
@@ -419,7 +419,7 @@ export async function readVoteCustody(
  * declared by a library VaultCore.sol binds via `using` (`contracts/src/lib/*.sol` — currently
  * `SafeTransferLib`, `Checkpoints`, `BoundedCall`; `BoundedCall` declares none today). A revert
  * that bubbles up from inside a `using`-bound library is still a revert on VaultCore's own call
- * frame — `deposit()`'s `usdc.safeTransferFrom(...)` at VaultCore.sol:420 is exactly this shape —
+ * frame — `deposit()`'s `usdc.safeTransferFrom(...)` at VaultCore.sol:442 is exactly this shape —
  * so those errors belong in the same decode set, not hand-picked by tracing which branch each
  * call can reach. The coupling guard (`test/simulate-before-sign.test.mjs`) re-derives the
  * library list from VaultCore.sol's own `using` declarations rather than trusting this comment,
@@ -454,6 +454,7 @@ const KNOWN_ERRORS_ABI = [
   { type: 'error', name: 'TooManyChildren', inputs: [] },
   { type: 'error', name: 'ChildSettlementPending', inputs: [] },
   { type: 'error', name: 'ExitNeedsChildSettlement', inputs: [] },
+  { type: 'error', name: 'PositionBelowFloor', inputs: [] },
   // Governance.sol
   { type: 'error', name: 'OnlyDeployer', inputs: [] },
   { type: 'error', name: 'AlreadyWiredSubRegistry', inputs: [] },
@@ -484,15 +485,15 @@ const KNOWN_ERRORS_ABI = [
   { type: 'error', name: 'CannotDelegateDuringProposal', inputs: [] },
   // IOracleAggregator.sol -- navWad() reaches this from _deposit and _settleExit alike
   { type: 'error', name: 'StaleOracle', inputs: [{ name: 'asset', type: 'address' }] },
-  // contracts/src/lib/SafeTransferLib.sol -- `using SafeTransferLib for address;` (VaultCore.sol:39).
-  // deposit()'s usdc.safeTransferFrom(...) (VaultCore.sol:420) can revert TransferFromFailed directly
+  // contracts/src/lib/SafeTransferLib.sol -- `using SafeTransferLib for address;` (VaultCore.sol:41).
+  // deposit()'s usdc.safeTransferFrom(...) (VaultCore.sol:442) can revert TransferFromFailed directly
   // on this call frame; the other two are reachable from the same bound library.
   { type: 'error', name: 'TransferFailed', inputs: [{ name: 'token', type: 'address' }] },
   { type: 'error', name: 'TransferFromFailed', inputs: [{ name: 'token', type: 'address' }] },
   { type: 'error', name: 'ApproveFailed', inputs: [{ name: 'token', type: 'address' }] },
-  // contracts/src/lib/Checkpoints.sol -- `using Checkpoints for Checkpoints.History;` (VaultCore.sol:40).
+  // contracts/src/lib/Checkpoints.sol -- `using Checkpoints for Checkpoints.History;` (VaultCore.sol:42).
   { type: 'error', name: 'ValueOverflow', inputs: [] },
-  // contracts/src/lib/BoundedCall.sol -- `using BoundedCall for address;` (VaultCore.sol:41) declares
+  // contracts/src/lib/BoundedCall.sol -- `using BoundedCall for address;` (VaultCore.sol:43) declares
   // no `error`s today; nothing to add here, but the coupling guard still scans it so a future one
   // added there is caught rather than silently missing from decode.
 ] as const satisfies Abi;
