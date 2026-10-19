@@ -184,6 +184,37 @@ contract AgentVaultCoreTest is Test {
         assertEq(vault.totalPendingUsdc(), 0);
     }
 
+    /// The gate asks "holds at least one", not "holds exactly one": a wallet may hold many identities
+    /// (the registry is soulbound and one wallet registers as many as it likes), and a balance of 2
+    /// or of type(uint256).max admits just as a balance of 1 does.
+    function test_gate_admitsAnyNonzeroBalance_notOnlyExactlyOne() public {
+        idReg.setHeldCount(alice, 2);
+        vm.prank(alice);
+        vault.deposit(100 * USDC_1);
+        assertEq(vault.totalPendingUsdc(), 100 * USDC_1);
+
+        idReg.setHeldCount(bob, 20);
+        vm.prank(bob);
+        vault.deposit(100 * USDC_1);
+
+        idReg.setHeldCount(carol, type(uint256).max);
+        vm.prank(carol);
+        vault.deposit(100 * USDC_1);
+        assertEq(vault.totalPendingUsdc(), 300 * USDC_1);
+
+        // Top-ups too.
+        vm.prank(alice);
+        vault.skipWindow();
+        vm.prank(alice);
+        vault.deposit(100 * USDC_1, 1);
+
+        // And a zero balance is still refused.
+        idReg.setHeldCount(nobody, 0);
+        vm.prank(nobody);
+        vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
+        vault.deposit(100 * USDC_1);
+    }
+
     function test_creatorHoldingNoIdentityCannotDeposit_noExemption() public {
         idReg.setHeld(creator, false);
         vm.prank(creator);
@@ -391,8 +422,8 @@ contract SmartAgent {
 }
 
 /// The same gate against the real RWAllyAgentRegistry, initialised with a 1 USDC fee: registration
-/// admits, transfer stops only new deposits, a smart-account depositor works, the owner has no power
-/// to stop a deposit, and nothing else changes.
+/// admits, an identity cannot be transferred, a wallet holding many identities is admitted, a
+/// smart-account depositor works, the owner has no power to stop a deposit, and nothing else changes.
 contract AgentVaultCoreRealRegistryTest is Test {
     uint256 constant USDC_1 = 1e6;
 
@@ -486,28 +517,50 @@ contract AgentVaultCoreRealRegistryTest is Test {
         vault.activate(alice);
     }
 
-    /// P5: the agent transfers its token away after depositing.
-    function test_tokenTransferredAway_keepsSharesWeightAndExit_losesTopUp() public {
+    /// P5: the identity is soulbound, so an agent cannot pass its token to another depositor, and
+    /// holding on to it leaves the holder's access to the vault exactly as it was.
+    function test_tokenCannotBeTransferred_holderKeepsTopUpAndExit_otherStaysRefused() public {
         uint256 id = _aliceIn();
         uint256 shares = vault.sharesOf(alice);
         uint256 weight = vault.votingEligibleShares(alice);
 
-        vm.prank(alice);
+        vm.startPrank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         idReg.transferFrom(alice, bob, id);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
+        idReg.safeTransferFrom(alice, bob, id);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
+        idReg.approve(bob, id);
+        vm.stopPrank();
 
+        assertEq(idReg.ownerOf(id), alice);
         assertEq(vault.sharesOf(alice), shares);
         assertEq(vault.votingEligibleShares(alice), weight);
-        vm.prank(alice);
-        vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
-        vault.deposit(10 * USDC_1);
 
-        // The new holder is admitted; the old one still exits.
+        // The would-be recipient holds nothing and is still refused.
         vm.prank(bob);
+        vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
         vault.deposit(100 * USDC_1);
+
+        // The holder still tops up, and still exits.
         vm.prank(alice);
-        vault.requestExit(shares);
+        vault.deposit(10 * USDC_1);
+        uint256 all = vault.sharesOf(alice);
+        vm.prank(alice);
+        vault.requestExit(all);
         assertEq(vault.sharesOf(alice), 0);
-        assertEq(usdc.balanceOf(alice), 1_000_000 * USDC_1 - USDC_1, "alice made whole, less the 1 USDC fee");
+    }
+
+    /// One wallet registers many identities and is admitted on any of them.
+    function test_aWalletHoldingManyIdentities_isAdmitted() public {
+        vm.startPrank(alice);
+        for (uint256 i; i < 20; ++i) {
+            idReg.register();
+        }
+        vault.deposit(100 * USDC_1);
+        vm.stopPrank();
+        assertEq(idReg.balanceOf(alice), 20);
+        assertEq(vault.totalPendingUsdc(), 100 * USDC_1);
     }
 
     /// The registry owner has no power over an identity: raising the fee to the cap, handing the

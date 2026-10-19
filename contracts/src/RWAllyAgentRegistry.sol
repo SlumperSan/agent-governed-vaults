@@ -21,7 +21,8 @@ interface IERC20Decimals {
 /// @title RWAllyAgentRegistry
 /// @notice A fresh, minimal implementation of the ERC-8004 Identity Registry surface: an ERC-721
 /// whose token is an agent identity, with an agent URI, on-chain metadata and a designated agent
-/// wallet. It is written against the ERC text and the reference registry's external interface
+/// wallet. Every identity is soulbound (ERC-5192): it is minted to its holder and can never be
+/// transferred or approved to anyone else. It is written against the ERC text and the reference registry's external interface
 /// (https://eips.ethereum.org/EIPS/eip-8004), imports no third-party code, and shares no storage
 /// layout with the canonical deployment. It is NOT the canonical ERC-8004 registry: the ids it
 /// issues are its own, and an identity registered on another registry is recognised here only
@@ -30,7 +31,7 @@ interface IERC20Decimals {
 /// @dev REGISTRATION IS OPEN AND PAID. `register` mints to `msg.sender` and checks nothing about the
 /// caller beyond the fee: it pulls a flat `fee` of the fee token from the caller straight to the
 /// treasury (`transferFrom(msg.sender, treasury, fee)`, return value checked), so the registry never
-/// holds funds. The fee is set by the owner and can never exceed `MAX_FEE` (10 USDC, 10_000_000
+/// holds funds. The fee is set by the owner and can never exceed `MAX_FEE` (100 USDC, 100_000_000
 /// raw units of a 6-decimal token), a constant in the bytecode. It is charged once, at registration;
 /// a later fee change touches no existing identity. Holding an identity here is a registration, not
 /// evidence of who or what controls the address.
@@ -57,6 +58,14 @@ interface IERC20Decimals {
 /// an initialized chain. If it is lost, no new chain can be initialized at this address (a new
 /// address is needed there) and nothing changes on chains already initialized.
 ///
+/// SOULBOUND (ERC-5192). `locked(id)` is true for every minted id and `Locked(id)` is emitted at every
+/// mint. `transferFrom`, both `safeTransferFrom` overloads, `approve` and `setApprovalForAll` always
+/// revert with `Soulbound`; `getApproved` is always the zero address and `isApprovedForAll` always
+/// false. There is no approved party and no operator: only the holder can write the identity's URI,
+/// metadata and agent wallet. One address may hold any number of identities, and registers one per
+/// call. An identity is lost only by losing the wallet that holds it; nothing in this contract, the
+/// owner included, can move, burn or re-assign one.
+///
 /// UPGRADEABILITY: none. The contract has no proxy, no `delegatecall`, no `selfdestruct` and no
 /// code-replacement hook. Its code is fixed at deployment.
 ///
@@ -81,7 +90,7 @@ interface IERC20Decimals {
 /// `register` pulls the fee to the treasury with `transferFrom(msg.sender, treasury, fee)`. If the
 /// owner sets the treasury to an address the fee token refuses (for example an address on USDC's
 /// blocklist), every `register` overload reverts with `FeeNotPaid` while the fee is nonzero, until
-/// the treasury is changed again. `importAgent`, identity transfers, metadata and agent-wallet
+/// the treasury is changed again. `importAgent`, metadata and agent-wallet
 /// writes, and every vault exit do not touch the treasury and are unaffected; with a fee of zero
 /// the token is never called. After `renounceOwnership` the treasury is fixed for good: if it was
 /// refused at that moment, paid registration stays halted permanently, and if it was accepted it
@@ -89,7 +98,7 @@ interface IERC20Decimals {
 /// `MAX_FEE` in one transaction.
 ///
 /// KNOWN LIMITATION, NO MAX-FEE ARGUMENT. `register` takes no maximum-fee argument, so a registrant
-/// is charged whatever the fee is when the transaction lands, up to `MAX_FEE` (10 USDC). Approve the
+/// is charged whatever the fee is when the transaction lands, up to `MAX_FEE` (100 USDC). Approve the
 /// exact current fee, not more, and read `fee()` immediately before registering.
 ///
 /// Ids start at 0 and increase by one, as in the reference registry.
@@ -106,8 +115,9 @@ contract RWAllyAgentRegistry {
     // ───────────────────────────── events ────────────────────────────
 
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
-    event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
-    event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
+    /// @dev ERC-5192: emitted once per identity, at its mint. `Unlocked` is declared by the ERC but
+    /// is never emitted here, because an identity is never unlocked.
+    event Locked(uint256 tokenId);
     event Registered(uint256 indexed agentId, string agentURI, address indexed owner);
     event MetadataSet(
         uint256 indexed agentId, string indexed indexedMetadataKey, string metadataKey, bytes metadataValue
@@ -133,11 +143,9 @@ contract RWAllyAgentRegistry {
 
     error ERC721InvalidOwner(address owner);
     error ERC721NonexistentToken(uint256 tokenId);
-    error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner);
     error ERC721InvalidReceiver(address receiver);
-    error ERC721InsufficientApproval(address operator, uint256 tokenId);
-    error ERC721InvalidApprover(address approver);
-    error ERC721InvalidOperator(address operator);
+    /// @dev Every transfer and approval entry point reverts with this: an identity is soulbound.
+    error Soulbound();
     error NotAuthorized();
     error ReservedKey();
     error BadWallet();
@@ -170,8 +178,8 @@ contract RWAllyAgentRegistry {
     /// and the same constant that gates the protocol singletons (recorded in
     /// `contracts/config/agent-registry-create2.json`).
     address public constant INITIALIZER = PROTOCOL_INITIALIZER;
-    /// @notice Hard cap on the registration fee: 10 USDC in raw units of a 6-decimal token.
-    uint256 public constant MAX_FEE = 10_000_000;
+    /// @notice Hard cap on the registration fee: 100 USDC in raw units of a 6-decimal token.
+    uint256 public constant MAX_FEE = 100_000_000;
     /// @notice How long after `initialize` the free import window stays open.
     uint256 public constant IMPORT_WINDOW = 30 days;
     /// @dev Gas allowance for the outside registry's `ownerOf`, the same figure and style as
@@ -212,8 +220,6 @@ contract RWAllyAgentRegistry {
     uint256 private _nextId;
     mapping(uint256 => address) private _owners;
     mapping(address => uint256) private _balances;
-    mapping(uint256 => address) private _approved;
-    mapping(address => mapping(address => bool)) private _operatorApprovals;
     mapping(uint256 => string) private _uris;
     mapping(uint256 => mapping(string => bytes)) private _metadata;
 
@@ -427,6 +433,7 @@ contract RWAllyAgentRegistry {
         if (hasUri) _uris[agentId] = agentURI;
         _metadata[agentId]["agentWallet"] = abi.encodePacked(to);
         emit Transfer(address(0), to, agentId);
+        emit Locked(agentId);
         if (hasUri) emit MetadataUpdate(agentId);
         emit Registered(agentId, agentURI, to);
         emit MetadataSet(agentId, "agentWallet", "agentWallet", abi.encodePacked(to));
@@ -466,7 +473,7 @@ contract RWAllyAgentRegistry {
     /// by `newWallet` (EOA) or an ERC-1271 signature accepted by it (contract wallet), over
     /// AgentWalletSet(agentId, newWallet, owner, deadline), valid for at most five minutes.
     /// KNOWN LIMITATION: the ERC-1271 call to a contract `newWallet` has no gas allowance and no
-    /// returndata bound. The caller (an authorized holder, operator or approved address) chooses
+    /// returndata bound. The caller (the holder) chooses
     /// `newWallet`, so a wallet that burns gas or returns a large payload costs only that caller;
     /// the call is a static call and cannot change state, and no other party is affected.
     function setAgentWallet(uint256 agentId, address newWallet, uint256 deadline, bytes calldata signature)
@@ -508,12 +515,11 @@ contract RWAllyAgentRegistry {
         emit MetadataSet(agentId, "agentWallet", "agentWallet", "");
     }
 
-    /// @notice Whether `spender` is the holder, an operator of the holder, or approved for `agentId`.
-    /// Reverts for a nonexistent id. `address(0)` is never authorized: an unset approval is stored
-    /// as address(0), so without this guard the zero address would read as approved.
+    /// @notice Whether `spender` is the holder of `agentId`, the only address that can write it: an
+    /// identity has no operators and no approved party. Reverts for a nonexistent id. `address(0)` is
+    /// never authorized, because the holder of a minted id is never the zero address.
     function isAuthorizedOrOwner(address spender, uint256 agentId) external view returns (bool) {
-        address holder = _requireOwned(agentId);
-        return spender != address(0) && _isAuthorized(holder, spender, agentId);
+        return spender == _requireOwned(agentId);
     }
 
     function getVersion() external pure returns (string memory) {
@@ -526,7 +532,8 @@ contract RWAllyAgentRegistry {
         return interfaceId == 0x01ffc9a7 // ERC-165
             || interfaceId == 0x80ac58cd // ERC-721
             || interfaceId == 0x5b5e139f // ERC-721 Metadata
-            || interfaceId == 0x49064906; // ERC-4906 metadata update
+            || interfaceId == 0x49064906 // ERC-4906 metadata update
+            || interfaceId == 0xb45a3c0e; // ERC-5192 minimal soulbound
     }
 
     function balanceOf(address holder) external view returns (uint256) {
@@ -538,54 +545,48 @@ contract RWAllyAgentRegistry {
         return _requireOwned(tokenId);
     }
 
-    function getApproved(uint256 tokenId) public view returns (address) {
+    /// @notice ERC-5192: true for every minted id, forever. Reverts for a nonexistent id, as
+    /// `ownerOf` does.
+    function locked(uint256 tokenId) external view returns (bool) {
         _requireOwned(tokenId);
-        return _approved[tokenId];
+        return true;
     }
 
-    function isApprovedForAll(address holder, address operator) public view returns (bool) {
-        return _operatorApprovals[holder][operator];
+    /// @notice Always the zero address for a minted id: approvals do not exist. Reverts for a
+    /// nonexistent id, as ERC-721 requires.
+    function getApproved(uint256 tokenId) external view returns (address) {
+        _requireOwned(tokenId);
+        return address(0);
     }
 
-    function approve(address to, uint256 tokenId) external {
-        address holder = _requireOwned(tokenId);
-        require(
-            msg.sender == holder || isApprovedForAll(holder, msg.sender), ERC721InvalidApprover(msg.sender)
-        );
-        _approved[tokenId] = to;
-        emit Approval(holder, to, tokenId);
+    /// @notice Always false: operators do not exist.
+    function isApprovedForAll(address, address) external pure returns (bool) {
+        return false;
     }
 
-    function setApprovalForAll(address operator, bool approved) external {
-        require(operator != address(0), ERC721InvalidOperator(address(0)));
-        _operatorApprovals[msg.sender][operator] = approved;
-        emit ApprovalForAll(msg.sender, operator, approved);
+    /// @notice Always reverts `Soulbound`.
+    function approve(address, uint256) external pure {
+        revert Soulbound();
     }
 
-    function transferFrom(address from, address to, uint256 tokenId) public {
-        require(to != address(0), ERC721InvalidReceiver(address(0)));
-        address holder = _requireOwned(tokenId);
-        require(holder == from, ERC721IncorrectOwner(from, tokenId, holder));
-        require(_isAuthorized(holder, msg.sender, tokenId), ERC721InsufficientApproval(msg.sender, tokenId));
-        delete _approved[tokenId];
-        unchecked {
-            _balances[from] -= 1;
-            _balances[to] += 1;
-        }
-        _owners[tokenId] = to;
-        // The designated wallet belongs to the previous holder's verification and must be re-proved.
-        _metadata[tokenId]["agentWallet"] = "";
-        emit MetadataSet(tokenId, "agentWallet", "agentWallet", "");
-        emit Transfer(from, to, tokenId);
+    /// @notice Always reverts `Soulbound`.
+    function setApprovalForAll(address, bool) external pure {
+        revert Soulbound();
     }
 
-    function safeTransferFrom(address from, address to, uint256 tokenId) external {
-        safeTransferFrom(from, to, tokenId, "");
+    /// @notice Always reverts `Soulbound`.
+    function transferFrom(address, address, uint256) external pure {
+        revert Soulbound();
     }
 
-    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory data) public {
-        transferFrom(from, to, tokenId);
-        _checkReceiver(from, to, tokenId, data);
+    /// @notice Always reverts `Soulbound`.
+    function safeTransferFrom(address, address, uint256) external pure {
+        revert Soulbound();
+    }
+
+    /// @notice Always reverts `Soulbound`.
+    function safeTransferFrom(address, address, uint256, bytes calldata) external pure {
+        revert Soulbound();
     }
 
     // ───────────────────────────── internals ─────────────────────────
@@ -595,13 +596,10 @@ contract RWAllyAgentRegistry {
         require(holder != address(0), ERC721NonexistentToken(tokenId));
     }
 
-    function _isAuthorized(address holder, address spender, uint256 tokenId) private view returns (bool) {
-        return spender == holder || _operatorApprovals[holder][spender] || _approved[tokenId] == spender;
-    }
-
+    /// @dev Only the holder may write an identity.
     function _requireAuthorized(uint256 agentId) private view returns (address holder) {
         holder = _requireOwned(agentId);
-        require(_isAuthorized(holder, msg.sender, agentId), NotAuthorized());
+        require(msg.sender == holder, NotAuthorized());
     }
 
     function _checkReceiver(address from, address to, uint256 tokenId, bytes memory data) private {

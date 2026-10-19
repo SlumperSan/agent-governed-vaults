@@ -87,7 +87,7 @@
     },
     "calls-loop::VaultCore.constructor": {
       "count": 2,
-      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:156) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:154) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled. Count 2 since 2026-10-18: AgentVaultCore inherits this constructor unchanged, so the same reviewed basket loop is reported a second time under the subclass. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:156) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:154) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled. Count 2 since 2026-10-18: AgentVaultCore's constructor runs this constructor's body unchanged and adds one require, so the same reviewed basket loop is reported a second time under the subclass. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "calls-loop::VaultCore.executeRebalance": {
       "count": 1,
@@ -163,7 +163,7 @@
     },
     "low-level-calls::RWAllyAgentRegistry.setAgentWallet": {
       "count": 1,
-      "reason": "By design. The ERC-1271 verification call to the wallet being designated, as the ERC-8004 reference registry does: the caller must already be the identity's owner or approved, the returned magic value and length are checked, and any other outcome reverts with InvalidWalletSignature. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
+      "reason": "By design. The ERC-1271 verification call to the wallet being designated, as the ERC-8004 reference registry does: the caller must already be the identity's holder, the returned magic value and length are checked, and any other outcome reverts with InvalidWalletSignature. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "missing-inheritance::OperatorRegistry": {
       "count": 1,

@@ -74,6 +74,7 @@ contract RWAllyAgentRegistryTest is Test {
     address carol = makeAddr("carol");
 
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event Locked(uint256 tokenId);
     event Registered(uint256 indexed agentId, string agentURI, address indexed owner);
     event MetadataSet(uint256 indexed agentId, string indexed k, string metadataKey, bytes metadataValue);
     event MetadataUpdate(uint256 _tokenId);
@@ -101,6 +102,8 @@ contract RWAllyAgentRegistryTest is Test {
         assertTrue(reg.supportsInterface(0x80ac58cd));
         assertTrue(reg.supportsInterface(0x5b5e139f));
         assertTrue(reg.supportsInterface(0x49064906));
+        assertTrue(reg.supportsInterface(0xb45a3c0e)); // ERC-5192
+        assertEq(bytes4(keccak256("locked(uint256)")), bytes4(0xb45a3c0e), "the ERC-5192 interface id");
         assertFalse(reg.supportsInterface(0x780e9d63)); // not enumerable, like the canonical registry
         assertFalse(reg.supportsInterface(0xffffffff));
     }
@@ -233,118 +236,172 @@ contract RWAllyAgentRegistryTest is Test {
         reg.tokenURI(7);
         vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721NonexistentToken.selector, 7));
         reg.getApproved(7);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721NonexistentToken.selector, 7));
+        reg.locked(7);
         vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InvalidOwner.selector, address(0)));
         reg.balanceOf(address(0));
         assertEq(reg.balanceOf(alice), 0);
     }
 
-    // ── transfers and approvals ──────────────────────────────────────────────
+    // ── soulbound (ERC-5192): no transfer, no approval ───────────────────────
 
     function _alice() internal returns (uint256 id) {
         vm.prank(alice);
         id = reg.register("ipfs://a");
     }
 
-    function test_transfer_movesToken_clearsApprovalAndAgentWallet() public {
-        uint256 id = _alice();
-        vm.prank(alice);
-        reg.approve(carol, id);
-        assertEq(reg.getApproved(id), carol);
-
-        vm.expectEmit(true, true, true, false);
-        emit Transfer(alice, bob, id);
-        vm.prank(alice);
-        reg.transferFrom(alice, bob, id);
-
-        assertEq(reg.ownerOf(id), bob);
-        assertEq(reg.balanceOf(alice), 0);
-        assertEq(reg.balanceOf(bob), 1);
-        assertEq(reg.getApproved(id), address(0), "approval cleared");
-        assertEq(reg.getAgentWallet(id), address(0), "agentWallet cleared on transfer");
-        // the old approved party can no longer move it
-        vm.prank(carol);
-        vm.expectRevert(
-            abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InsufficientApproval.selector, carol, id)
-        );
-        reg.transferFrom(bob, carol, id);
+    function _assertSoulbound(address caller, bytes memory data, string memory what) internal {
+        vm.prank(caller);
+        (bool ok, bytes memory ret) = address(reg).call(data);
+        assertFalse(ok, what);
+        assertEq(ret.length, 4, what);
+        assertEq(bytes4(ret), RWAllyAgentRegistry.Soulbound.selector, what);
     }
 
-    function test_transfer_byApprovedAndByOperator() public {
+    /// Every transfer and approval entry point reverts with Soulbound, for the holder, for a stranger,
+    /// for the owner address, for a zero destination and for an id that does not exist.
+    function test_soulbound_everyTransferAndApprovalEntryPointReverts() public {
         uint256 id = _alice();
-        vm.prank(alice);
-        reg.approve(bob, id);
-        vm.prank(bob);
-        reg.transferFrom(alice, carol, id);
-        assertEq(reg.ownerOf(id), carol);
-
-        vm.prank(carol);
-        reg.setApprovalForAll(bob, true);
-        assertTrue(reg.isApprovedForAll(carol, bob));
-        vm.prank(bob);
-        reg.safeTransferFrom(carol, alice, id);
-        assertEq(reg.ownerOf(id), alice);
-    }
-
-    function test_transfer_rejectsStrangerWrongFromAndZeroTo() public {
-        uint256 id = _alice();
-        vm.prank(bob);
-        vm.expectRevert(
-            abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InsufficientApproval.selector, bob, id)
-        );
-        reg.transferFrom(alice, bob, id);
-
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(RWAllyAgentRegistry.ERC721IncorrectOwner.selector, bob, id, alice)
-        );
-        reg.transferFrom(bob, carol, id);
-
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InvalidReceiver.selector, address(0))
-        );
-        reg.transferFrom(alice, address(0), id);
-
-        vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InvalidApprover.selector, bob));
-        reg.approve(bob, id);
-
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InvalidOperator.selector, address(0))
-        );
-        reg.setApprovalForAll(address(0), true);
-    }
-
-    function test_safeTransfer_toNonReceiverContract_reverts() public {
-        uint256 id = _alice();
+        address[3] memory callers = [alice, bob, multisig];
+        uint256[2] memory ids = [id, 99];
+        for (uint256 c; c < callers.length; ++c) {
+            for (uint256 k; k < ids.length; ++k) {
+                address who = callers[c];
+                uint256 t = ids[k];
+                _assertSoulbound(
+                    who,
+                    abi.encodeWithSignature("transferFrom(address,address,uint256)", alice, bob, t),
+                    "transferFrom"
+                );
+                _assertSoulbound(
+                    who,
+                    abi.encodeWithSignature("transferFrom(address,address,uint256)", alice, address(0), t),
+                    "transferFrom to zero"
+                );
+                _assertSoulbound(
+                    who,
+                    abi.encodeWithSignature("safeTransferFrom(address,address,uint256)", alice, bob, t),
+                    "safeTransferFrom"
+                );
+                _assertSoulbound(
+                    who,
+                    abi.encodeWithSignature(
+                        "safeTransferFrom(address,address,uint256,bytes)", alice, bob, t, hex"01"
+                    ),
+                    "safeTransferFrom with data"
+                );
+                _assertSoulbound(who, abi.encodeWithSignature("approve(address,uint256)", bob, t), "approve");
+                _assertSoulbound(
+                    who, abi.encodeWithSignature("approve(address,uint256)", address(0), t), "approve zero"
+                );
+            }
+            _assertSoulbound(
+                callers[c],
+                abi.encodeWithSignature("setApprovalForAll(address,bool)", bob, true),
+                "setApprovalForAll true"
+            );
+            _assertSoulbound(
+                callers[c],
+                abi.encodeWithSignature("setApprovalForAll(address,bool)", bob, false),
+                "setApprovalForAll false"
+            );
+            _assertSoulbound(
+                callers[c],
+                abi.encodeWithSignature("setApprovalForAll(address,bool)", address(0), true),
+                "setApprovalForAll zero"
+            );
+        }
+        // A transfer to a contract that cannot receive still fails with Soulbound, not a receiver error.
         NoReceiver n = new NoReceiver();
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InvalidReceiver.selector, address(n))
+        _assertSoulbound(
+            alice,
+            abi.encodeWithSignature("safeTransferFrom(address,address,uint256)", alice, address(n), id),
+            "safeTransferFrom to a non-receiver"
         );
-        reg.safeTransferFrom(alice, address(n), id);
-        assertEq(reg.ownerOf(id), alice, "reverted transfer left no trace");
+        // Nothing moved.
+        assertEq(reg.ownerOf(id), alice);
+        assertEq(reg.balanceOf(alice), 1);
+        assertEq(reg.balanceOf(bob), 0);
+    }
+
+    function test_soulbound_noApprovalExists() public {
+        uint256 id = _alice();
+        assertEq(reg.getApproved(id), address(0));
+        assertFalse(reg.isApprovedForAll(alice, bob));
+        assertFalse(reg.isApprovedForAll(alice, address(0)));
+        assertFalse(reg.isApprovedForAll(address(0), address(0)));
+        // A refused approval leaves no trace.
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
+        reg.approve(bob, id);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
+        reg.setApprovalForAll(bob, true);
+        assertEq(reg.getApproved(id), address(0));
+        assertFalse(reg.isApprovedForAll(alice, bob));
+        // A would-be operator still cannot write the identity.
+        vm.prank(bob);
+        vm.expectRevert(RWAllyAgentRegistry.NotAuthorized.selector);
+        reg.setMetadata(id, "k", hex"01");
+    }
+
+    /// ERC-5192: locked is true for every minted id, from every way of minting, and reverts for an
+    /// id that does not exist, as ownerOf does.
+    function test_locked_trueForEveryMintedId_revertsOtherwise() public {
+        vm.startPrank(alice);
+        uint256 a = reg.register();
+        uint256 b = reg.register("ipfs://b");
+        RWAllyAgentRegistry.MetadataEntry[] memory m = new RWAllyAgentRegistry.MetadataEntry[](0);
+        uint256 c = reg.register("ipfs://c", m);
+        vm.stopPrank();
+        assertTrue(reg.locked(a));
+        assertTrue(reg.locked(b));
+        assertTrue(reg.locked(c));
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721NonexistentToken.selector, c + 1));
+        reg.locked(c + 1);
+    }
+
+    function test_locked_eventEmittedAtEveryRegister() public {
+        vm.startPrank(alice);
+        vm.expectEmit(false, false, false, true, address(reg));
+        emit Locked(0);
+        reg.register();
+        vm.expectEmit(false, false, false, true, address(reg));
+        emit Locked(1);
+        reg.register("ipfs://b");
+        vm.expectEmit(false, false, false, true, address(reg));
+        emit Locked(2);
+        reg.register("ipfs://c", new RWAllyAgentRegistry.MetadataEntry[](0));
+        vm.stopPrank();
+    }
+
+    /// One wallet may hold many identities, and each one is its own.
+    function test_oneWalletMayHoldManyIdentities() public {
+        uint256 n = 20;
+        for (uint256 i; i < n; ++i) {
+            vm.prank(alice);
+            assertEq(reg.register(), i);
+        }
+        assertEq(reg.balanceOf(alice), n);
+        for (uint256 i; i < n; ++i) {
+            assertEq(reg.ownerOf(i), alice);
+            assertTrue(reg.locked(i));
+            assertEq(reg.getAgentWallet(i), alice);
+        }
+        // Identities are independent: writing one touches no other.
+        vm.prank(alice);
+        reg.setAgentURI(7, "ipfs://seven");
+        assertEq(reg.tokenURI(7), "ipfs://seven");
+        assertEq(reg.tokenURI(8), "");
     }
 
     // ── metadata and URI ─────────────────────────────────────────────────────
 
-    function test_setMetadata_ownerOperatorApproved_notStranger_notReservedKey() public {
+    function test_setMetadata_holderOnly_notStranger_notReservedKey() public {
         uint256 id = _alice();
         vm.prank(alice);
         reg.setMetadata(id, "k", hex"01");
         assertEq(reg.getMetadata(id, "k"), hex"01");
-
-        vm.prank(alice);
-        reg.setApprovalForAll(bob, true);
-        vm.prank(bob);
-        reg.setMetadata(id, "k", hex"02");
-        assertEq(reg.getMetadata(id, "k"), hex"02");
-
-        vm.prank(alice);
-        reg.approve(carol, id);
-        vm.prank(carol);
-        reg.setMetadata(id, "k", hex"03");
 
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
@@ -503,33 +560,32 @@ contract RWAllyAgentRegistryTest is Test {
         reg.setMetadata(id, "k", hex"01");
         vm.expectRevert(RWAllyAgentRegistry.NotAuthorized.selector);
         reg.unsetAgentWallet(id);
-        vm.expectRevert(
-            abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InsufficientApproval.selector, multisig, id)
-        );
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         reg.transferFrom(alice, multisig, id);
-        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721InvalidApprover.selector, multisig));
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         reg.approve(multisig, id);
         vm.stopPrank();
         assertEq(reg.ownerOf(id), alice);
         assertEq(reg.tokenURI(id), "ipfs://a");
     }
 
-    /// An unset approval is stored as address(0), so without a guard the zero address would read as
-    /// approved for every identity that has no approval.
-    function test_isAuthorizedOrOwner_zeroAddressIsNeverAuthorized() public {
+    /// Only the holder is authorized. The zero address, which is what getApproved returns, is never
+    /// authorized, and no approval or operator can change that.
+    function test_isAuthorizedOrOwner_holderOnly_zeroAddressIsNeverAuthorized() public {
         uint256 id = _alice();
-        assertEq(reg.getApproved(id), address(0), "precondition: no approval is set");
-        assertFalse(reg.isAuthorizedOrOwner(address(0), id), "address(0) must not read as approved");
-        // The real answers are unchanged.
+        assertEq(reg.getApproved(id), address(0));
+        assertFalse(reg.isAuthorizedOrOwner(address(0), id), "address(0) must not read as authorized");
         assertTrue(reg.isAuthorizedOrOwner(alice, id));
         assertFalse(reg.isAuthorizedOrOwner(bob, id));
+        assertFalse(reg.isAuthorizedOrOwner(multisig, id), "the owner address is not the holder");
         vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         reg.approve(bob, id);
-        assertTrue(reg.isAuthorizedOrOwner(bob, id));
-        assertFalse(reg.isAuthorizedOrOwner(address(0), id));
+        assertFalse(reg.isAuthorizedOrOwner(bob, id));
         vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         reg.setApprovalForAll(carol, true);
-        assertTrue(reg.isAuthorizedOrOwner(carol, id));
+        assertFalse(reg.isAuthorizedOrOwner(carol, id));
         // A nonexistent id still reverts rather than answering false.
         vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.ERC721NonexistentToken.selector, 99));
         reg.isAuthorizedOrOwner(address(0), 99);
@@ -993,7 +1049,7 @@ contract RWAllyAgentRegistryInitTest is RegistryTestBase {
 
     function test_initialize_feeAboveCap_reverts_atCapPasses() public {
         uint256 cap = reg.MAX_FEE();
-        assertEq(cap, 10_000_000, "10 USDC");
+        assertEq(cap, 100_000_000, "100 USDC");
         vm.prank(initializer);
         vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.FeeTooHigh.selector, cap + 1));
         reg.initialize(multisig, address(usdc), treasury, cap + 1, address(0), 0);
@@ -1358,7 +1414,7 @@ contract RWAllyAgentRegistryRefusedTreasuryTest is RegistryTestBase {
         assertEq(token.balanceOf(treasury), 2 * USDC_1);
     }
 
-    function test_refusedTreasury_leavesImportTransfersAndIdentityWritesUnaffected() public {
+    function test_refusedTreasury_leavesImportAndIdentityWritesUnaffected() public {
         vm.prank(alice);
         uint256 id = reg.register();
         _refuseTreasury();
@@ -1370,14 +1426,12 @@ contract RWAllyAgentRegistryRefusedTreasuryTest is RegistryTestBase {
         assertEq(reg.ownerOf(imported), bob);
         assertEq(token.balanceOf(blocked), 0);
 
-        // Transfers, approvals, URI and metadata writes work.
+        // URI and metadata writes work; the identity stays with its holder.
         vm.startPrank(alice);
         reg.setAgentURI(id, "ipfs://new");
         reg.setMetadata(id, "k", hex"01");
-        reg.approve(carol, id);
-        reg.transferFrom(alice, bob, id);
         vm.stopPrank();
-        assertEq(reg.ownerOf(id), bob);
+        assertEq(reg.ownerOf(id), alice);
         assertEq(reg.tokenURI(id), "ipfs://new");
         // The fee token was never asked to move anything to the refused treasury.
         assertEq(token.balanceOf(blocked), 0);
@@ -1537,13 +1591,14 @@ contract RWAllyAgentRegistryImportTest is RegistryTestBase {
         reg.importAgent(7, "");
     }
 
-    /// Selling the outside token on does not sell a second free import of it, and moving the
-    /// imported identity on does not reopen the outside id.
+    /// Selling the outside token on does not sell a second free import of it. The imported identity
+    /// itself cannot be moved on, so the outside id stays claimed.
     function test_import_sameOutsideIdByTheNextOutsideOwner_reverts() public {
         vm.prank(alice);
         uint256 id = reg.importAgent(7, "");
         outside.set(7, bob, bob, address(0)); // the outside token changes hands
         vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         reg.transferFrom(alice, carol, id);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.AlreadyImported.selector, 7));
@@ -1551,7 +1606,7 @@ contract RWAllyAgentRegistryImportTest is RegistryTestBase {
     }
 
     /// The origin record: an import stores (chain id, outside registry, outside id) against the local
-    /// id; a registered identity has none; the record follows the token; one origin mints once, and
+    /// id; a registered identity has none; the record is permanent; one origin mints once, and
     /// the same outside id on another chain or another outside registry is a different origin.
     function test_import_recordsItsOrigin_andOneOriginMintsOnce() public {
         _fund(usdc, reg, bob, USDC_1);
@@ -1570,9 +1625,10 @@ contract RWAllyAgentRegistryImportTest is RegistryTestBase {
         assertEq(a, 7);
 
         vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         reg.transferFrom(alice, carol, id);
         (c, r, a) = reg.originOf(id);
-        assertEq(a, 7, "the origin follows the token");
+        assertEq(a, 7, "the origin stays with the identity");
 
         (bool imported, uint256 local) = reg.localIdOfOrigin(block.chainid, address(outside), 7);
         assertTrue(imported);
@@ -1695,12 +1751,29 @@ contract RWAllyAgentRegistryImportTest is RegistryTestBase {
     function test_import_identityIsAnOrdinaryIdentityAfterwards() public {
         vm.prank(alice);
         uint256 id = reg.importAgent(7, "ipfs://x");
+        assertTrue(reg.locked(id), "an imported identity is soulbound too");
         vm.prank(alice);
         reg.setAgentURI(id, "ipfs://y");
         vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         reg.transferFrom(alice, bob, id);
-        assertEq(reg.ownerOf(id), bob);
-        assertEq(reg.getAgentWallet(id), address(0), "wallet cleared on transfer, as for any identity");
+        assertEq(reg.ownerOf(id), alice);
+        assertEq(reg.getAgentWallet(id), alice, "the wallet is the holder's until the holder re-points it");
+    }
+
+    function test_import_emitsLocked() public {
+        vm.recordLogs();
+        vm.prank(alice);
+        uint256 id = reg.importAgent(7, "");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 seen;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(reg) && logs[i].topics[0] == keccak256("Locked(uint256)")) {
+                assertEq(abi.decode(logs[i].data, (uint256)), id);
+                ++seen;
+            }
+        }
+        assertEq(seen, 1, "exactly one Locked per import");
     }
 }
 
@@ -1746,6 +1819,23 @@ contract RWAllyAgentRegistryCreate2Test is RegistryTestBase {
             vm.parseJsonBytes32(cfg, ".initcodeHash"),
             "initcode changed: regenerate contracts/config/agent-registry-create2.json"
         );
+    }
+
+    /// The recorded cap is the contract's cap.
+    function test_recordedMaxFee_isTheContractCap() public {
+        RWAllyAgentRegistry r = new RWAllyAgentRegistry();
+        assertEq(vm.parseJsonUint(cfg, ".maxFee"), r.MAX_FEE());
+        assertEq(r.MAX_FEE(), 100_000_000, "100 USDC in raw units of a 6-decimal token");
+    }
+
+    /// The salt is mined, not derived from a preimage, so the address starts with 0x1337 only for
+    /// the exact creation code the salt was mined against. Any change to the registry's bytecode, or
+    /// to what it imports, moves the address off the prefix and turns this red until the salt is
+    /// mined again (cast create2 --starts-with 1337).
+    function test_predictedAddress_startsWith0x1337() public view {
+        address predicted = _predict(_salt(), type(RWAllyAgentRegistry).creationCode);
+        assertEq(uint16(uint160(predicted) >> 144), 0x1337, "the registry address must start with 0x1337");
+        assertEq(uint16(uint160(vm.parseJsonAddress(cfg, ".address")) >> 144), 0x1337, "so must the record");
     }
 
     function test_recordedAddress_isTheCreate2AddressOfTheRecordedInputs() public view {

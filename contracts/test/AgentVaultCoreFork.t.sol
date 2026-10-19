@@ -398,13 +398,18 @@ contract AgentVaultCoreForkTest is Test {
         assertEq(vault.totalPendingUsdc(), minDeposit);
     }
 
-    function testFork_P5_agentTransfersItsTokenAwayAfterDepositing() public onFork {
+    /// The identity is soulbound, so it cannot be passed on; a wallet that loses its identity (here by
+    /// answering the vault's balance read with zero) keeps shares, weight and exit.
+    function testFork_P5_agentCannotTransferItsToken_andLosingItKeepsSharesWeightAndExit() public onFork {
         _join(agentA, 2 * minDeposit);
         _join(agentB, 2 * minDeposit);
         uint256 shares = vault.sharesOf(agentA);
         uint256 weight = vault.votingEligibleShares(agentA);
         vm.prank(agentA);
+        vm.expectRevert(RWAllyAgentRegistry.Soulbound.selector);
         idReg.transferFrom(agentA, human, 0);
+        assertEq(idReg.ownerOf(0), agentA);
+        vm.etch(address(idReg), address(new AllowNoneStub()).code); // the identity is gone from the gate's view
 
         assertEq(vault.sharesOf(agentA), shares);
         assertEq(vault.votingEligibleShares(agentA), weight);
@@ -412,7 +417,7 @@ contract AgentVaultCoreForkTest is Test {
         vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
         vault.deposit(minDeposit);
 
-        // The weight still votes: agentA proposes, commits and reveals with no token.
+        // The weight still votes: agentA proposes, commits and reveals with no identity.
         skip(1);
         uint256 pid = _propose(agentA, keccak256(""));
         _commit(pid, agentA, true);

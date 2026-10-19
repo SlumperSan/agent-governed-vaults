@@ -17,6 +17,9 @@ contract ModeRegistry {
     Mode public mode;
     bool public allowAll;
     mapping(address => bool) public held;
+    /// A chosen nonzero balance for an address, returned as is in Normal mode (a wallet may hold
+    /// many identities). Zero means "use `held` / `allowAll`", which answer 1 or 0.
+    mapping(address => uint256) public heldCount;
 
     function setMode(Mode m) external {
         mode = m;
@@ -28,6 +31,10 @@ contract ModeRegistry {
 
     function setHeld(address who, bool h) external {
         held[who] = h;
+    }
+
+    function setHeldCount(address who, uint256 n) external {
+        heldCount[who] = n;
     }
 
     fallback(bytes calldata data) external returns (bytes memory) {
@@ -48,6 +55,8 @@ contract ModeRegistry {
         if (m == Mode.Zero) return abi.encode(uint256(0));
         if (m == Mode.Big) return abi.encode(uint256(1), uint256(1));
         address who = abi.decode(data[4:], (address));
+        uint256 n = heldCount[who];
+        if (n != 0) return abi.encode(n);
         return abi.encode(allowAll || held[who] ? uint256(1) : uint256(0));
     }
 }
