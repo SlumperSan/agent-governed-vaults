@@ -637,7 +637,7 @@ smaller by that much; and NAV moving from trading between a pending deposit and 
 **The capacity trap, and it is wider than "the vault is full".** Restoring the fraction to a gate
 needs a deposit of at least `detail.thresholds[].topUpDeficitUsdc`; `_deposit` rejects anything below
 `minDepositUsdc` (`VaultCore.sol:107`) and anything that pushes `navUsdc + totalPendingUsdc` past
-`capacityCapUsdc` (`_deposit`, `VaultCore.sol:415`). So `detail.noTopUpPath` is true whenever
+`capacityCapUsdc` (`_deposit`, `VaultCore.sol:437`). So `detail.noTopUpPath` is true whenever
 `max(deficit, minDeposit) > cap - committed`, which is the "**the top-up must lead the fill, not
 chase it**" point of no return in `Business/Finance/Operator Capital Requirement.md`, not the much
 later moment the vault reaches its cap. Worked case from that note: cap 50,000, operator 2,000,

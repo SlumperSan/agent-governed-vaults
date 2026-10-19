@@ -324,7 +324,7 @@ export function apply(state, e) {
       // deposit emits the same event with no row behind it and must not touch the count.
       if (pendingMemberSet(state, e.vault).delete(a.member)) v.pendingCount -= 1;
       // The event's third field is NOT a delta. VaultCore emits it as `sharesOf[member]`, the
-      // member's balance AFTER the mint (VaultCore.sol:427 on the immediate path, :478 in
+      // member's balance AFTER the mint (VaultCore.sol:449 on the immediate path, :500 in
       // _activatePending), although the Solidity parameter is named `sharesMinted`. The contract
       // is deployed and immutable, so the consumer reads it as an absolute balance: summing it as
       // a delta double-counts every member's second activation.

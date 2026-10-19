@@ -197,7 +197,7 @@ test('sorts rank on the named signal, and tolerate a missing one', () => {
 test('votingEligibility mirrors votingEligibleShares, including a partial queue', () => {
   // VaultCore.sol:1025-1028 — `if (member == parentVault()) return 0; return sharesOf[member] -
   // queuedExitShares[member]`. `requestExit(shares)` takes any amount up to the balance (a v2-source vault also requires it to leave nothing or at least MIN_POSITION_SHARES)
-  // (VaultCore.sol:545-547), so a partial queue leaves a voting remainder, and a strip that only
+  // (VaultCore.sol:567-569), so a partial queue leaves a voting remainder, and a strip that only
   // knew "queued / not queued" would report that remainder as nothing.
   const partial = votingEligibility({ shares: 100n * WAD, queuedExitShares: 30n * WAD, isParentVault: false });
   assert.equal(partial.eligibleShares, 70n * WAD);

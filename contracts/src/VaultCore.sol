@@ -35,8 +35,8 @@ interface IERC20Metadata {
 ///  - Oracle staleness reverts every NAV-reading path INCLUDING exits (SF-2 / K-4).
 ///  - Shares are non-transferable in Sprint 1 (EE-7).
 ///  - Creator 5% is a withdrawal gate, not a solvency condition (CM-2).
-///  - An exit may not leave its member a nonzero balance under MIN_POSITION_SHARES (exit-fee
-///    share-price ratchet defence); the floor never refuses a remainder of 0 (CM-2, SF-2 still apply).
+///  - MIN_POSITION_SHARES (exit-fee share-price ratchet defence): `_checkPositionFloor` reverts
+///    PositionBelowFloor on the immediate path and at Mode F queue time, not at settleQueuedExit.
 contract VaultCore {
     using SafeTransferLib for address;
     using Checkpoints for Checkpoints.History;
@@ -55,23 +55,23 @@ contract VaultCore {
     uint256 public constant CREATOR_MIN_STAKE_BPS = 500; // 5%
     uint256 public constant EXIT_FEE_CAP_BPS = 100; // 1% protocol cap
 
-    /// @notice Exit-fee share-price ratchet defence. An exit may not leave its member holding a
-    /// nonzero balance below this many share-wei: the remainder is 0 (a full exit, which the floor never refuses)
-    /// or at least this much (`PositionBelowFloor` otherwise). 1e18 share-wei is one share, which is
+    /// @notice Exit-fee share-price ratchet defence. `_checkPositionFloor` reverts `PositionBelowFloor`
+    /// when the exiter's remainder is nonzero and below this many share-wei, on the immediate path
+    /// (`_settleExit`) and at Mode F queue time (`requestExit`); a remainder of 0 or of at least this
+    /// much passes it. It is not repeated at `settleQueuedExit`. 1e18 share-wei is one share, which is
     /// 1 USDC at the 1:1 first mint and 1% of the 100 USDC minimum first deposit of the Arc launch.
     /// WHY. The exit fee stays in the vault, so it accrues to whoever holds the supply. Without a floor
     /// an outsider could burn down to ONE share-wei, cycle a second account through deposit and exit
     /// until that wei was worth tens of USDC, and then a depositor whose mint rounded to a single
-    /// share-wei lost up to a quarter of the deposit. No exit chooses to leave a nonzero balance under
-    /// the floor, so exits do not by themselves drive the supply to dust. With the supply at 1e18 or
-    /// more, a depositor's rounding loss is at most the value of one share-wei: a vault worth N USDC
-    /// prices one share-wei at no more than N * 1e-18 USDC, under one USDC unit for N below 1e12.
-    /// The floor binds the EXITER's own remainder, never the pool's, so other members' holdings never
-    /// make the floor refuse an exit (the creator gate is separate). A balance under the floor can
-    /// exist only from a mint: a deposit worth less than one share at the current share price
-    /// (reachable only when one share is worth more than the minimum deposit, or the minimum deposit is
-    /// under one share), or a top-up after a full exit was queued. It can only be left in full and
-    /// never makes the floor refuse another member's exit.
+    /// share-wei lost up to a quarter of the deposit. With the supply at 1e18 or more, a depositor's
+    /// rounding loss is at most the value of one share-wei: a vault worth N USDC prices one share-wei
+    /// at no more than N * 1e-18 USDC, under one USDC unit for N below 1e12.
+    /// The check reads the exiter's own remainder only, not other members' balances or the total
+    /// supply. Separate paths: the creator gate (`_checkCreatorGate`), the stale-oracle revert, and the
+    /// sub-vault unwind (`_redeemChildMeasured` calls `child.requestExit`, so the child's check runs
+    /// with the parent as exiter; `allowSubVaults` is false at launch). A balance under the floor comes
+    /// from a mint (a deposit worth less than one share at the current share price, or a top-up after a
+    /// full exit was queued); an exit of it that leaves a nonzero remainder reverts.
     uint256 public constant MIN_POSITION_SHARES = 1e18;
 
     /// @dev H-4: the maximum value a single rebalance leg may give up against the vault's own
@@ -235,7 +235,7 @@ contract VaultCore {
     error TooManyChildren();
     error ChildSettlementPending();
     error ExitNeedsChildSettlement();
-    error PositionBelowFloor(); // an exit may not leave a nonzero balance under MIN_POSITION_SHARES
+    error PositionBelowFloor(); // remainder nonzero and below MIN_POSITION_SHARES (immediate path, Mode F queue time)
 
     // ─────────────────────────────── constructor ──────────────────────────────
 

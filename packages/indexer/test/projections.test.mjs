@@ -410,7 +410,7 @@ test('an ExitQueued with no amount records the lock as unknown, never as zero', 
 });
 
 test('DepositActivated carries the post-mint balance: a second activation sets, never adds', () => {
-  // VaultCore emits sharesOf[member] (VaultCore.sol:427, :478), not the shares minted. Member A
+  // VaultCore emits sharesOf[member] (VaultCore.sol:449, :500), not the shares minted. Member A
   // activates for 100 shares, then deposits again and mints 40 more: the second event carries 140.
   const s = applyAll([
     ev('DepositActivated', 1, 0, V, { member: A, amountUsdc: 100n, sharesMinted: 100n }),

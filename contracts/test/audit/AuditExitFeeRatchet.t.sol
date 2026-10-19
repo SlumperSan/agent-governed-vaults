@@ -35,13 +35,12 @@ contract RatchetPerfFeeEngine is IFeeEngine {
 /// share-wei and A takes half of the vault on exit: V loses up to a quarter of the deposit
 /// (190 USDC victim: 46.59 USDC lost, 15 cycles, about 0.03 USDC of gas).
 ///
-/// THE FIX. `_settleExit` (and the Mode F queue branch of `requestExit`) refuse an exit that would leave
-/// the EXITER holding a nonzero balance below `MIN_POSITION_SHARES` (1e18 share-wei, one share at the
-/// 1:1 first mint). The floor is on the exiter's own remainder, not on the pool, so the floor never
-/// refuses a full exit (a remainder of 0), whatever other members hold; the creator gate and the
-/// oracle breaker are separate gates. No exit chooses to leave a sub-floor balance, so exits do not by
-/// themselves drive the supply to one share-wei. A sub-floor balance can still come from a mint,
-/// including a top-up after a full exit was queued, and it can only be left in full.
+/// THE FIX. `_checkPositionFloor` (called from `_settleExit` on the immediate path and from the Mode F
+/// queue branch of `requestExit`) reverts `PositionBelowFloor` when the EXITER's remainder is nonzero
+/// and below `MIN_POSITION_SHARES` (1e18 share-wei, one share at the 1:1 first mint). It reads the
+/// exiter's own remainder, not the pool, and is not repeated at `settleQueuedExit`. The creator gate,
+/// the stale-oracle revert and the sub-vault unwind (`child.requestExit` with the parent as the exiter;
+/// `allowSubVaults` is false at launch) are separate paths and are not exercised here.
 ///
 /// This file drives the real VaultCore with the Arc launch parameters from
 /// `contracts/config/arc-mainnet.json` (capacityCapUsdc 0, minDepositUsdc 100 USDC, exitFeeMaxBps 50,
@@ -270,7 +269,7 @@ contract AuditExitFeeRatchet is Test {
         assertLe(loss, 1, "victim loses at most one unit");
 
         // The victim's position (about half a share) is itself below the floor, and A sits on it.
-        // The floor refuses neither: each leaves in full, in either order, whatever the other holds.
+        // Both exits leave a remainder of 0, so the floor check passes for each, in either order.
         assertLt(sharesV, FLOOR, "the victim's position is below the floor");
         uint256 snap = vm.snapshotState();
         _exitAll(A); // A first: V's sub-floor position stays behind, and A is not blocked by it
@@ -298,7 +297,7 @@ contract AuditExitFeeRatchet is Test {
         vm.stopPrank();
         assertEq(vault.sharesOf(A), FLOOR);
 
-        // the position that sits on the floor can leave only in full
+        // a partial burn of the position that sits on the floor leaves a remainder below it
         vm.startPrank(A);
         vm.expectRevert(FLOOR_ERR);
         vault.requestExit(1);
@@ -316,10 +315,10 @@ contract AuditExitFeeRatchet is Test {
         assertEq(vault.totalShares(), 0);
     }
 
-    /// The floor is on the exiter's own remainder, so what others hold never makes the floor refuse an exit.
+    /// The floor check reads the exiter's own remainder, not the pool.
     /// Min deposit 1 unit lets a position below the floor exist: D holds 1e12 share-wei next to a
     /// large holder C. C exits in full (the pool is left at D's dust); D exits in full. A burn that
-    /// would leave a sub-floor remainder of one's OWN is the only shape the floor refuses.
+    /// would leave a nonzero remainder below the floor reverts `PositionBelowFloor`.
     function test_noMemberIsTrappedByAnotherMembersDust() public {
         VaultCore v = _deployVault(1);
         _approveAll(v);
@@ -337,7 +336,7 @@ contract AuditExitFeeRatchet is Test {
         assertGt(dust, 0);
         assertLt(dust, FLOOR, "B holds a sub-floor position");
 
-        // B cannot trim its own sub-floor position, only leave in full
+        // a partial burn of B's sub-floor position reverts; a full burn passes
         vm.startPrank(B);
         if (dust > 1) {
             vm.expectRevert(FLOOR_ERR);
@@ -349,7 +348,7 @@ contract AuditExitFeeRatchet is Test {
         uint256 aShares = v.sharesOf(A);
         vm.prank(A);
         v.requestExit(aShares);
-        assertEq(v.sharesOf(A), 0, "floor refuses no full exit over a dust peer");
+        assertEq(v.sharesOf(A), 0, "full exit passes the floor check with a dust peer");
         assertEq(v.totalShares(), dust);
 
         // and the dust holder, now sole holder, leaves in full
@@ -358,8 +357,8 @@ contract AuditExitFeeRatchet is Test {
         assertEq(v.totalShares(), 0);
     }
 
-    /// An outsider-free vault whose creator is the only holder (the live Arc vault's likely first
-    /// state): the creator cannot burn its seed down to dust either.
+    /// A vault whose creator is the only holder: a creator burn that leaves a nonzero remainder below
+    /// the floor reverts `PositionBelowFloor`.
     function test_creatorSoleHolderCannotTrimToDust() public {
         usdc.mint(creator, 100 * U);
         vm.startPrank(creator);
@@ -377,7 +376,7 @@ contract AuditExitFeeRatchet is Test {
     // ───────────────────────── Mode F (queued exits) ─────────────────────────
 
     /// A trim queued while an execution is pending is refused at QUEUE time (like the creator gate,
-    /// L-1): a refused queue cannot strand an irrevocable queued exit that would revert at settle.
+    /// L-1): a refused queue leaves nothing queued, so there is no queued exit left to revert at settle.
     /// Red on the unfixed contract (the queue lands and the settle burns to one share-wei).
     function test_modeFQueuedTrimIsRefusedAtQueueTime() public {
         _aOpens(100 * U);
@@ -437,9 +436,9 @@ contract AuditExitFeeRatchet is Test {
         assertEq(v.totalShares(), 0);
     }
 
-    /// The same property in Mode F (the floor never refuses a full exit): a large holder queues a FULL
-    /// exit although a dust peer (a position below the floor) remains, and it settles. Pins that the queue-time check reads the
-    /// exiter's own remainder, not the pool's.
+    /// The same in Mode F: a large holder queues a FULL exit (remainder 0) while a dust peer (a position
+    /// below the floor) remains, and it settles. Pins that the queue-time check reads the exiter's own
+    /// remainder, not the pool's.
     function test_modeFQueuedFullExitIsNotTrappedByADustPeer() public {
         VaultCore v = _deployVault(1);
         _approveAll(v);
@@ -466,10 +465,10 @@ contract AuditExitFeeRatchet is Test {
         assertEq(v.totalShares(), dust);
     }
 
-    // ───────────────────── fuzz: no immediate exit leaves a dust position ─────────────────────
+    // ───────────────── fuzz: remainder of an immediate exit is 0, at least the floor, or reverts ─────────────────
 
-    /// For every burn size of an immediate (Mode I) exit: the exit either lands and leaves the exiter at 0 or at least the floor,
-    /// or reverts with `PositionBelowFloor` and the remainder it would have left was in (0, floor).
+    /// For every burn size of an immediate (Mode I) exit: it either lands with the exiter at 0 or at least
+    /// the floor, or reverts with `PositionBelowFloor` and the remainder it would have left was in (0, floor).
     function testFuzz_noExitLeavesADustPosition(uint256 burn) public {
         _aOpens(100 * U);
         uint256 held = vault.sharesOf(A);
@@ -480,7 +479,7 @@ contract AuditExitFeeRatchet is Test {
             assertTrue(left == 0 || left >= FLOOR, "a dust position survived an exit");
             assertEq(vault.sharesOf(A), left);
         } catch (bytes memory err) {
-            assertEq(bytes4(err), FLOOR_ERR, "only the floor refuses this exit");
+            assertEq(bytes4(err), FLOOR_ERR, "the revert is the floor's");
             assertTrue(left > 0 && left < FLOOR, "refused although the remainder was fine");
             assertEq(vault.sharesOf(A), held);
         }

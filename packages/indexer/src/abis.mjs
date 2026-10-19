@@ -83,7 +83,7 @@ export const CONTRACT_ABIS = Object.freeze({
   ],
   vault: [
     // The third field keeps the contract's own parameter name (`sharesMinted`), but VaultCore emits
-    // `sharesOf[member]`, the balance AFTER the mint (VaultCore.sol:427 and :478), not the amount
+    // `sharesOf[member]`, the balance AFTER the mint (VaultCore.sol:449 and :500), not the amount
     // minted. projections.mjs sets the member's balance to it; never sum it.
     ev('DepositActivated', [addr('member', true), u256('amountUsdc'), u256('sharesMinted')]),
     ev('DepositPending', [addr('member', true), u256('amountUsdc'), { name: 'availableAt', type: 'uint64', indexed: false }]),

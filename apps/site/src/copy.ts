@@ -26,7 +26,7 @@
  *     sole recipient of the performance fee, so a wide claim is falsifiable in one transaction.
  *   - "Stake-weighted" is only true at five or more members, so it is not used here.
  *   - EXITS CANNOT BE VETOED, AND THEY CAN BE DELAYED. Never write that an exit is unconditional,
- *     instant, or that nothing can queue it. `VaultCore.sol:538` names the case in its own NatSpec:
+ *     instant, or that nothing can queue it. `VaultCore.sol:560` names the case in its own NatSpec:
  *     "Mode F — a pending execution exists => queued, settles at post-execution NAV", triggered from
  *     the reveal phase, so a proposal that is ultimately DEFEATED still queued every exit requested
  *     while it was live. A stale feed freezes exits too, and that freeze lifts only when the feed

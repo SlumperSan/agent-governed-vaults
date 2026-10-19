@@ -56,8 +56,8 @@ export const VAULT_VIEWS = Object.freeze([
   view('queuedExitShares', ['address'], ['uint256']),
   view('costBasisUsdc', ['address'], ['uint256']),
   // Contract tab Row 6b (#182): a member's per-token escrowed claim — `mapping(address => mapping
-  // (address => uint256)) public claimable` (VaultCore.sol:138), paid out via `claimEscrowed`
-  // (VaultCore.sol:1016). Read per (member, asset); the row's existence on the tab IS the read, so
+  // (address => uint256)) public claimable` (VaultCore.sol:159), paid out via `claimEscrowed`
+  // (VaultCore.sol:1051). Read per (member, asset); the row's existence on the tab IS the read, so
   // there is no static half to fall back on — see apps/web/src/chain-reader.mjs's
   // `planClaimableEscrow`/`assembleClaimableEscrow`.
   view('claimable', ['address', 'address'], ['uint256']),
@@ -74,12 +74,12 @@ export const VAULT_VIEWS = Object.freeze([
   view('governance', [], ['address']),
   // The five reads apps/web/src/wallet-refusals.mjs and apps/web/src/deposit-status.mjs need to
   // classify a signature as safe/refused/irrevocable before the member wallet UI asks for one
-  // (VaultCore.sol:107,110-115,117,87-88,1073). `pendingDeposit` is a public mapping of a struct,
+  // (VaultCore.sol:107,131-136,138,108-109,1108). `pendingDeposit` is a public mapping of a struct,
   // so Solidity's auto-getter returns the tuple `(amountUsdc, availableAt)` in DECLARATION order —
   // matching that order here is load-bearing, not cosmetic.
   view('pendingDeposit', ['address'], [{ name: 'amountUsdc', type: 'uint256' }, { name: 'availableAt', type: 'uint64' }]),
-  // "addresses with shares > 0, creator included" (VaultCore.sol:128) vs. the same count with the
-  // creator excluded (VaultCore.sol:107) — the contract tracks both, atomically, as two separate
+  // "addresses with shares > 0, creator included" (VaultCore.sol:149) vs. the same count with the
+  // creator excluded (VaultCore.sol:128) — the contract tracks both, atomically, as two separate
   // counters. Card 210's seeded-disclosure organic-bound math reads the second, never derives it
   // from the first: whether the creator itself currently holds shares is not otherwise knowable
   // from a read this module can make.
@@ -89,7 +89,7 @@ export const VAULT_VIEWS = Object.freeze([
   view('exitFeeMaxBps', [], ['uint256']),
   view('exitFeeDecayPeriod', [], ['uint256']),
   view('capacityCapUsdc', [], ['uint256']),
-  // `_deposit` requires `amountUsdc >= minDepositUsdc` (`_deposit`, VaultCore.sol:409) BEFORE it checks the
+  // `_deposit` requires `amountUsdc >= minDepositUsdc` (`_deposit`, VaultCore.sol:431) BEFORE it checks the
   // capacity cap, so a vault with less cap headroom than one minimum deposit accepts no deposit at
   // all even though `committed < cap`. Without this read the "no top-up path" determination is
   // strictly narrower than the lockout it exists to name (Review115 F2a).
@@ -98,10 +98,10 @@ export const VAULT_VIEWS = Object.freeze([
   // VOTING-ELIGIBLE stake, which is what `Governance.propose` actually gates on: it reads
   // `pastVotingEligibleShares` / `pastTotalVotingEligibleShares` at `createdAt - 1`
   // (`propose`, Governance.sol:324-325), NOT the raw share book. Eligible = `sharesOf - queuedExitShares`,
-  // and a registered parent vault always reads 0 (`_snapshot`, VaultCore.sol:519). The live views below are
+  // and a registered parent vault always reads 0 (`_snapshot`, VaultCore.sol:541). The live views below are
   // the present-tense form of the same quantity — the canary measures "could the operator propose
   // right now", so it wants now, not a historical checkpoint. A queued Mode-F exit removes weight
-  // IMMEDIATELY (`_snapshot`, VaultCore.sol:519), which is exactly the divergence from `sharesOf` that made
+  // IMMEDIATELY (`_snapshot`, VaultCore.sol:541), which is exactly the divergence from `sharesOf` that made
   // the raw-book reading of this gate wrong (Review115 F1).
   view('votingEligibleShares', ['address'], ['uint256']),
   view('totalVotingEligibleShares', [], ['uint256']),
@@ -370,7 +370,7 @@ export const GOVERNANCE_VIEWS = Object.freeze([
   view('revealedOf', ['uint256', 'address'], ['bool']),
   view('revealedSupportOf', ['uint256', 'address'], ['bool']),
   // Governance's OWN verdict on whether a vault has a pending execution (Governance.sol:736) —
-  // the fact `VaultCore.requestExit` (VaultCore.sol:551-567) branches on to decide Mode I
+  // the fact `VaultCore.requestExit` (VaultCore.sol:575-591) branches on to decide Mode I
   // (instant settlement, this transaction) vs Mode F (queues, irrevocable, settles later at
   // whatever NAV holds once the pending proposal resolves). apps/vaults-ui reads this directly
   // rather than reconstructing it from proposal deadlines client-side (governance.mjs's
