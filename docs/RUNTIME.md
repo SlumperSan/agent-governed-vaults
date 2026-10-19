@@ -726,6 +726,22 @@ rather than poisoning the rest.
    # Bare metal (Linux/macOS, or Windows via WSL2)
    node packages/indexer/src/index-runner.mjs verify ./data/indexer-state.json
    ```
+   **A rung is restorable only if `verify` prints it with a `lastBlock`.** A rung printed
+   `UNREADABLE` fails to load for the reason printed beside it, and copying it into place changes
+   nothing. Read that reason, because it separates two cases that call for different recoveries:
+
+   - **The bytes of one file are bad** (a truncated or unparseable file). The ring holds copies
+     made at different times, so an older rung can still verify. Pick the newest rung that does.
+   - **The build that wrote the file is the problem**: `snapshot predates the pendingMembers set`
+     or `unsupported snapshot version`. For the first, the loader refuses any file that has indexed
+     something (`lastBlock` above 0) and lacks the `pendingMembers` field. Each rung is a copy of the
+     live file, so every rung copied before the current build first wrote a snapshot carries the same
+     gap and is refused with the same message, and restoring it fails identically. An indexer that
+     refuses its snapshot at startup exits and writes nothing, so no newer rung appears while it is
+     down. If no rung prints a `lastBlock`, go to *If every backup is bad* below.
+
+   That refusal tests whether the field is present, not whether its contents are consistent, so a
+   file that carries the field is not refused on this ground.
 3. **Keep the bad file.** It is the only evidence of what went wrong, and it is what the ring is
    about to overwrite.
    ```bash
@@ -738,7 +754,9 @@ rather than poisoning the rest.
    ```
    The `.bad-<epoch>` suffix is deliberate: `listBackups` only walks `.1`…`.N`, so the evidence file
    never consumes a ring slot.
-4. **Put the backup in place**: copy, do not move, so the ring stays intact if step 5 fails.
+4. **Put the backup in place**: copy, do not move, so the ring stays intact if step 5 fails. The
+   commands below name `.1`, which is the right rung when step 2 printed `.1` with a `lastBlock`;
+   if the rung you picked is `.2` or `.3`, use that number in both places.
    ```bash
    # Docker (Compose)
    docker compose run --rm --no-deps indexer cp /data/indexer-state.json.1 /data/indexer-state.json
@@ -771,8 +789,9 @@ rather than poisoning the rest.
    then `indexed [<lastBlock+1>..…]` closing the gap. No bare-metal-Windows path exists for this
    step either, for the same reason as step 1: see above.
 
-> **If every backup is bad**, delete the snapshot and set `START_BLOCK` to the **factory deploy
-> block**. The indexer rebuilds from chain history: slow, never wrong. Do **not** set a later
+> **If every backup is bad** (including when step 2 showed that every rung is refused for the same
+> schema reason), move the live snapshot aside as in step 3 so nothing sits at `STATE_PATH`, and
+> set `START_BLOCK` to the **factory deploy block**. The indexer rebuilds from chain history: slow, never wrong. Do **not** set a later
 > block to save time: vaults created before `START_BLOCK` are never discovered and their events go
 > unindexed forever. The indexer warns loudly when you do this on a fresh snapshot.
 
@@ -1027,8 +1046,8 @@ absence there as a signal of anything.
 | `ops-check` says **missing** | never started, or wrong `HEARTBEAT_DIR` | Confirm the service is up at all, then that `HEARTBEAT_DIR` (or `dirname(STATE_PATH)`) matches what you passed `--dir`. |
 | `ops-check` says **future** | clock skew between checker and service | Fix NTP on the host. Do not raise the threshold: a wrong clock also corrupts every `ts` in the logs. |
 | `vault_indexer_snapshot_age_seconds` climbing | indexer stopped or is stuck on the RPC | `ops-check` the indexer; check its logs for `poll.failed`. The API keeps serving the last good block, correctly and staleley: it is not the broken piece. |
-| API logs `snapshot.reload_failed` | torn, corrupt, or version-mismatched snapshot | The API is serving **stale-but-valid** state: no torn read reaches a client. `verify` the snapshot (§8.3); if it is bad, restore and restart the indexer. The API picks the fix up on its next reload with no restart. |
-| `verify` says snapshot **UNUSABLE** | bad write, or a schema change | Restore from `.1` per §8.3. Keep the bad file. |
+| API logs `snapshot.reload_failed` | torn, corrupt, or schema-refused snapshot (the `error` field says which) | The API is serving **stale-but-valid** state: no torn read reaches a client. `verify` the snapshot (§8.3); if it is bad and a rung verifies, restore that rung and restart the indexer. If every rung is refused for the same schema reason, restoring cannot help: see *If every backup is bad* in §8.3. The API picks a fix up on its next reload with no restart. |
+| `verify` says snapshot **UNUSABLE** | bad write (the bytes of that file), or a schema refusal such as `snapshot predates the pendingMembers set` | Read the error and the rung list. Bad write: restore the newest rung that `verify` prints with a `lastBlock` (usually `.1`) per §8.3, and keep the bad file. Schema refusal: every rung written by that build is refused the same way, so restoring one fails identically; rebuild from the factory deploy block per *If every backup is bad* in §8.3. |
 | Every backup is unreadable | disk or filesystem fault | Delete the snapshot, set `START_BLOCK` to the **factory deploy block**, let it rebuild from chain history. Then check the disk: this should not happen. |
 | API returning 429s to your own front end | one shared IP behind a proxy | Set `TRUST_PROXY=1` **iff** a reverse proxy overwrites `x-forwarded-for`; otherwise raise `RATE_LIMIT_BURST`. Never set `TRUST_PROXY` on a directly-reachable API (§8.4). |
 | `/metrics` returning 429 mid-incident | your own `curl`s share the scraper's bucket | Wait one refill, or raise `RATE_LIMIT_BURST`. `ops-check` and `verify` read files, not HTTP, so they keep working when the API will not answer you (§8.5). |
