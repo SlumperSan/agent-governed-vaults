@@ -36,7 +36,7 @@ interface IERC20Metadata {
 ///  - Shares are non-transferable in Sprint 1 (EE-7).
 ///  - Creator 5% is a withdrawal gate, not a solvency condition (CM-2).
 ///  - An exit may not leave its member a nonzero balance under MIN_POSITION_SHARES (exit-fee
-///    share-price ratchet defence); a full exit is always allowed.
+///    share-price ratchet defence); the floor never refuses a remainder of 0 (CM-2, SF-2 still apply).
 contract VaultCore {
     using SafeTransferLib for address;
     using Checkpoints for Checkpoints.History;
@@ -56,7 +56,7 @@ contract VaultCore {
     uint256 public constant EXIT_FEE_CAP_BPS = 100; // 1% protocol cap
 
     /// @notice Exit-fee share-price ratchet defence. An exit may not leave its member holding a
-    /// nonzero balance below this many share-wei: the remainder is 0 (a full exit, always allowed)
+    /// nonzero balance below this many share-wei: the remainder is 0 (a full exit, which the floor never refuses)
     /// or at least this much (`PositionBelowFloor` otherwise). 1e18 share-wei is one share, which is
     /// 1 USDC at the 1:1 first mint and 1% of the 100 USDC minimum first deposit of the Arc launch.
     /// WHY. The exit fee stays in the vault, so it accrues to whoever holds the supply. Without a
@@ -67,11 +67,11 @@ contract VaultCore {
     /// loss is at most the value of one share-wei, which is NAV / totalShares: with the supply at 1e18
     /// or more, a vault worth N USDC prices one share-wei at no more than N * 1e-18 USDC, which is
     /// under one USDC unit (1e-6) for any N below 1e12.
-    /// The floor binds the EXITER's own remainder, never the pool's, so no member can be trapped by
-    /// what other members hold. A balance under the floor can only come from a mint of a deposit worth
-    /// less than one share at the current share price (reachable only when one share is worth more than
-    /// the minimum deposit, or when the minimum deposit is itself under one share); it cannot be
-    /// trimmed, only left in full, and a holder of one cannot block anyone else's exit.
+    /// The floor binds the EXITER's own remainder, never the pool's, so other members' holdings never
+    /// make the floor refuse an exit (the creator gate is separate). A balance under the floor can only
+    /// come from a mint of a deposit worth less than one share at the current share price (reachable
+    /// only when one share is worth more than the minimum deposit, or the minimum deposit is under one
+    /// share); it can only be left in full, and never makes the floor refuse another member's exit.
     uint256 public constant MIN_POSITION_SHARES = 1e18;
 
     /// @dev H-4: the maximum value a single rebalance leg may give up against the vault's own

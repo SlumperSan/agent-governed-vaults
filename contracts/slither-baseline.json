@@ -123,7 +123,7 @@
     },
     "incorrect-equality::VaultCore._checkPositionFloor": {
       "count": 1,
-      "reason": "Safe -- the one flagged == is `remaining == 0` on a share count (the exit-fee ratchet floor: a remainder of zero is a full exit, which is always allowed), never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+      "reason": "Safe -- the one flagged == is `remaining == 0` on a share count (the exit-fee ratchet floor: a remainder of zero is a full exit, which the floor never refuses), never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
     },
     "incorrect-equality::VaultCore._mintShares": {
       "count": 1,
