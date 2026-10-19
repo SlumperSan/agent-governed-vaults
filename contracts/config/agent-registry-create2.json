@@ -4,8 +4,8 @@
   "factoryName": "Arachnid deterministic deployment proxy",
   "saltPreimage": "RWAllyAgentRegistry/1",
   "salt": "0x7ee784812b3f52a3e28b55d93fe2afe3701c746e33375df17d10115f140aedd4",
-  "initcodeHash": "0xcfba786782ae3fd2988638939104e656d37d4985ed305b769dd3619e890557c6",
-  "address": "0x19b56d4e3B8ad90c4eF862dB2Ca4f2A3D508834d",
+  "initcodeHash": "0xc89a8fc96113fca5d5b1c2c4e3aa29aaf7cc5758788a9b9066d9c4996a46594c",
+  "address": "0x86cF2AeE49f918FFAFeCf0f04D15Ea10661d98A4",
   "initializer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
   "initializerNote": "The owner-held protocol deployer key, used for initialize only through the owner's sign queue. It is the INITIALIZER constant in the contract; a unit test asserts the two are equal and equal to the deployer in deployments/arc-mainnet.json. If the key is lost, no new chain can be initialized at this address and chains already initialized are unaffected.",
   "maxFee": 10000000,
@@ -59,5 +59,5 @@
       }
     }
   },
-  "reproduce": "The address is a function of the exact creation code, so it holds only for this source built with solc 0.8.26, via_ir, optimizer_runs 800, evm_version cancun. From contracts/: forge build; node -e \"process.stdout.write(require('./out/RWAllyAgentRegistry.sol/RWAllyAgentRegistry.json').bytecode.object)\" | xargs cast keccak gives initcodeHash; cast create2 --deployer <factory> --salt <salt> --init-code-hash <initcodeHash> gives address. The unit test RWAllyAgentRegistryCreate2Test fails if either value drifts from the build."
+  "reproduce": "The address is a function of the exact creation code, so it holds only for this source built with solc 0.8.26, via_ir, optimizer_runs 800, evm_version cancun, bytecode_hash none, cbor_metadata false (the repo's contracts/foundry.toml). From contracts/: forge build; node -e \"process.stdout.write(require('./out/RWAllyAgentRegistry.sol/RWAllyAgentRegistry.json').bytecode.object)\" | xargs cast keccak gives initcodeHash; cast create2 --deployer <factory> --salt <salt> --init-code-hash <initcodeHash> gives address. The unit test RWAllyAgentRegistryCreate2Test fails if either value drifts from the build."
 }

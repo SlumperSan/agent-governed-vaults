@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {Test, Vm} from "forge-std/Test.sol";
 import {RWAllyAgentRegistry, IERC721Receiver} from "../src/RWAllyAgentRegistry.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 import {MockERC20} from "./mocks/Mocks.sol";
 
 contract GoodReceiver is IERC721Receiver {
@@ -1817,6 +1818,13 @@ contract RWAllyAgentRegistryCreate2Test is RegistryTestBase {
     function test_initializerConstant_equalsTheRecordedInitializer() public {
         RWAllyAgentRegistry r = new RWAllyAgentRegistry();
         assertEq(r.INITIALIZER(), vm.parseJsonAddress(cfg, ".initializer"));
+    }
+
+    /// The registry's one-shot gate is the protocol-wide constant, as the singletons' is, not a
+    /// separate literal that could drift from it.
+    function test_initializerConstant_isTheProtocolInitializer() public {
+        RWAllyAgentRegistry r = new RWAllyAgentRegistry();
+        assertEq(r.INITIALIZER(), PROTOCOL_INITIALIZER);
     }
 
     /// The initializer is the owner-held protocol deployer key, the same address the Arc deployment

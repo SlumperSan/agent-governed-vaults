@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {BoundedCall} from "./lib/BoundedCall.sol";
+import {PROTOCOL_INITIALIZER} from "./lib/ProtocolInitializer.sol";
 
 interface IERC721Receiver {
     function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data)
@@ -164,10 +165,11 @@ contract RWAllyAgentRegistry {
     string public constant name = "AgentIdentity";
     string public constant symbol = "AGENT";
 
-    /// @notice The only address that can call `initialize`, once: the owner-held protocol deployer
-    /// key, used only through the owner's sign queue (recorded in
+    /// @notice The only address that can call `initialize`, once: the protocol-wide
+    /// {PROTOCOL_INITIALIZER}, the owner-held deployer key used only through the owner's sign queue
+    /// and the same constant that gates the protocol singletons (recorded in
     /// `contracts/config/agent-registry-create2.json`).
-    address public constant INITIALIZER = 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35;
+    address public constant INITIALIZER = PROTOCOL_INITIALIZER;
     /// @notice Hard cap on the registration fee: 10 USDC in raw units of a 6-decimal token.
     uint256 public constant MAX_FEE = 10_000_000;
     /// @notice How long after `initialize` the free import window stays open.

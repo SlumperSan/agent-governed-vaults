@@ -14,6 +14,7 @@ import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle, StubGovernance, StubFeeEngine, StubRegistry} from "./mocks/Mocks.sol";
 import {ModeRegistry} from "./mocks/RegistryMocks.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
 /// The deposit gate and the ungated exits of AgentVaultCore, against a registry whose answer the
 /// test controls. Every hostile answer must block a deposit and nothing else.
@@ -570,6 +571,7 @@ contract AgentVaultCoreUnattestedTest is Test {
         oracle.setPrice(address(wbtcLike), 100_000e18);
         opRegistry = new OperatorRegistry();
         feeEngine = new FeeEngine(IRegistryView(address(opRegistry)));
+        vm.prank(PROTOCOL_INITIALIZER);
         opRegistry.wire(makeAddr("some factory"), address(feeEngine));
         governance = new Governance();
         idReg = new ModeRegistry();
