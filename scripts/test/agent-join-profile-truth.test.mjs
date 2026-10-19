@@ -43,6 +43,16 @@ test('Governance.finalize: below five a proposal passes on a head majority with 
   assert.match(body, /quorumOk = headMajorityWithStake \|\| forStakeMajority;/);
 });
 
+test('Governance.finalize: meeting quorum is not passing, FOR weight must also exceed AGAINST weight, and the docs say so instead of "passes on" the quorum branches', () => {
+  assert.match(finalizeBody(), /if \(quorumOk && p\.forWeight > p\.againstWeight\) \{\s*p\.status = Status\.Passed;/);
+  const flat = reference.replace(/\s+/g, ' ');
+  const at = flat.indexOf('**The risk you accept.**');
+  assert.ok(at > 0, 'the risk paragraph is missing');
+  const risk = flat.slice(at, flat.indexOf('**What the track record can and cannot say.**', at));
+  assert.match(risk, /Quorum is met on a strict majority of the members at creation revealing with the FOR stake clearing the quorum share, or on FOR stake above half of the snapshot, and a proposal that meets quorum passes only when its FOR weight is above its AGAINST weight/);
+  assert.doesNotMatch(risk, /it passes on/, 'the two sub-five branches decide quorum only; at the live quorumBps (2500) branch 1 can be met and the proposal still lose on FOR against AGAINST');
+});
+
 test('Governance.finalize: a RuleChange needs every unit of snapshot stake revealed, all of it FOR', () => {
   const body = finalizeBody();
   assert.match(body, /if \(p\.ptype == ProposalType\.RuleChange\) \{/);

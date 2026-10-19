@@ -50,8 +50,9 @@ export function asBigInt(v) {
  * both print. The Governance facts behind it, read from contracts/src/Governance.sol:
  *
  *  - `finalize` takes the sub-five branch when `p.memberCount < SIGNER_REGIME_BELOW` (5): the proposal
- *    passes on a strict majority of members-at-creation revealing with the FOR stake clearing quorum
- *    (`headMajorityWithStake`), OR on FOR stake above half of the snapshot (`forStakeMajority`).
+ *    meets quorum on a strict majority of members-at-creation revealing with the FOR stake clearing
+ *    quorum (`headMajorityWithStake`), OR on FOR stake above half of the snapshot (`forStakeMajority`);
+ *    a proposal that meets quorum still passes only when `p.forWeight > p.againstWeight`.
  *  - A holder who is alone holds all of the snapshot, so its FOR reveal alone clears `forStakeMajority`.
  *  - A RuleChange passes only when `revealedWeight == snapshotTotal && forWeight >= snapshotTotal`: every
  *    unit of eligible stake must self-reveal, and all of it in favour.

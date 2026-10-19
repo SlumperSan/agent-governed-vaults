@@ -167,10 +167,11 @@ There is one named, opt-in override. Set `policy.join.profile` to `"unproven-ope
 
 **The risk you accept.** Read from `Governance.finalize`. Below five holders
 (`SIGNER_REGIME_BELOW`), whether a Rebalance passes depends on stake and on how many addresses
-vote: it passes on a strict majority of the members at creation revealing with the FOR stake
-clearing quorum, or on FOR stake above half of the snapshot. A depositor who is alone holds all of
-that stake, so it holds more than half of eligible stake, and whoever joins first holds the deciding
-vote on Rebalance proposals. A RuleChange needs every unit of eligible stake to reveal in favour, so
+vote. Quorum is met on a strict majority of the members at creation revealing with the FOR stake
+clearing the quorum share, or on FOR stake above half of the snapshot, and a proposal that meets
+quorum passes only when its FOR weight is above its AGAINST weight. A depositor who is alone holds
+all of that stake, so it holds more than half of eligible stake, and whoever joins first holds the
+deciding vote on Rebalance proposals. A RuleChange needs every unit of eligible stake to reveal in favour, so
 one holder who does not reveal blocks it. On 2026-10-18 the first Arc vault had no holders, so a
 first deposit there is that position.
 
