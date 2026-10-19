@@ -155,7 +155,7 @@ There is one named, opt-in override. Set `policy.join.profile` to `"unproven-ope
 `--profile=unproven-operator`) and the agent:
 
 - sets `requireProvenOperator` to `false`, so an operator with no realizations can be joined;
-- deposits exactly the vault's own `minDepositUsdc` (100 USDC on the first Arc vault), and refuses a
+- deposits exactly the vault's own `minDepositUsdc`, and refuses a
   vault whose minimum is above `depositUsdc`, which stays the most the agent puts into one vault
   because a vault's creator sets its minimum (the `deposit-within-ceiling` check);
 - keeps `policy.exit.onOperatorNetNegative` on, and refuses to start with it off, because that exit
@@ -172,8 +172,8 @@ clearing the quorum share, or on FOR stake above half of the snapshot, and a pro
 quorum passes only when its FOR weight is above its AGAINST weight. A depositor who is alone holds
 all of that stake, so it holds more than half of eligible stake, and whoever joins first holds the
 deciding vote on Rebalance proposals. A RuleChange needs every unit of eligible stake to reveal in favour, so
-one holder who does not reveal blocks it. On 2026-10-18 the first Arc vault had no holders, so a
-first deposit there is that position.
+one holder who does not reveal blocks it. A vault with no holders makes its first depositor that
+position.
 
 **What the track record can and cannot say.** The registry's figure adds up every member's
 realizations, and nothing on chain marks which of them belong to the team that operates the vault.
@@ -231,8 +231,8 @@ and a page a provider still refuses is narrowed.
 | `discovery.logs` knob | Default | What it means |
 | --- | --- | --- |
 | `pageBlocks` | `10000` | Blocks per `eth_getLogs` request |
-| `maxPagesPerTick` | `120` | Log requests one tick may spend across all vaults. A scan resumes where it stopped, so the first vault (about 4.2 million blocks old on 2026-10-18, about 420 pages) takes four ticks or more to read at the default pause, and the join is refused with the gap named until it is complete |
-| `maxBlocks` | `20000000` | Never start a scan further than this behind the head; an older vault is a permanent, named gap. Arc made a block every 0.51 s between 2026-09-24 and 2026-10-18, so this is about 117 days, and the first Arc vault (created at block 22,443,745) passes it near 2027-01-19 |
+| `maxPagesPerTick` | `120` | Log requests one tick may spend across all vaults. A scan resumes where it stopped, so a vault as old as the first Arc vault was on 2026-10-18 (about 4.2 million blocks, about 420 pages) takes four ticks or more to read at the default pause, and a join is refused with the gap named until it is complete |
+| `maxBlocks` | `20000000` | Never start a scan further than this behind the head; an older vault is a permanent, named gap. Arc made a block every 0.51 s between 2026-09-24 and 2026-10-18, so this is about 117 days, and a vault created at the first Arc vault's block, 22,443,745, passes it near 2027-01-19 |
 | `pacingMs` | `1000` | Least pause between requests; a rate limit widens it for the session |
 
 The scan lives in memory for the session, like the entry marks: a restarted agent reads it again.

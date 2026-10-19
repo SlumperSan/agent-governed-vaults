@@ -114,6 +114,16 @@ test('an operator has no record only on its first vault: attestVault reuses the 
     assert.doesNotMatch(flat(text), /vault created today/, `${name} says a vault created today has no record, which is false for an operator with an earlier vault`);
 });
 
+test('the profile section does not present the first Arc vault as one that can be joined today', () => {
+  const flat = reference.replace(/\s+/g, ' ');
+  const section = flat.slice(flat.indexOf('### Joining a vault with no track record'), flat.indexOf('### `policy.exit`'));
+  assert.ok(section.length > 500, 'the REFERENCE-AGENT section is missing');
+  assert.doesNotMatch(section, /100 USDC on the first Arc vault/);
+  assert.doesNotMatch(section, /first Arc vault had no holders/);
+  assert.doesNotMatch(section, /first deposit there/);
+  assert.match(section, /A vault with no holders makes its first depositor that position\./);
+});
+
 test('the discovery.logs table in REFERENCE-AGENT.md carries the config defaults', () => {
   const logs = DEFAULT_CONFIG.discovery.logs;
   for (const [knob, value] of Object.entries(logs)) {
