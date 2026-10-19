@@ -648,10 +648,8 @@ contract VaultCore {
 
         // Queued exits passed the gate at queue time (L-1); re-checking here could re-strand
         // them if membership grew in between — new joiners had on-chain notice of the queue.
-        if (!fromQueue) {
-            _checkCreatorGate(member, burnShares);
-            _checkPositionFloor(memberShares - burnShares);
-        }
+        if (!fromQueue) _checkCreatorGate(member, burnShares);
+        if (!fromQueue) _checkPositionFloor(memberShares - burnShares); // same pattern, see its NatSpec
 
         // Exit fee: decays with tenure, waived for a sole holder (fee would route to self;
         // last-member waiver per EE-8/EE-9 — it can never route to the operator).
