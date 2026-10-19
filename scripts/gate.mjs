@@ -52,6 +52,7 @@ const ENTRYPOINTS = [
   'packages/indexer/src/index-runner.mjs',
   'packages/canary/src/canary-runner.mjs',
   'packages/oplog/src/ops-check.mjs',
+  'packages/activity-leaderboard/src/cli.mjs',
   // Added 2026-09-10. It sizes a real mainnet trade by hand against a live chain and nothing
   // executes it in CI, which is precisely the category this list exists for. An earlier commit on
   // this branch added the file without adding it here, and `npm run gate` passed over it without
