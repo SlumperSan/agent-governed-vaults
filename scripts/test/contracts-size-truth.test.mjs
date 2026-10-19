@@ -51,7 +51,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -305,21 +306,21 @@ test('the pattern distinguishes EIP-170 from EIP-3860, and creation from runtime
 });
 
 test('the size walk never lists dist-ssr, which a concurrent test creates and deletes mid-run', () => {
-  // The race, made deterministic: list while the file exists, then delete it and read what was
-  // listed. A walk that lists the probe dies here exactly as it did in CI. The unique name keeps
-  // two runs from deleting each other's probe.
-  const probeDir = path.join(REPO, 'apps', 'vaults-ui', 'dist-ssr', `__size_truth_probe_${process.pid}__`);
-  const probe = path.join(probeDir, 'probe.md');
-  mkdirSync(probeDir, { recursive: true });
-  writeFileSync(probe, 'probe');
-  let listed;
+  // THE PROBE TREE IS A TEMP DIRECTORY: sizeSurfaces takes the root as its first argument, so this
+  // writes nothing inside the repository, where a walk in another test file could list it and lose
+  // it. The control `.md` proves the walk ran and found prose; the dist-ssr probe must be absent.
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'size-truth-probe-'));
   try {
-    listed = sizeSurfaces();
+    mkdirSync(path.join(tmp, 'apps', 'x', 'dist-ssr'), { recursive: true });
+    writeFileSync(path.join(tmp, 'apps', 'x', 'control.md'), 'control');
+    writeFileSync(path.join(tmp, 'apps', 'x', 'dist-ssr', 'probe.md'), 'probe');
+    const listed = sizeSurfaces(tmp);
+    assert.ok(listed.some((f) => f.endsWith('control.md')), 'the control file was not listed: the walk did not run');
+    assert.ok(
+      !listed.some((f) => f.split(path.sep).includes('dist-ssr')),
+      'sizeSurfaces() listed a file under dist-ssr; reading it after its owner deletes it is ENOENT',
+    );
   } finally {
-    rmSync(probeDir, { recursive: true, force: true });
+    rmSync(tmp, { recursive: true, force: true });
   }
-  assert.ok(
-    !listed.some((f) => f.split(path.sep).includes('dist-ssr')),
-    'sizeSurfaces() listed a file under dist-ssr; reading it after its owner deletes it is ENOENT',
-  );
 });

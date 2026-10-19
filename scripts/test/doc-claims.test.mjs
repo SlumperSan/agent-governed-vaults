@@ -421,25 +421,23 @@ test('a SHALLOW checkout is refused, because a truncated merged set is a false-n
 });
 
 test('the source index never walks build output (dist, dist-ssr), which a concurrent test creates and deletes mid-run', () => {
-  // The race, made deterministic: index while the probes exist. A walk that lists one and stats it
-  // after its owner deleted it dies with ENOENT; one that merely indexes it has walked build output.
-  // Unique names keep two runs from deleting each other's probes.
-  const probeRel = [
-    `apps/vaults-ui/dist-ssr/__doc_claims_probe_${process.pid}__/probe.json`,
-    `apps/vaults-ui/dist/__doc_claims_probe_${process.pid}__/probe.json`,
-  ];
-  for (const rel of probeRel) {
-    const full = path.join(REPO, ...rel.split('/'));
-    mkdirSync(path.dirname(full), { recursive: true });
-    writeFileSync(full, '{}');
-  }
-  let index;
-  try {
-    index = indexSources(REPO, ['apps']);
-  } finally {
-    for (const rel of probeRel) rmSync(path.dirname(path.join(REPO, ...rel.split('/'))), { recursive: true, force: true });
-  }
-  for (const rel of probeRel) {
-    assert.ok(!index.has(rel), `indexSources() walked into build output: ${rel}`);
-  }
+  // THE PROBE TREE IS A TEMP REPO, NOT THE REAL ONE. The first version wrote probes under
+  // apps/vaults-ui/dist/, which claims-lede-truth and contracts-size-truth deliberately walk (and
+  // read .json from), so the test itself reintroduced the list-then-read ENOENT race it guards.
+  // indexSources takes the repo as an argument, so nothing here touches a directory another test
+  // walks. The control is a real source file: it proves the walk ran and found sources at all.
+  withFixture(
+    {
+      'apps/x/src/control.mjs': 'export {};',
+      'apps/x/dist/probe.json': '{}',
+      'apps/x/dist-ssr/probe.json': '{}',
+    },
+    (dir) => {
+      const index = indexSources(dir, ['apps']);
+      assert.ok(index.has('apps/x/src/control.mjs'), 'the control source file was not indexed: the walk did not run');
+      for (const rel of ['apps/x/dist/probe.json', 'apps/x/dist-ssr/probe.json']) {
+        assert.ok(!index.has(rel), `indexSources() walked into build output: ${rel}`);
+      }
+    },
+  );
 });
