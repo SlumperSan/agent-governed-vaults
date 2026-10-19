@@ -42,6 +42,7 @@ import { assembleVoteCommit, planVoteCommit, type PlannedCall } from '@atlas/cha
 import { MAX_TICK_WALK, tickBoundaries } from '@atlas/size-impact';
 import { TARGET_CHAIN } from './chains';
 import { assertNotSanctioned } from './sanctions';
+import { assertDepositsOpen } from './vault-policy';
 import { requireConfirmed } from './tx-status';
 
 /** Every field is independently nullable: `readExitGateInputs` resolves each read on its own
@@ -570,6 +571,8 @@ export async function sendDeposit(
   vault: Address,
   amountUsdc: bigint,
 ): Promise<DepositResult> {
+  // Per-vault policy (vault-policy.ts): refuse before the approval, not after it.
+  assertDepositsOpen(vault);
   const { usdc } = await readVaultAddresses(publicClient, vault);
   const approvalHash = await simulateThenWrite(publicClient, walletClient, {
     address: usdc,

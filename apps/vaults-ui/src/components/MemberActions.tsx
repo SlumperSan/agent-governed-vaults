@@ -46,6 +46,7 @@ import {
   type PoolSizeImpactInputs,
 } from '../lib/chain-actions';
 import { confirmTx, replacedLine, submittedLine, unconfirmedLine } from '../lib/tx-status';
+import { CONNECT_PROMPT_DEPOSITS_CLOSED, depositsClosedNotice } from '../lib/vault-policy';
 import { useWallet } from '../lib/wallet';
 
 /** Real wall-clock seconds, computed locally rather than threaded in as a prop — `App.tsx` passes
@@ -124,6 +125,9 @@ export function MemberActions({ vault }: Props) {
   const { status, address, publicClient, walletClient } = useWallet();
   const connected = status === 'connected' && !!address && !!walletClient;
   const vaultAddr = vault.address;
+  // Per-vault policy (vault-policy.ts): non-null when this app no longer offers deposits into this
+  // vault. Gates ONLY the deposit surface below; exit, vote, claims and every read are untouched.
+  const closedNotice = depositsClosedNotice(vaultAddr);
 
   const [addrs, setAddrs] = useState<{ usdc: Address; governance: Address } | null>(null);
   const [addrErr, setAddrErr] = useState<string | null>(null);
@@ -266,6 +270,7 @@ export function MemberActions({ vault }: Props) {
   }
 
   async function handleDeposit() {
+    if (closedNotice !== null) return;
     if (!connected || !walletClient || !address) return;
     const parsed = parseUnits(depositInput, 6, { unit: 'USDC' });
     if (!parsed.ok) { setDeposit({ busy: false, message: null, error: parsed.error }); return; }
@@ -533,7 +538,7 @@ export function MemberActions({ vault }: Props) {
   return (
     <section className="panel">
       <h2>Act</h2>
-      {!connected ? <p className="note">Connect a wallet to deposit, vote, or exit.</p> : null}
+      {!connected ? <p className="note">{closedNotice !== null ? CONNECT_PROMPT_DEPOSITS_CLOSED : 'Connect a wallet to deposit, vote, or exit.'}</p> : null}
       {addrErr ? <p className="note tag-warn">Could not read this vault&rsquo;s USDC/governance addresses: {addrErr}</p> : null}
 
       <h3>Deposit</h3>
@@ -542,6 +547,13 @@ export function MemberActions({ vault }: Props) {
        * "cirBTC" is literal because this app serves one vault (its basket is cirBTC); the same
        * test pins .env.example to that one vault, so serving another vault reds it first. */}
       <p className="note"><strong>What your USDC becomes.</strong> This vault invests members&rsquo; USDC in cirBTC, a wrapped Bitcoin token, and only when a member vote passes. The part of the vault held in cirBTC rises and falls with Bitcoin&rsquo;s price, so your shares do too. USDC the vault has not invested does not.</p>
+      {closedNotice !== null ? (
+        // Owner decision 2026-10-18 (vault-policy.ts): the deposit surface below is not rendered for
+        // a vault this app no longer offers deposits into. Not a disabled button: nothing here can
+        // be clicked into an approval. test/deposits-closed.test.mjs pins this branch.
+        <p className="note tag-warn" data-testid="deposits-closed-notice">{closedNotice}</p>
+      ) : (
+      <>
       {connected ? (
         <TermsClickwrap
           checked={termsAccepted}
@@ -589,6 +601,8 @@ export function MemberActions({ vault }: Props) {
             'Frozen — the deposit reads NAV to price the vault, and NAV is unavailable while the oracle is stale.'}
         </p>
       ) : null}
+      </>
+      )}
       {depositStatus ? (
         <p
           className={
