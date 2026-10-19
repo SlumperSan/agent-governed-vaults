@@ -55,10 +55,12 @@ interface IERC20Decimals {
 /// and through `originRegistry`), the origin chain id and id, the recipient, a hash of the agent URI
 /// and an expiry. The recipient submits it themselves with `mintMirrored`: `msg.sender` must equal
 /// the named owner, so no one can hand an identity to an address that did not act on this chain.
-/// `mintMirrored` has no fee path; the fee was paid once, at the origin `register`. A mirror is a
-/// separate ERC-721. It is never burned or re-pointed, and it does not follow later transfers of
-/// the origin identity. "Registered on one chain, valid on another" holds only for a mirror minted
-/// with a valid attestation, per origin chain and origin id, and only while an attestor is set.
+/// `mintMirrored` has no fee path. The origin was either registered with the fee on its home chain
+/// or imported free inside that chain's import window; either way one origin yields at most one
+/// mirror per chain. A mirror is a separate ERC-721. No function burns it, its record in
+/// `originOf` never changes, and it does not follow later transfers of the origin identity.
+/// "Registered on one chain, valid on another" holds only for a mirror minted with a valid
+/// attestation, per origin chain and origin id, and only while an attestor is set.
 /// What this contract enforces on-chain, in order: an attestor is set; the expiry has not passed and
 /// is at most `MAX_ATTEST_TTL` (7 days) away; the caller is the named owner; the origin chain is not
 /// this chain and the origin registry is this address; the URI matches its signed hash; the origin
@@ -538,9 +540,11 @@ contract RWAllyAgentRegistry {
     }
 
     /// @notice Mint a mirror here of an identity registered or imported on another chain, on the
-    /// strength of an attestation signed by the current `attestor`. No fee is charged: the fee was
-    /// paid once, at the origin `register`. The caller must be `a.owner`, so the identity lands only
-    /// with an address that submitted this transaction itself. Replaying the same attestation, or any
+    /// strength of an attestation signed by the current `attestor`. No fee is charged here. The origin
+    /// was either registered with the fee on its home chain or imported free inside that chain's
+    /// import window; either way one origin yields at most one mirror per chain. The caller must be
+    /// `a.owner`, so the identity lands only with an address that submitted this transaction itself.
+    /// Replaying the same attestation, or any
     /// attestation for the same (origin chain, origin registry, origin id), reverts `AlreadyMirrored`:
     /// the origin key is the replay guard, shared with `importAgent`'s dedupe. Across chains an
     /// attestation cannot replay because the signed domain carries this chain's live `block.chainid`,
@@ -551,16 +555,18 @@ contract RWAllyAgentRegistry {
     ///
     /// ORIGIN TRANSFERRED AFTER SIGNING. The attestation names the origin holder at signing time. If the
     /// origin identity is sold before the attestation is submitted, the seller can still mint the
-    /// mirror until it expires (at most `MAX_ATTEST_TTL`, normally one hour). One origin yields at most
-    /// one mirror per chain regardless of who holds the origin token or how often it moves, so the
-    /// fee's Sybil cost is not bypassed. The mirror does not follow later origin transfers.
+    /// mirror until it expires (at most `MAX_ATTEST_TTL`; the signer is specified to issue about one
+    /// hour). One origin yields at most one mirror per chain regardless of who holds the origin token
+    /// or how often it moves, so a single origin cannot be multiplied; the cost of the origin is
+    /// whatever its home chain charged (nothing for an import). The mirror does not follow later
+    /// origin transfers.
     ///
     /// SIGNER POLICY (rules the attestor must apply; the contract cannot read other chains, so none
     /// of these is enforced here). (1) Read `ownerOf`, `tokenURI` and `originOf` on the origin chain
     /// at the `finalized` block (a reorged origin id would otherwise be mirrored), or at an explicit
     /// depth where a chain's `finalized` tag is not trusted. (2) Refuse any origin id whose
     /// `originOf(id).registry` is this registry (a mirror of a mirror would mint a second identity
-    /// from one fee); an import's outside-registry origin is attestable. (3) Polygon PoS (chain id 137)
+    /// from one origin); an import's outside-registry origin is attestable. (3) Polygon PoS (chain id 137)
     /// is a destination for mirrors and never an origin, until a documented finality-depth rule
     /// exists. This is left to the signer rather than bytecode on purpose: bytecode is identical on
     /// every chain and permanent, and lifting a bytecode rule would need a new registry address or a
@@ -573,9 +579,10 @@ contract RWAllyAgentRegistry {
     /// mint up to `MIRROR_DAILY_CAP` identities per UTC day per chain, each submitted by the
     /// address it names, until the owner calls `setAttestor`. The cap bounds the rate, not the total:
     /// the residual is that many fee-free identities per day per chain for as long as the compromise
-    /// lasts undetected, and the attacker can also fill the cap to stop other mirroring that day. It
-    /// cannot move funds (this contract holds none), alter or remove an existing identity, or change
-    /// the fee.
+    /// lasts undetected, and the attacker can also fill the cap to stop other mirroring that day. If one
+    /// attestor key serves several chains the figure applies on each of them, and the owner must
+    /// submit `setAttestor` on every chain to stop it. It cannot move funds (this contract holds
+    /// none), alter or remove an existing identity, or change the fee.
     ///
     /// @param a the signed attestation.
     /// @param agentURI the agent URI to store; `keccak256(bytes(agentURI))` must equal `a.agentURIHash`.
