@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
 /// Drives randomized realization sequences through the registry as if from an attested vault,
 /// tracking a ghost of the expected (member, operator) loss carryforward. Hardens the novel
@@ -69,6 +70,7 @@ contract FeeCarryInvariantTest is Test {
         registry = new OperatorRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
         // Wire a "factory" we control so we can attest a synthetic vault address.
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(this), address(fees));
         registry.attestVault(vaultAddr, operator);
         opId = registry.operatorOf(vaultAddr);

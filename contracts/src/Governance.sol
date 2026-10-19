@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {IGovernance} from "./interfaces/IGovernance.sol";
 import {IExecutionAdapter} from "./interfaces/IExecutionAdapter.sol";
+import {PROTOCOL_INITIALIZER} from "./lib/ProtocolInitializer.sol";
 
 interface IVaultExecution {
     function executeRebalance(
@@ -42,11 +43,20 @@ interface ISubVaultParent {
 
 contract Governance is IGovernance {
     address public subVaultRegistry; // one-shot deploy wiring
-    address public immutable deployer = msg.sender;
+    /// @notice The only address that may call `wireSubVaultRegistry`: the protocol-wide
+    /// {PROTOCOL_INITIALIZER}. A constant, not the constructor's `msg.sender`, so the initcode (and
+    /// the CREATE2 address) is the same on every chain.
+    address public constant deployer = PROTOCOL_INITIALIZER;
 
     error OnlyDeployer();
     error AlreadyWiredSubRegistry();
     error ZeroSubRegistry();
+
+    /// @notice True once `wireSubVaultRegistry` has run. Unwired, the SV-6 quorum-floor inheritance
+    /// check returns silently; that is moot while the factory refuses sub-vaults (`allowSubVaults`).
+    function initialized() external view returns (bool) {
+        return subVaultRegistry != address(0);
+    }
 
     /// @notice One-shot deploy-time wiring of the SubVaultRegistry used for SV-6 quorum-floor
     /// inheritance. Deployer-only, callable once, permanently locked after.

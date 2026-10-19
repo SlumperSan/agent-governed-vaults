@@ -28,7 +28,8 @@ interface IFeedMeta {
 ///   ORACLE_MIN_WAD     uint[]     — per-asset sane-price floor (WAD), 0 to disable the band with max 0
 ///   ORACLE_MAX_WAD     uint[]     — per-asset sane-price ceiling (WAD), 0 to disable the band. An
 ///                                   enabled band must be at most 1000x wide and must contain the
-///                                   feed's current answer; on Base mainnet a band is MANDATORY.
+///                                   feed's current answer; on EVERY chain except local 31337 and Base
+///                                   Sepolia 84532 a band is MANDATORY (`requiresSanePriceBand`).
 /// Optional:
 ///   ORACLE_USDC        address    — USDC-like token pinned to 1e18 (default 0 = no pin)
 ///   ORACLE_SEQUENCER   address    — L2 sequencer uptime feed (default 0; REQUIRED on every chain
@@ -75,6 +76,27 @@ contract DeployChainlinkOracle is Script {
     /// distinguishable from a quiet one, and that is the residual this entry accepts.
     uint256 constant ARC_CHAIN_ID = 5042;
 
+    /// @notice Ethereum mainnet, exempt by OWNER DECISION 2026-10-18 ("Sequencer-uptime exemptions for
+    /// Ethereum (1) and Polygon (137): yes"), under the same standard as Arc 5042.
+    /// @dev WHY IT IS EXEMPT. Ethereum is the L1 the rollups settle to, not a rollup: it has no
+    /// sequencer, so there is no sequencer whose uptime a feed could report. Chainlink's L2 Sequencer
+    /// Uptime Feed page lists rollups only and none for Ethereum, so there is no address an operator
+    /// could supply. Like 5042 this records that the guard does not apply, not that an applicable
+    /// guard was weakened. WHAT REMAINS BETWEEN A STALLED CHAIN AND A PRICED VAULT: the per-asset
+    /// staleness bound and the sane-price band, both armed (the band is mandatory here, see
+    /// `requiresSanePriceBand`). A stalled chain is not distinguishable from a quiet one, which is
+    /// the residual this entry accepts.
+    uint256 constant ETHEREUM_CHAIN_ID = 1;
+
+    /// @notice Polygon PoS, exempt by OWNER DECISION 2026-10-18, same wording as above.
+    /// @dev WHY IT IS EXEMPT. Polygon PoS is a validator-set sidechain, not a rollup with a single
+    /// sequencer, and it is not on Chainlink's L2 Sequencer Uptime Feed list, so there is no address
+    /// an operator could supply. The residual is the same as for Ethereum and sharper: Polygon block
+    /// production can pause without any feed saying so, and the tightest staleness bound the oracle
+    /// accepts (600 s) is many times the feed's own cadence. The staleness bound and the mandatory
+    /// sane-price band are what stand between a stalled Polygon and a priced vault.
+    uint256 constant POLYGON_CHAIN_ID = 137;
+
     /// @notice Does a deploy on `chainId` have to supply ORACLE_SEQUENCER?
     /// @dev L2-GENERIC and FAIL-CLOSED: an ALLOWLIST of the ids known to have no uptime feed, with
     /// "yes, required" as the default for every other id — including one this script has never seen.
@@ -92,7 +114,18 @@ contract DeployChainlinkOracle is Script {
     /// doc comment on ROBINHOOD_CHAIN_ID above states what that costs at price time.
     function requiresSequencerUptimeFeed(uint256 chainId) public pure returns (bool) {
         return chainId != LOCAL_CHAIN_ID && chainId != BASE_SEPOLIA_CHAIN_ID && chainId != ROBINHOOD_CHAIN_ID
-            && chainId != ARC_CHAIN_ID;
+            && chainId != ARC_CHAIN_ID && chainId != ETHEREUM_CHAIN_ID && chainId != POLYGON_CHAIN_ID;
+    }
+
+    /// @notice Does a deploy on `chainId` have to set a sane-price band on every asset?
+    /// @dev FAIL-CLOSED: an ALLOWLIST of the two non-mainnet ids where a band may be omitted, local
+    /// 31337 and Base Sepolia 84532. Every other id, including one this script has never seen, needs
+    /// a non-zero band. Owner decision 2026-10-18: the band is mandatory on every mainnet. It used to
+    /// be mandatory on Base alone (`block.chainid != 8453`), so a blessed oracle on Arc, Ethereum,
+    /// Arbitrum or Polygon could ship with the depeg and clamp defence off, and on the chains with no
+    /// sequencer feed the band is one of the two guards left standing.
+    function requiresSanePriceBand(uint256 chainId) public pure returns (bool) {
+        return chainId != LOCAL_CHAIN_ID && chainId != BASE_SEPOLIA_CHAIN_ID;
     }
 
     /// @notice Env entrypoint: `forge script script/DeployChainlinkOracle.s.sol:DeployChainlinkOracle`.
@@ -109,10 +142,7 @@ contract DeployChainlinkOracle is Script {
     function runWithSequencer(address sequencer) public returns (ChainlinkOracle oracle) {
         // Checked FIRST, before any other config is read: a chain that must have the L2 sequencer
         // uptime guard never gets as far as deploying an oracle without one.
-        require(
-            sequencer != address(0) || !requiresSequencerUptimeFeed(block.chainid),
-            "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532, Robinhood Chain 4663 and Arc 5042"
-        );
+        _requireSequencer(sequencer);
 
         address[] memory assets = vm.envAddress("ORACLE_ASSETS", ",");
         address[] memory feeds = vm.envAddress("ORACLE_FEEDS", ",");
@@ -120,6 +150,29 @@ contract DeployChainlinkOracle is Script {
         uint256[] memory minWad = vm.envUint("ORACLE_MIN_WAD", ",");
         uint256[] memory maxWad = vm.envUint("ORACLE_MAX_WAD", ",");
         address usdc = vm.envOr("ORACLE_USDC", address(0));
+        return deployWith(sequencer, assets, feeds, hbU, minWad, maxWad, usdc);
+    }
+
+    function _requireSequencer(address sequencer) internal view {
+        require(
+            sequencer != address(0) || !requiresSequencerUptimeFeed(block.chainid),
+            "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532, Robinhood Chain 4663, Arc 5042, Ethereum 1 and Polygon 137"
+        );
+    }
+
+    /// @notice The deploy with its configuration passed as arguments instead of read from the
+    /// environment. `runWithSequencer` is a thin env reader over this, so every guard below binds both
+    /// paths. Exposed so tests can vary the basket and the band without touching process-global env.
+    function deployWith(
+        address sequencer,
+        address[] memory assets,
+        address[] memory feeds,
+        uint256[] memory hbU,
+        uint256[] memory minWad,
+        uint256[] memory maxWad,
+        address usdc
+    ) public returns (ChainlinkOracle oracle) {
+        _requireSequencer(sequencer);
 
         uint256 n = assets.length;
         require(
@@ -137,8 +190,8 @@ contract DeployChainlinkOracle is Script {
             // scripts/verify-chainlink-oracle.mjs already refuses to pass. The constructor bounds
             // the band's SHAPE; this requires its PRESENCE where it is mandatory.
             require(
-                block.chainid != 8453 || (minWad[i] > 0 && maxWad[i] > 0),
-                "DeployChainlinkOracle: Base mainnet requires a sane-price band per asset"
+                !requiresSanePriceBand(block.chainid) || (minWad[i] > 0 && maxWad[i] > 0),
+                "DeployChainlinkOracle: a sane-price band per asset is required on every chain except local 31337 and Base Sepolia 84532"
             );
         }
 

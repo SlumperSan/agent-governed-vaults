@@ -39,6 +39,7 @@ import {IGovernance} from "../../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "../mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../../src/lib/ProtocolInitializer.sol";
 
 contract AuditOracleRotationTest is Test {
     uint256 constant USDC_1 = 1e6;
@@ -82,12 +83,16 @@ contract AuditOracleRotationTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(deployerLib)),
-            false, // C-1: root vaults only
-            allowedOracles
+            false // C-1: root vaults only
         );
+        vm.prank(PROTOCOL_INITIALIZER);
+        f.initialize(allowedOracles);
         if (wireCanonical) {
+            vm.prank(PROTOCOL_INITIALIZER);
             registry.wire(address(f), address(fees));
+            vm.prank(PROTOCOL_INITIALIZER);
             subReg.wire(address(f));
+            vm.prank(PROTOCOL_INITIALIZER);
             gov.wireSubVaultRegistry(address(subReg));
         }
     }
@@ -228,6 +233,7 @@ contract AuditOracleRotationTest is Test {
 
         // Re-wiring the canonical registry to the successor factory is impossible.
         vm.expectRevert(OperatorRegistry.AlreadyWired.selector);
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factoryB), address(fees));
 
         // And unwired, the successor factory cannot attest — so it cannot create a vault at all
@@ -246,10 +252,13 @@ contract AuditOracleRotationTest is Test {
             IFeeEngine(address(feesB)),
             address(subRegB),
             IVaultDeployer(address(deployerLib)),
-            false,
-            _one(address(replacement))
+            false
         );
+        vm.prank(PROTOCOL_INITIALIZER);
+        factoryC.initialize(_one(address(replacement)));
+        vm.prank(PROTOCOL_INITIALIZER);
         registryB.wire(address(factoryC), address(feesB));
+        vm.prank(PROTOCOL_INITIALIZER);
         subRegB.wire(address(factoryC));
 
         vm.prank(creator);

@@ -196,13 +196,21 @@ export function chainNow(rpcUrl) {
 /** `forge script DeployTestnet.s.sol --broadcast`, UNMODIFIED, against the local fork — never a
  * public RPC (see this file's header). Returns the singleton addresses parsed from its own
  * broadcast receipt, the same way `scripts/smoke-test.mjs`'s `loadDeployment()` does. */
-export function deployProtocol(rpcUrl, privateKey) {
+export function deployProtocol(rpcUrl, _unusedDeployerKey) {
+  // DeployTestnet pins its broadcast to PROTOCOL_INITIALIZER (contracts/src/lib/ProtocolInitializer.sol),
+  // the only sender the singletons' wiring and VaultFactory.initialize accept, so a throwaway key cannot
+  // run it. On this local anvil fork we impersonate that address instead. The second argument is kept
+  // so callers do not change; it is not used.
+  const initializer = '0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35';
+  cast(['rpc', 'anvil_impersonateAccount', initializer, '--rpc-url', rpcUrl]);
+  cast(['rpc', 'anvil_setBalance', initializer, '0x56bc75e2d63100000', '--rpc-url', rpcUrl]);
   run(
     'forge',
     [
       'script', 'script/DeployTestnet.s.sol:DeployTestnet',
       '--rpc-url', rpcUrl,
-      '--private-key', privateKey,
+      '--unlocked',
+      '--sender', initializer,
       '--broadcast',
       '--non-interactive',
     ],

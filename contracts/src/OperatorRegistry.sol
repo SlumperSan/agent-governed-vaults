@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {IOperatorRegistry} from "./interfaces/IOperatorRegistry.sol";
+import {PROTOCOL_INITIALIZER} from "./lib/ProtocolInitializer.sol";
 
 /// @title OperatorRegistry — operator identity, cross-vault marks, aggregate leaderboard
 /// @notice Sprint 3 module, the C-3 load-bearing reference. Three requirements meet here:
@@ -19,7 +20,10 @@ import {IOperatorRegistry} from "./interfaces/IOperatorRegistry.sol";
 /// ignore everything else, so throwaway-vault mark-farming requires real, visible vaults.
 contract OperatorRegistry is IOperatorRegistry {
     address public factory; // one-shot wiring (deploy-time only, not an admin power)
-    address public immutable deployer;
+    /// @notice The only address that may call `wire`: the protocol-wide {PROTOCOL_INITIALIZER}. It is a
+    /// constant, not the constructor's `msg.sender`, so this contract's initcode is identical on every
+    /// chain and its CREATE2 address is too (a CREATE2 constructor sees the proxy as `msg.sender`).
+    address public constant deployer = PROTOCOL_INITIALIZER;
 
     uint256 public operatorCount;
     mapping(address => uint256) public operatorIdOf; // 0 = unregistered
@@ -64,8 +68,10 @@ contract OperatorRegistry is IOperatorRegistry {
     error AlreadyOperator();
     error NotOperator();
 
-    constructor() {
-        deployer = msg.sender;
+    /// @notice True once `wire` has run. An unwired registry attests nothing: `attestVault` is
+    /// factory-only and the factory is unset until then.
+    function initialized() external view returns (bool) {
+        return factory != address(0);
     }
 
     /// @notice One-shot deploy-time wiring. Immutable thereafter — not an ongoing admin power.

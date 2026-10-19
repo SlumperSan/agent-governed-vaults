@@ -209,7 +209,10 @@ Key boundary facts a reviewer should hold onto:
   vault's config forever, and that is the intent).
 - The `wire()` calls on OperatorRegistry / SubVaultRegistry / Governance are **one-shot
   deploy-time wiring**, not admin powers: callable only by the deployer, only once, revert
-  `AlreadyWired` thereafter (proven by `test_deployWiresAndLocks`).
+  `AlreadyWired` thereafter (proven by `test_deployWiresAndLocks`). On the same-address deployment
+  built from the current source `VaultFactory.initialize` is a fourth call of the same kind, callable
+  only by `PROTOCOL_INITIALIZER`, only once (`AlreadyInitialized`); the live Arc factory has no
+  such call, its allowlist being fixed in its constructor.
 - Consequence for findings: "add an owner who can rescue X" is not an accepted remediation
   shape. Fixes must be constructor validation, code-path changes, or documented acceptance.
 

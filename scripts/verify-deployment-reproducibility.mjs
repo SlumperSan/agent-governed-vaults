@@ -7,8 +7,8 @@
  * (`origin/protocol/main`) rather than only from a local or ephemeral ref that a `git gc`,
  * a rebase, or a force-push could make unreachable.
  *
- * WHY THIS EXISTS. `contracts/foundry.toml` sets no `bytecode_hash`, so solc's default `ipfs`
- * metadata mode applies, and the CBOR metadata trailer embeds an IPFS hash of the compiled
+ * WHY THIS EXISTS. `contracts/foundry.toml` set no `bytecode_hash` until 2026-10-18, so solc's default `ipfs`
+ * metadata mode applied to every earlier deployment, and the CBOR metadata trailer embeds an IPFS hash of the compiled
  * `sources` map, which is keyed by SOURCE PATH. Moving or renaming any file in a contract's
  * compiled dependency graph changes that trailer without changing a single opcode. And so does
  * editing a COMMENT, since the trailer hashes the source text: the live Base Sepolia record

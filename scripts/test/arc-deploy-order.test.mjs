@@ -23,50 +23,48 @@ test('DeployChainlinkOracle.s.sol deploys exactly ONE `new ChainlinkOracle(...)`
   assert.match(arcDeploySrc, /id:\s*'arc-oracle',\s*order:\s*1\b/, "arc-deploy.mjs's ChainlinkOracle item must be order 1 (deployed before anything in Deploy.s.sol, matching the two-script sequence this builder claims to mirror)");
 });
 
-test("Deploy.s.sol's `run()` constructs the six singletons in this EXACT order — the builder's own order must match", () => {
-  const body = deploySrc.slice(deploySrc.indexOf('function run()'));
-  const ctorOrder = [];
-  const re = /(\w+)\s*=\s*new\s+(OperatorRegistry|SubVaultRegistry|FeeEngine|Governance|VaultDeployer|VaultFactory)\(/g;
-  let m;
-  while ((m = re.exec(body))) ctorOrder.push(m[2]);
-  assert.deepEqual(ctorOrder, ['OperatorRegistry', 'SubVaultRegistry', 'FeeEngine', 'Governance', 'VaultDeployer', 'VaultFactory'],
-    'Deploy.s.sol changed its construction order — arc-deploy.mjs must be updated to match');
-
-  const idOrderPairs = [
-    ['arc-registry', 2], ['arc-subreg', 3], ['arc-feeengine', 4],
-    ['arc-governance', 5], ['arc-vaultdeployer', 6], ['arc-factory', 7],
-  ];
-  for (const [id, order] of idOrderPairs) {
-    assert.match(arcDeploySrc, new RegExp(`id:\\s*'${id}',\\s*order:\\s*${order}\\b`), `arc-deploy.mjs's ${id} item must be order ${order}`);
-  }
+test('the v1 builder is RETIRED: build() refuses, so it can never emit items against the CREATE2 contracts', async () => {
+  // Why this replaces the three tests that used to mirror Deploy.s.sol's CREATE order into this
+  // builder. Deploy.s.sol is now the CREATE2 recipe and VaultFactory's constructor no longer takes
+  // the oracle list, so a rebuilt queue would deploy a factory with its allowlist never set and then
+  // wire the registry to it. The builder describes the completed Arc v1 deploy and must not run again.
+  const mod = await import('../sign-queue/arc-deploy.mjs');
+  assert.throws(() => mod.build(), /RETIRED/, 'arc-deploy.mjs build() no longer refuses');
 });
 
-test("Deploy.s.sol's three wiring calls, in order, are what the builder sends next — registry.wire, subReg.wire, gov.wireSubVaultRegistry", () => {
+const createSrc = readFileSync(path.join(ROOT, 'contracts', 'script', 'lib', 'ProtocolCreate2.sol'), 'utf8');
+
+test("Deploy.s.sol brings the six singletons up through ProtocolCreate2, pinned to PROTOCOL_INITIALIZER", () => {
   const body = deploySrc.slice(deploySrc.indexOf('function run()'));
-  const re = /(registry|subReg|governance)\.(wire|wireSubVaultRegistry)\(/g;
-  const calls = [];
-  let m;
-  while ((m = re.exec(body))) calls.push(`${m[1]}.${m[2]}`);
-  assert.deepEqual(calls, ['registry.wire', 'subReg.wire', 'governance.wireSubVaultRegistry'],
-    "Deploy.s.sol's wiring call order changed — arc-deploy.mjs's arc-wire-* order must be updated");
-  assert.match(arcDeploySrc, /id:\s*'arc-wire-registry',\s*order:\s*8\b/);
-  assert.match(arcDeploySrc, /id:\s*'arc-wire-subreg',\s*order:\s*9\b/);
-  assert.match(arcDeploySrc, /id:\s*'arc-wire-gov',\s*order:\s*10\b/);
+  assert.match(body, /vm\.startBroadcast\(PROTOCOL_INITIALIZER\)/, 'the broadcast must be pinned to PROTOCOL_INITIALIZER');
+  assert.doesNotMatch(body, /vm\.startBroadcast\(\)/, 'an unpinned broadcast would let any signer start the script');
+  assert.match(body, /ProtocolCreate2\.createAll\(\)/);
+  assert.doesNotMatch(body, /=\s*new\s+(OperatorRegistry|SubVaultRegistry|FeeEngine|Governance|VaultDeployer|VaultFactory)\(/, 'a plain CREATE would not land at the CREATE2 address');
 });
 
-test('VaultFactory is constructed with allowSubVaults=false on Deploy.s.sol (mainnet) — the builder must pass false, never DeployTestnet\'s true', () => {
+test('ProtocolCreate2.createAll deploys the six in this EXACT order', () => {
+  const fn = createSrc.slice(createSrc.indexOf('function createAll()'));
+  const order = [...fn.matchAll(/create\(SALT_(\w+),/g)].map((m) => m[1]);
+  assert.deepEqual(order, ['OPERATOR_REGISTRY', 'SUB_VAULT_REGISTRY', 'FEE_ENGINE', 'GOVERNANCE', 'VAULT_DEPLOYER', 'VAULT_FACTORY']);
+});
+
+test("the factory is initialised BEFORE the registry is wired to it, then the three wires run in order", () => {
   const body = deploySrc.slice(deploySrc.indexOf('function run()'));
-  const factoryCallStart = body.indexOf('factory = new VaultFactory(');
-  assert.ok(factoryCallStart >= 0);
-  const factoryCall = body.slice(factoryCallStart, body.indexOf(');', factoryCallStart));
-  assert.match(factoryCall, /false,\s*\/\/ C-1/, 'Deploy.s.sol should pass false for allowSubVaults with its C-1 comment');
+  const calls = [...body.matchAll(/(factory\.initialize|registry\.wire|subReg\.wire|governance\.wireSubVaultRegistry)\(/g)].map((m) => m[1]);
+  assert.deepEqual(calls, ['factory.initialize', 'registry.wire', 'subReg.wire', 'governance.wireSubVaultRegistry'],
+    'an uninitialised factory (oracle allowlist off) must never be the one a registry is wired to');
+});
+
+test('the CREATE2 factory is built root-only: ALLOW_SUB_VAULTS is false in the recipe, and the retired v1 builder still passes false', () => {
+  assert.match(createSrc, /bool internal constant ALLOW_SUB_VAULTS = false;/);
+  assert.match(createSrc, /ALLOW_SUB_VAULTS\s*\n?\s*\)/, 'the recipe must pass ALLOW_SUB_VAULTS into the factory initcode');
   assert.match(arcDeploySrc, /subReg[Ii]tem\.predictedAddress,\s*vaultDeployerItem\.predictedAddress,\s*false,/,
     "arc-deploy.mjs's VaultFactory constructor args must pass false for allowSubVaults");
 });
 
-test("Deploy.s.sol refuses an EMPTY BLESSED_ORACLES allowlist off the local chain — the builder must never emit one for Arc (5042)", () => {
+test("Deploy.s.sol refuses an EMPTY BLESSED_ORACLES allowlist off the local chain", () => {
   assert.match(deploySrc, /blessedOracles\.length > 0/);
-  assert.match(arcDeploySrc, /\[\$\{oracleAddr\}\]/, "arc-deploy.mjs's VaultFactory constructor must pass a single-element blessedOracles array (the deployed oracle), never an empty one");
+  assert.match(deploySrc, /factory\.initialize\(blessedOracles\)/);
 });
 
 test('DeployChainlinkOracle.s.sol\'s constructor arg order is (assets, feeds, heartbeats, minWad, maxWad, usdc, sequencer) — the builder\'s ChainlinkOracle initcode must encode the same order', () => {

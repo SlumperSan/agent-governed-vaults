@@ -13,6 +13,7 @@ import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "./mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
 contract FeesAndRegistryTest is Test {
     using stdStorage for StdStorage;
@@ -45,9 +46,12 @@ contract FeesAndRegistryTest is Test {
             IFeeEngine(address(fees)),
             address(0),
             IVaultDeployer(address(new VaultDeployer())),
-            false, // root-only; this suite never touches sub-vaults
-            new address[](0) // C-6: no oracle allowlist (permissive)
+            false // root-only; this suite never touches sub-vaults
         );
+        // C-6: no oracle allowlist (permissive)
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(new address[](0));
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factory), address(fees));
 
         usdc.mint(operator, 100_000_000 * USDC_1);
@@ -129,6 +133,7 @@ contract FeesAndRegistryTest is Test {
 
     function test_wireIsOneShot() public {
         vm.expectRevert(OperatorRegistry.AlreadyWired.selector);
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(this), address(this));
     }
 

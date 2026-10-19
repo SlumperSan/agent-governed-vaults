@@ -13,7 +13,8 @@ import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 /// Base Sepolia 84532, whose committed config leaves `sequencerUptimeFeed` empty by design; and
 /// Robinhood Chain 4663, for which Chainlink publishes no uptime feed (owner-approved 2026-09-04;
 /// the doc comment on ROBINHOOD_CHAIN_ID in the script states what the exemption costs at price
-/// time). The allowlist replaces a DENYLIST of one id (`block.chainid != 8453`) under which a deploy to any other L2 — or
+/// time); Arc 5042 (an L1); and, by owner decision 2026-10-18, Ethereum 1 (the L1 the rollups settle
+/// to) and Polygon 137 (a validator-set sidechain with no Chainlink sequencer feed). The allowlist replaces a DENYLIST of one id (`block.chainid != 8453`) under which a deploy to any other L2 — or
 /// to a mis-pointed RPC — silently produced an IMMUTABLE oracle with the sequencer guard off, free to
 /// serve prices computed while that chain's sequencer was down.
 ///
@@ -30,7 +31,7 @@ contract DeployChainlinkOracleTest is Test {
     address constant USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
 
     string constant SEQUENCER_REQUIRED_REVERT =
-        "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532, Robinhood Chain 4663 and Arc 5042";
+        "DeployChainlinkOracle: ORACLE_SEQUENCER (L2 sequencer uptime feed) is required on every chain except local 31337, Base Sepolia 84532, Robinhood Chain 4663, Arc 5042, Ethereum 1 and Polygon 137";
 
     DeployChainlinkOracle script;
 
@@ -43,8 +44,12 @@ contract DeployChainlinkOracleTest is Test {
         vm.setEnv("ORACLE_ASSETS", vm.toString(WETH));
         vm.setEnv("ORACLE_FEEDS", vm.toString(ETH_USD_FEED));
         vm.setEnv("ORACLE_HEARTBEATS", "86400");
-        vm.setEnv("ORACLE_MIN_WAD", "0");
-        vm.setEnv("ORACLE_MAX_WAD", "0");
+        // A real band around the mock price (1917 USD): `requiresSanePriceBand` makes one mandatory on
+        // every chain except local 31337 and Base Sepolia, so a band-less env would fail the deploys
+        // below for the wrong reason. Band absence is tested through `deployWith`, which takes
+        // arguments instead of this process-global env.
+        vm.setEnv("ORACLE_MIN_WAD", "100000000000000000000");
+        vm.setEnv("ORACLE_MAX_WAD", "100000000000000000000000");
         vm.setEnv("ORACLE_USDC", vm.toString(USDC));
         vm.setEnv("ORACLE_SEQUENCER", vm.toString(address(0)));
     }
@@ -67,7 +72,7 @@ contract DeployChainlinkOracleTest is Test {
 
     // ─────────────────────────── the classification itself ───────────────────────────
 
-    /// @notice Fail-closed by construction: the ONLY exempt ids are the three known-feedless ones,
+    /// @notice Fail-closed by construction: the ONLY exempt ids are the six known-feedless ones,
     /// and every other id — Base mainnet, other L2 mainnets, testnets this script has never seen,
     /// and a garbage id from a wrong RPC — requires the feed.
     function test_requiresSequencerUptimeFeedIsAnAllowlist() public view {
@@ -77,9 +82,14 @@ contract DeployChainlinkOracleTest is Test {
         assertTrue(script.requiresSequencerUptimeFeed(8453), "Base mainnet required");
         assertTrue(script.requiresSequencerUptimeFeed(10), "Optimism mainnet required");
         assertTrue(script.requiresSequencerUptimeFeed(42161), "Arbitrum One required");
-        assertTrue(
-            script.requiresSequencerUptimeFeed(1), "Ethereum mainnet required (not a rollup: review it)"
-        );
+        assertFalse(script.requiresSequencerUptimeFeed(5042), "Arc 5042 exempt (an L1)");
+        assertFalse(script.requiresSequencerUptimeFeed(1), "Ethereum 1 exempt (an L1, owner 2026-10-18)");
+        assertFalse(script.requiresSequencerUptimeFeed(137), "Polygon 137 exempt (owner 2026-10-18)");
+        assertTrue(script.requiresSequencerUptimeFeed(2), "an id adjacent to Ethereum required");
+        assertTrue(script.requiresSequencerUptimeFeed(0), "id 0 required");
+        assertTrue(script.requiresSequencerUptimeFeed(136), "an id just below Polygon required");
+        assertTrue(script.requiresSequencerUptimeFeed(138), "an id just above Polygon required");
+        assertTrue(script.requiresSequencerUptimeFeed(80002), "Polygon Amoy testnet required (unlisted)");
         assertTrue(script.requiresSequencerUptimeFeed(11155420), "an unlisted testnet required");
         assertTrue(script.requiresSequencerUptimeFeed(999_999_999), "an unknown id required");
         assertTrue(
@@ -196,5 +206,143 @@ contract DeployChainlinkOracleTest is Test {
         assertEq(address(oracle.sequencerUptimeFeed()), SEQUENCER_FEED, "uptime feed wired");
         (IAggregatorV3 feed,,,,) = oracle.feedOf(WETH);
         assertEq(address(feed), ETH_USD_FEED, "asset feed wired");
+    }
+
+    // ───────────── Ethereum 1 and Polygon 137 (owner decision 2026-10-18) ─────────────
+
+    /// @notice Ethereum deploys with no uptime feed: it is an L1, so there is no sequencer. Pinned
+    /// like Arc's: the oracle prices with no sequencer gate, which is the cost the entry records.
+    function test_ethereumDeploysWithoutSequencerFeed() public {
+        vm.chainId(1);
+        _mockFeed(ETH_USD_FEED, 1917e8);
+        ChainlinkOracle oracle = script.runWithSequencer(address(0));
+        assertEq(address(oracle.sequencerUptimeFeed()), address(0), "no uptime feed on Ethereum");
+        assertEq(oracle.priceWad(WETH), 1917e18, "prices with no sequencer gate at all");
+    }
+
+    /// @notice Polygon PoS deploys with no uptime feed (validator sidechain, no Chainlink feed).
+    function test_polygonDeploysWithoutSequencerFeed() public {
+        vm.chainId(137);
+        _mockFeed(ETH_USD_FEED, 1917e8);
+        ChainlinkOracle oracle = script.runWithSequencer(address(0));
+        assertEq(address(oracle.sequencerUptimeFeed()), address(0), "no uptime feed on Polygon");
+        assertEq(oracle.priceWad(WETH), 1917e18, "prices with no sequencer gate at all");
+    }
+
+    /// @notice Arbitrum One is NOT exempt (Base is covered above): Chainlink publishes a sequencer feed, so
+    /// the deploy refuses without one. The exemption is for the two chains the owner named.
+    function test_arbitrumIsNotExempt() public {
+        vm.chainId(42161);
+        vm.expectRevert(bytes(SEQUENCER_REQUIRED_REVERT));
+        script.runWithSequencer(address(0));
+    }
+
+    function test_chainsAdjacentToEthereumAndPolygonStillRequireSequencerFeed() public {
+        vm.chainId(2);
+        vm.expectRevert(bytes(SEQUENCER_REQUIRED_REVERT));
+        script.runWithSequencer(address(0));
+        vm.chainId(138);
+        vm.expectRevert(bytes(SEQUENCER_REQUIRED_REVERT));
+        script.runWithSequencer(address(0));
+    }
+
+    // ───────────── the sane-price band is mandatory on every mainnet ─────────────
+
+    string constant BAND_REQUIRED_REVERT =
+        "DeployChainlinkOracle: a sane-price band per asset is required on every chain except local 31337 and Base Sepolia 84532";
+
+    function _basket(uint256 minW, uint256 maxW)
+        internal
+        pure
+        returns (
+            address[] memory a,
+            address[] memory f,
+            uint256[] memory hb,
+            uint256[] memory mn,
+            uint256[] memory mx
+        )
+    {
+        a = new address[](1);
+        f = new address[](1);
+        hb = new uint256[](1);
+        mn = new uint256[](1);
+        mx = new uint256[](1);
+        a[0] = WETH;
+        f[0] = ETH_USD_FEED;
+        hb[0] = 86400;
+        mn[0] = minW;
+        mx[0] = maxW;
+    }
+
+    function _deployWith(uint256 minW, uint256 maxW) internal returns (ChainlinkOracle) {
+        (
+            address[] memory a,
+            address[] memory f,
+            uint256[] memory hb,
+            uint256[] memory mn,
+            uint256[] memory mx
+        ) = _basket(minW, maxW);
+        return script.deployWith(SEQUENCER_FEED, a, f, hb, mn, mx, USDC);
+    }
+
+    /// @notice Allowlist shape: only local and Base Sepolia may omit the band; everything else,
+    /// including an id the script has never seen, needs it.
+    function test_requiresSanePriceBandIsAnAllowlist() public view {
+        assertFalse(script.requiresSanePriceBand(31337), "local may omit");
+        assertFalse(script.requiresSanePriceBand(84532), "Base Sepolia may omit");
+        uint256[9] memory mainnets = [uint256(1), 137, 8453, 42161, 5042, 4663, 10, 11155111, 999_999_999];
+        for (uint256 i; i < mainnets.length; ++i) {
+            assertTrue(script.requiresSanePriceBand(mainnets[i]), "band required");
+        }
+    }
+
+    /// @notice A band-less deploy is refused on each of the five launch chains, with both halves of
+    /// the band (a floor alone or a ceiling alone is no band).
+    function test_bandlessDeployRefusedOnEveryMainnet() public {
+        uint256[5] memory ids = [uint256(5042), 8453, 42161, 1, 137];
+        for (uint256 i; i < ids.length; ++i) {
+            vm.chainId(ids[i]);
+            _mockFeed(ETH_USD_FEED, 1917e8);
+            _mockFeed(SEQUENCER_FEED, 0);
+            vm.expectRevert(bytes(BAND_REQUIRED_REVERT));
+            _deployWith(0, 0);
+            vm.expectRevert(bytes(BAND_REQUIRED_REVERT));
+            _deployWith(100e18, 0);
+            vm.expectRevert(bytes(BAND_REQUIRED_REVERT));
+            _deployWith(0, 100_000e18);
+        }
+    }
+
+    /// @notice An id this script has never seen fails closed: a mis-pointed RPC cannot ship a band-less oracle.
+    function test_bandlessDeployRefusedOnAnUnknownChain() public {
+        vm.chainId(424_242);
+        _mockFeed(ETH_USD_FEED, 1917e8);
+        _mockFeed(SEQUENCER_FEED, 0);
+        vm.expectRevert(bytes(BAND_REQUIRED_REVERT));
+        _deployWith(0, 0);
+    }
+
+    /// @notice The local chain and Base Sepolia still deploy band-less (the design for tests and the testnet).
+    function test_bandlessDeployStillWorksOnLocalAndBaseSepolia() public {
+        _mockFeed(ETH_USD_FEED, 1917e8);
+        _mockFeed(SEQUENCER_FEED, 0);
+        vm.chainId(31337);
+        assertEq(address(_deployWith(0, 0).sequencerUptimeFeed()), SEQUENCER_FEED, "local deploys");
+        vm.chainId(84532);
+        assertEq(address(_deployWith(0, 0).sequencerUptimeFeed()), SEQUENCER_FEED, "Base Sepolia deploys");
+    }
+
+    /// @notice With a band, every launch chain deploys.
+    function test_bandedDeployWorksOnEveryMainnet() public {
+        uint256[5] memory ids = [uint256(5042), 8453, 42161, 1, 137];
+        for (uint256 i; i < ids.length; ++i) {
+            vm.chainId(ids[i]);
+            _mockFeed(ETH_USD_FEED, 1917e8);
+            _mockFeed(SEQUENCER_FEED, 0);
+            ChainlinkOracle oracle = _deployWith(100e18, 100_000e18);
+            (,,, uint128 mn, uint128 mx) = oracle.feedOf(WETH);
+            assertEq(mn, 100e18, "band floor wired");
+            assertEq(mx, 100_000e18, "band ceiling wired");
+        }
     }
 }

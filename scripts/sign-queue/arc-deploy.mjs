@@ -84,6 +84,17 @@ function callItem({ id, order, what, to, sig, args, expectedNonce, dependsOn }) 
 }
 
 export function build() {
+  // RETIRED 2026-10-18. This builder reproduces the Arc v1 deploy (plain CREATE from the deployer EOA,
+  // nonces 1 to 11, completed 2026-09-24 from c8f112be) and nothing else. `Deploy.s.sol` is now the
+  // CREATE2 recipe: `VaultFactory`'s constructor lost its `address[]` argument and the oracle allowlist
+  // moved to `factory.initialize`, so the `constructor(...,bool,address[])` encoding below would append
+  // an argument the contract no longer reads and deploy a factory whose allowlist is never set. Wiring
+  // the registry to such a factory is the hazard `VaultFactory.NotInitialized` exists to contain. The
+  // v1 items are done; a rebuild has no valid use. The six-chain CREATE2 builder is a separate piece of
+  // work (docs/DEPLOYMENT.md section 10).
+  throw new Error(
+    'arc-deploy: RETIRED. This builder mirrors the Arc v1 CREATE deploy, which is complete; the contracts now deploy through CREATE2 (contracts/script/Deploy.s.sol) and VaultFactory takes its oracle allowlist in initialize(). Do not rebuild these items.',
+  );
   const cfg = JSON.parse(readFileSync(path.join(ROOT, 'contracts', 'config', 'arc-mainnet.json'), 'utf8'));
   if (cfg.chainId !== CHAIN_ID) throw new Error(`arc-mainnet.json chainId is ${cfg.chainId}, expected ${CHAIN_ID}`);
   const oracleCfg = cfg.chainlinkOracle;

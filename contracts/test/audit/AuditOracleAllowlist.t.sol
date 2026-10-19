@@ -8,7 +8,7 @@ pragma solidity 0.8.26;
 // ChainlinkOracle pointed at a creator-controlled FAKE AggregatorV3 prices whatever the creator
 // wants — both pass every per-oracle constructor check, and there is no on-chain way for the
 // factory to tell a genuine Chainlink feed from a fake. The launch resolution is CURATION: the
-// factory carries an immutable allowlist of blessed oracle instances (ChainlinkOracle over verified
+// factory carries an allowlist of blessed oracle instances, set once by `initialize` (ChainlinkOracle over verified
 // genuine feeds), and createVault/createChildVault refuse any oracle not on it. An EMPTY allowlist
 // disables enforcement (local/tests / a deliberately-permissionless post-audit deployment).
 //
@@ -28,6 +28,7 @@ import {IGovernance} from "../../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "../mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../../src/lib/ProtocolInitializer.sol";
 
 contract AuditOracleAllowlistTest is Test {
     uint256 constant USDC_1 = 1e6;
@@ -54,11 +55,15 @@ contract AuditOracleAllowlistTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            false, // root-only
-            allowedOracles
+            false // root-only
         );
+        vm.prank(PROTOCOL_INITIALIZER);
+        f.initialize(allowedOracles);
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(f), address(fees));
+        vm.prank(PROTOCOL_INITIALIZER);
         subReg.wire(address(f));
+        vm.prank(PROTOCOL_INITIALIZER);
         gov.wireSubVaultRegistry(address(subReg));
     }
 
@@ -109,27 +114,28 @@ contract AuditOracleAllowlistTest is Test {
     }
 
     // ── a codeless allowlist entry (a typo'd BLESSED_ORACLES address) is rejected ─
-    function test_constructor_rejectsCodelessAllowlistEntry() public {
-        // Build the deps first (non-reverting), then wrap ONLY the factory ctor in expectRevert.
+    function test_initialize_rejectsCodelessAllowlistEntry() public {
+        // Build the deps first (non-reverting), then wrap ONLY `initialize` in expectRevert.
         OperatorRegistry r = new OperatorRegistry();
         SubVaultRegistry sr = new SubVaultRegistry();
         FeeEngine fe = new FeeEngine(IRegistryView(address(r)));
         Governance g = new Governance();
         VaultDeployer vd = new VaultDeployer();
-        address[] memory allow = new address[](1);
-        allow[0] = address(0xDEAD); // no code — a deploy typo
-        // Rejected (mirrors ChainlinkOracle's codeless-feed reject); without the check it would flip
-        // enforcement on and bless an address that can never price a vault.
-        vm.expectRevert(VaultFactory.OracleNotAllowed.selector);
-        new VaultFactory(
+        VaultFactory vf = new VaultFactory(
             IOperatorRegistry(address(r)),
             IGovernance(address(g)),
             IFeeEngine(address(fe)),
             address(sr),
             IVaultDeployer(address(vd)),
-            false,
-            allow
+            false
         );
+        address[] memory allow = new address[](1);
+        allow[0] = address(0xDEAD); // no code — a deploy typo
+        // Rejected (mirrors ChainlinkOracle's codeless-feed reject); without the check it would flip
+        // enforcement on and bless an address that can never price a vault.
+        vm.expectRevert(VaultFactory.OracleNotAllowed.selector);
+        vm.prank(PROTOCOL_INITIALIZER);
+        vf.initialize(allow);
     }
 
     // ── enforcement OFF: an empty allowlist is permissive (tests / post-audit) ─

@@ -175,7 +175,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "The contracts carry no proxy, no upgrade path and no pause, and the source declares no owner and no admin role. One privileged caller exists &mdash; the deploy key &mdash; and its entire power is wiring: three one-shot calls that write four registry-pointer slots and revert the second time each is tried. None of the four is a path to member funds. The contracts are now deployed on Arc, so this is no longer hypothetical: their code is what runs, permanently, and nobody holds the power to replace it."
+        "dd": "The contracts carry no proxy, no upgrade path and no pause, and the source declares no owner and no admin role. One privileged caller exists, the deploy key, and every call it has is one-shot and reverts the second time it is tried. On the Arc deployment live today those calls were three wirings that write four registry-pointer slots, and all three have been made. The same-address deployment built from the current source adds a fourth, <code>VaultFactory.initialize</code>, which sets the factory&rsquo;s oracle allowlist; an empty list leaves the allowlist off for good on that chain. The key chooses two kinds of thing: which addresses the registries point at and, on the same-address deployment, which oracles the factory accepts. A fake oracle on the allowlist is exactly the attack the allowlist exists to close, and a wrong registry pointer would block vault creation or fake track records, so each call is made once per chain and nobody can change it afterwards; the factory creates nothing until the allowlist call has run. The contracts are now deployed on Arc, so this is no longer hypothetical: their code is what runs, permanently, and nobody holds the power to replace it."
       },
       {
         "dt": "Worst case",
@@ -441,7 +441,7 @@ export const REGISTER_ENTRIES: readonly RiskEntry[] = [
     "rows": [
       {
         "dt": "What it is",
-        "dd": "Each vault's oracle address is fixed in immutable code at construction. Governance has no oracle-shaped proposal. The factory's allowlist is fixed in its constructor with no add, no remove and no owner, and it governs only which oracle a <em>new</em> vault may be created with."
+        "dd": "Each vault's oracle address is fixed in immutable code at construction. Governance has no oracle-shaped proposal. The factory's allowlist is set once, when the factory is brought up, with no add, no remove and no owner afterwards, and it governs only which oracle a <em>new</em> vault may be created with."
       },
       {
         "dt": "Worst case",
@@ -631,7 +631,7 @@ export const SCOPE_ROWS: readonly ScopeRow[] = [
   {
     "key": "stock-index-needs-different-oracle",
     "term": "The stock index needs a different oracle",
-    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is fixed in its constructor with no add, no remove and no owner. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 90,000-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
+    "body": "The oracle prices the assets it is constructed with, and the factory&rsquo;s oracle allowlist is set once, when the factory is brought up, with no add, no remove and no owner afterwards. Equity feeds publish on market days, and a weekend silence longer than the oracle&rsquo;s 90,000-second ceiling would make an all-stocks index freeze every weekend under this design. That is unsolved design work, not a parameter."
   }
 ];
 

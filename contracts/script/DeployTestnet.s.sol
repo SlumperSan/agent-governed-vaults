@@ -15,6 +15,7 @@ import {AggregationRouterAdapter} from "../src/AggregationRouterAdapter.sol";
 import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
 /// @title DeployTestnet — parameterized testnet bring-up (singletons + per-vault infra), PIVOTED to
 /// the C-6 launch oracle.
@@ -130,7 +131,11 @@ contract DeployTestnet is Script {
         address sequencer = _readSequencer(json);
         AssetPlan[] memory plan = _readChainlinkAssets(json);
 
-        vm.startBroadcast();
+        // Pinned to PROTOCOL_INITIALIZER: the singletons' wiring and `VaultFactory.initialize` accept no
+        // other sender, so a testnet run needs that key (`--account` must resolve to it). The testnet
+        // singletons are plain CREATE, not the CREATE2 recipe of Deploy.s.sol: this script enables
+        // sub-vaults, which changes the factory's initcode, and a testnet needs no cross-chain address.
+        vm.startBroadcast(PROTOCOL_INITIALIZER);
 
         // ── The curated launch oracle FIRST, so it can seed the factory allowlist ──
         oracle = _deployOracle(plan, usdcPin, sequencer);
@@ -154,11 +159,11 @@ contract DeployTestnet is Script {
             // code and the SV-* soak drills can be exercised. MAINNET launches root-only (Deploy.s.sol
             // passes false). Re-enabling on mainnet requires the parent-casts-child-vote mechanism to
             // have shipped and been audited — see VaultFactory.allowSubVaults.
-            true,
-            // C-6: seed the oracle allowlist with the curated ChainlinkOracle so the testnet run
-            // exercises the curation gate (the old bring-up passed an empty, permissive list).
-            blessed
+            true
         );
+        // C-6: seed the oracle allowlist with the curated ChainlinkOracle so the testnet run
+        // exercises the curation gate (the old bring-up passed an empty, permissive list).
+        factory.initialize(blessed);
         registry.wire(address(factory), address(feeEngine));
         subReg.wire(address(factory));
         governance.wireSubVaultRegistry(address(subReg));

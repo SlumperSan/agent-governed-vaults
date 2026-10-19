@@ -15,6 +15,7 @@ import {IFeeEngine} from "../../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {IExecutionAdapter} from "../../src/interfaces/IExecutionAdapter.sol";
 import {MockERC20, MockOracle} from "../mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../../src/lib/ProtocolInitializer.sol";
 
 /// @dev The per-proposal slippage bound these tests execute under.
 uint256 constant MAX_SLIPPAGE_BPS = 200;
@@ -182,11 +183,15 @@ contract AuditReentrancyGuardCoverageTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            false, // sub-vaults not needed: the lock is engaged by the vault's own rebalance
-            new address[](0)
+            false // sub-vaults not needed: the lock is engaged by the vault's own rebalance
         );
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(new address[](0));
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factory), address(fees));
+        vm.prank(PROTOCOL_INITIALIZER);
         subReg.wire(address(factory));
+        vm.prank(PROTOCOL_INITIALIZER);
         gov.wireSubVaultRegistry(address(subReg));
 
         probe = new GuardProbeAdapter(address(usdc), address(weth));

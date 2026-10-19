@@ -5,34 +5,38 @@ import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
-import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
+import {FeeEngine} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
-import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
+import {VaultFactory} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
-import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
-import {IGovernance} from "../src/interfaces/IGovernance.sol";
-import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
+import {ProtocolCreate2} from "./lib/ProtocolCreate2.sol";
 
-/// @title Deploy — canonical protocol bring-up
-/// @notice Deploys the singletons and performs the one-shot wiring in the ONLY valid order.
-/// The wiring calls (`registry.wire`, `subReg.wire`, `gov.wireSubVaultRegistry`) are each
-/// permanently locked after this transaction — there is no admin able to re-point them, which
-/// is what makes the registry/factory trust anchor credible (CM-5, SF-4).
+/// @title Deploy — canonical protocol bring-up (same addresses on every chain)
+/// @notice Deploys the six singletons through the Arachnid CREATE2 proxy with fixed salts (see
+/// `lib/ProtocolCreate2.sol`), so each one lands at the same address on every chain, then sets the
+/// per-chain oracle allowlist and performs the one-shot wiring. Every post-deploy call is sent by
+/// PROTOCOL_INITIALIZER, and the broadcast is pinned to that address: any other signer cannot
+/// complete this script. The wiring calls (`registry.wire`, `subReg.wire`,
+/// `gov.wireSubVaultRegistry`) and `factory.initialize` are each permanently locked after their
+/// first call, which is what makes the registry/factory trust anchor credible (CM-5, SF-4).
 ///
-/// Ordering constraint (why this sequence and no other):
+/// Order (the six deploys can land in any order, because every address is a function of salt and
+/// initcode alone; this is the order the script uses):
 ///   1. OperatorRegistry + SubVaultRegistry — no dependencies.
-///   2. FeeEngine — needs the OperatorRegistry address.
+///   2. FeeEngine — its initcode embeds the OperatorRegistry address.
 ///   3. Governance — no constructor deps; sub-vault registry wired post-deploy.
-///   4. VaultDeployer — no dependencies, but MUST precede the factory: the factory pins it
-///      immutably. It carries VaultCore's creation code, which is why the factory itself no
-///      longer does and finally fits under EIP-170 (#10).
-///   5. VaultFactory — needs registry + governance + feeEngine + subRegistry + vaultDeployer.
-///   6. Wire back-references: registry.wire(factory, feeEngine); subReg.wire(factory);
-///      gov.wireSubVaultRegistry(subReg). Only now can vaults be created.
+///   4. VaultDeployer — no dependencies, but the factory pins it. It carries VaultCore's creation
+///      code, which is why the factory itself no longer does and fits under EIP-170 (#10).
+///   5. VaultFactory — its initcode embeds registry + governance + feeEngine + subRegistry +
+///      vaultDeployer. It creates nothing until step 6.
+///   6. `factory.initialize(BLESSED_ORACLES)`, THEN the wiring: registry.wire(factory, feeEngine);
+///      subReg.wire(factory); gov.wireSubVaultRegistry(subReg). The factory is initialised before the
+///      registry is pointed at it, so an uninitialised factory (oracle allowlist off) is never wired.
 ///
-/// Oracles and execution adapters are NOT protocol singletons — each vault creator supplies
-/// their own at createVault time (venue/source choice is a per-vault decision, C-2/SF-1), so
-/// this script deploys none.
+/// Oracles and execution adapters are NOT protocol singletons — each chain has its own (DeployChainlinkOracle
+/// deploys the oracle), and each vault creator supplies theirs at createVault time, so this script deploys
+/// none. Run DeployChainlinkOracle first and pass its address as BLESSED_ORACLES.
 contract Deploy is Script {
     uint256 constant LOCAL_CHAIN_ID = 31337; // anvil / forge test — the ONLY chain an empty oracle allowlist is allowed on
 
@@ -47,14 +51,7 @@ contract Deploy is Script {
             VaultFactory factory
         )
     {
-        vm.startBroadcast();
-
-        registry = new OperatorRegistry();
-        subReg = new SubVaultRegistry();
-        feeEngine = new FeeEngine(IRegistryView(address(registry)));
-        governance = new Governance();
-        vaultDeployer = new VaultDeployer();
-
+        // The oracle list is read and refused BEFORE anything is sent.
         // C-6: blessed oracle allowlist. Supply the curated ChainlinkOracle instance(s) — deployed
         // over verified genuine Chainlink Data Feeds (see DeployChainlinkOracle.s.sol) — via the
         // BLESSED_ORACLES env var (comma-separated addresses). An empty allowlist ships the C-6 gate
@@ -70,15 +67,19 @@ contract Deploy is Script {
             "C-6: a real-chain deploy requires a non-empty BLESSED_ORACLES allowlist (empty allowed only on local 31337)"
         );
 
-        factory = new VaultFactory(
-            IOperatorRegistry(address(registry)),
-            IGovernance(address(governance)),
-            IFeeEngine(address(feeEngine)),
-            address(subReg),
-            IVaultDeployer(address(vaultDeployer)),
-            false, // C-1: root vaults only at launch (sub-vaults disabled; see VaultFactory.allowSubVaults)
-            blessedOracles // C-6: curated oracle allowlist (see the guard above)
-        );
+        vm.startBroadcast(PROTOCOL_INITIALIZER);
+
+        ProtocolCreate2.Set memory s = ProtocolCreate2.createAll();
+        registry = OperatorRegistry(s.operatorRegistry);
+        subReg = SubVaultRegistry(s.subVaultRegistry);
+        feeEngine = FeeEngine(s.feeEngine);
+        governance = Governance(s.governance);
+        vaultDeployer = VaultDeployer(s.vaultDeployer);
+        factory = VaultFactory(s.vaultFactory);
+
+        // Initialise the factory FIRST: an uninitialised factory has its C-6 oracle allowlist off, and it
+        // must never be the one the registry is wired to.
+        factory.initialize(blessedOracles);
 
         // One-shot wiring — irreversible after this transaction.
         registry.wire(address(factory), address(feeEngine));
@@ -86,6 +87,11 @@ contract Deploy is Script {
         governance.wireSubVaultRegistry(address(subReg));
 
         vm.stopBroadcast();
+
+        require(factory.initialized(), "Deploy: factory not initialised");
+        require(
+            registry.initialized() && subReg.initialized() && governance.initialized(), "Deploy: not wired"
+        );
 
         console2.log("OperatorRegistry", address(registry));
         console2.log("SubVaultRegistry", address(subReg));

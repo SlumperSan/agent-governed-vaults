@@ -32,6 +32,7 @@ import {IGovernance} from "../../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "../mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../../src/lib/ProtocolInitializer.sol";
 
 /// @dev An oracle that REVERTS StaleOracle for any asset it does not list — the ChainlinkOracle
 /// shape (its `feedOf[asset].feed == address(0)` sentinel reverts rather than returning 0).
@@ -74,11 +75,15 @@ contract AuditOracleCoversBasketTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            false, // root-only (C-1)
-            allowedOracles
+            false // root-only (C-1)
         );
+        vm.prank(PROTOCOL_INITIALIZER);
+        f.initialize(allowedOracles);
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(f), address(fees));
+        vm.prank(PROTOCOL_INITIALIZER);
         subReg.wire(address(f));
+        vm.prank(PROTOCOL_INITIALIZER);
         gov.wireSubVaultRegistry(address(subReg));
     }
 

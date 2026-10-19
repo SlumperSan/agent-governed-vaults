@@ -14,6 +14,7 @@ import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "./mocks/Mocks.sol";
+import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
 /// Full-system handler: a parent vault with a child, real fee engine + registry, static
 /// prices (price-path effects are out of scope for the accounting invariants — they are
@@ -145,11 +146,16 @@ contract SystemInvariantTest is Test {
             IFeeEngine(address(fees)),
             address(subReg),
             IVaultDeployer(address(new VaultDeployer())),
-            true, // exercises sub-vaults (createChildVault)
-            new address[](0) // C-6: no oracle allowlist (permissive)
+            true // exercises sub-vaults (createChildVault)
         );
+        // C-6: no oracle allowlist (permissive)
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(new address[](0));
+        vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factory), address(fees));
+        vm.prank(PROTOCOL_INITIALIZER);
         subReg.wire(address(factory));
+        vm.prank(PROTOCOL_INITIALIZER);
         gov.wireSubVaultRegistry(address(subReg));
 
         address[] memory basket = new address[](1);
