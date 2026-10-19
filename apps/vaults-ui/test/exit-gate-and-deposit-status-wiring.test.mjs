@@ -206,7 +206,7 @@ test('"Use full balance" formats shares through formatUnits, not String()', () =
 });
 
 // ─────────────────────── Deposit refused while a pending deposit is outstanding ───────────────────────
-// VaultCore.sol:429: `require(pendingDeposit[msg.sender].amountUsdc == 0, PendingExists())`. A
+// VaultCore.sol:451: `require(pendingDeposit[msg.sender].amountUsdc == 0, PendingExists())`. A
 // second deposit during the four-hour observation window always reverts — the UI must refuse it
 // before a signature is requested, not let a member pay gas to learn it from the contract.
 

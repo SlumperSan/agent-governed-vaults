@@ -10,7 +10,7 @@ import { classifyDepositStatus } from '../src/deposit-status.mjs';
 
 const T = 1_800_000_000; // an arbitrary "now", in seconds
 const HOUR = 3600;
-const OBSERVATION_WINDOW = 4 * HOUR; // VaultCore.sol:52
+const OBSERVATION_WINDOW = 4 * HOUR; // VaultCore.sol:54
 
 test('no pending deposit and no shares reads as none', () => {
   const s = classifyDepositStatus({ pendingAmountUsdc: 0n, availableAt: 0, sharesOf: 0n, now: T });
@@ -46,7 +46,7 @@ test('boundary: just before availableAt is still waiting, at and just after are 
 });
 
 test('a matured pending deposit reads as available, not active — activation is a separate call', () => {
-  // VaultCore.activate(address member) is permissionless but not automatic (line 441-446): shares
+  // VaultCore.activate(address member) is permissionless but not automatic (line 463-468): shares
   // have not minted yet even though the window has cleared. Reading this as "active" would tell a
   // member their shares exist when the mapping still says otherwise.
   const at = T - 1;
@@ -65,7 +65,7 @@ test('shares with no pending deposit reads as active', () => {
 test('a pending amount with both no shares reads waiting/available; WITH shares is a torn read, not a position', () => {
   // `_mintShares` is the only path that raises `sharesOf`, and both its callers either take the
   // immediate-mint branch (never creates a pending entry) or delete the pending entry before
-  // minting (VaultCore.sol:448-450). pending>0 && shares>0 from one atomic read cannot happen —
+  // minting (VaultCore.sol:470-472). pending>0 && shares>0 from one atomic read cannot happen —
   // only from two reads taken far enough apart that activate() landed in between.
   const at = T + OBSERVATION_WINDOW;
   const s = classifyDepositStatus({ pendingAmountUsdc: 1_000_000n, availableAt: at, sharesOf: 7n, now: T });

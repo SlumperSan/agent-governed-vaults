@@ -30,7 +30,7 @@ import { toBig, BPS } from './format.mjs';
 import { hasPendingExecution } from './governance.mjs';
 import { exitFeeBps } from './exit-preview.mjs';
 
-/** `VaultCore.CREATOR_MIN_STAKE_BPS` (VaultCore.sol:53) — 5%, in bps. */
+/** `VaultCore.CREATOR_MIN_STAKE_BPS` (VaultCore.sol:55) — 5%, in bps. */
 export const CREATOR_MIN_STAKE_BPS = 500n;
 
 /**
@@ -61,7 +61,7 @@ export function canSign(v) {
 // ───────────────────────── 1. skipWindow — irrevocable, no undo ─────────────────────────
 
 /**
- * `VaultCore.skipWindow` (VaultCore.sol:463-471): `require(!skipOptIn[msg.sender],
+ * `VaultCore.skipWindow` (VaultCore.sol:485-493): `require(!skipOptIn[msg.sender],
  * AlreadyOptedIn())` is checked FIRST, and `skipOptIn` is never cleared anywhere in the
  * contract — there is no call that undoes it. Once-per-member-per-vault.
  * @param {{skipOptIn: boolean|null|undefined}} f
@@ -92,7 +92,7 @@ export function skipWindowRefusal({ skipOptIn }) {
  * own implementation, so this module and the governance tab can never disagree about it. A
  * Defeated proposal (like Executed, Expired, or no active proposal at all) makes
  * `hasPendingExecution` return `false` — `requestExit` then takes VaultCore's Mode-I branch
- * (VaultCore.sol:556-567) and settles IN THIS TRANSACTION at current NAV, exactly as if no
+ * (VaultCore.sol:580-592) and settles IN THIS TRANSACTION at current NAV, exactly as if no
  * proposal had ever existed. There is nothing special about "the proposal I was watching just got
  * Defeated": it is not queued, not forward-priced to some other number, and not blocked.
  *
@@ -130,12 +130,12 @@ export function requestExitPricingRefusal({ proposal, nowSec }) {
 // ──────────────────────── 3. the creator 5% withdrawal gate ────────────────────────
 
 /**
- * Mirrors `VaultCore._checkCreatorGate` (VaultCore.sol:600-608) exactly, including its rounding:
+ * Mirrors `VaultCore._checkCreatorGate` (VaultCore.sol:625-633) exactly, including its rounding:
  *   `(sharesOf[member] - burnShares) * BPS >= CREATOR_MIN_STAKE_BPS * (totalShares - burnShares)`
  * — a creator landing at EXACTLY 5% after the burn passes (`>=`, not `>`). Binds ONLY when
  * `member === creator` AND `nonCreatorMemberCount > 0` (other members remain). Checked at
  * REQUEST time for BOTH exit modes — eagerly on the Mode-F queue branch too, the L-1 fix
- * (VaultCore.sol:557-559) — so a gate-violating request reverts before anything is queued, not
+ * (VaultCore.sol:581-583) — so a gate-violating request reverts before anything is queued, not
  * only at settlement, and the UI must refuse it before submission rather than let the creator eat
  * that revert.
  * @param {{creator: string|null, member: string|null, sharesOf: bigint|string|null,
@@ -183,9 +183,9 @@ export function creatorGateRefusal({ creator, member, sharesOf, totalShares, non
 // ──────────────────── 4. exitFeeBpsOf is a CEILING, not a promise ────────────────────
 
 /**
- * `VaultCore.exitFeeBpsOf` (VaultCore.sol:1073-1075) returns `_exitFeeBps(member)` computed from
+ * `VaultCore.exitFeeBpsOf` (VaultCore.sol:1108-1110) returns `_exitFeeBps(member)` computed from
  * `lastDepositTime` AT THE MOMENT IT IS CALLED. The fee actually withheld at settlement
- * (VaultCore.sol:621-622, inside `_settleExit`) is not guaranteed to equal this reading, for two
+ * (VaultCore.sol:656-657, inside `_settleExit`) is not guaranteed to equal this reading, for two
  * independent reasons:
  *   - `_settleExit` recomputes `_exitFeeBps(member)` fresh from `lastDepositTime` AT SETTLEMENT,
  *     never from a value captured at request time. Tenure only advances between now and
@@ -195,7 +195,7 @@ export function creatorGateRefusal({ creator, member, sharesOf, totalShares, non
  *   - it is forced to EXACTLY ZERO if `sharesOf[member] == totalShares` at settlement — the
  *     sole-holder waiver (EE-8/EE-9) — regardless of tenure.
  * The one direction this reading does NOT bound: a fresh `deposit()` between now and settlement
- * resets `lastDepositTime` on the member's ENTIRE position (VaultCore.sol:496, `_mintShares`),
+ * resets `lastDepositTime` on the member's ENTIRE position (VaultCore.sol:518, `_mintShares`),
  * which can raise the real fee above this reading. State that plainly rather than calling this an
  * unconditional ceiling.
  * @param {{exitFeeMaxBps: bigint|number|string|null|undefined,

@@ -135,7 +135,7 @@ function AppShell() {
                       ? (() => {
                           // `vault.nonCreatorMemberCount`, NEVER `vault.holderCount` (security
                           // review on PR #391): the creator is the RWAlly team's own Safe,
-                          // "creator included" in `holderCount` (VaultCore.sol:128) but on no
+                          // "creator included" in `holderCount` (VaultCore.sol:149) but on no
                           // seeded-persona list, so the raw count would silently read as organic.
                           const bound = organicMemberBound(vault.nonCreatorMemberCount, SEEDED_ADDRESSES.length);
                           return bound === null ? '' : (

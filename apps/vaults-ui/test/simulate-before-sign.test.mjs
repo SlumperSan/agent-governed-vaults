@@ -45,7 +45,7 @@ function abiErrorNames() {
 /**
  * Every library name a single-library `using X for Y;` declaration binds, in declaration order. A
  * revert bubbling up from inside a `using`-bound library (e.g. `usdc.safeTransferFrom(...)` at
- * VaultCore.sol:420, bound via `using SafeTransferLib for address;` at VaultCore.sol:39) is still
+ * VaultCore.sol:442, bound via `using SafeTransferLib for address;` at VaultCore.sol:41) is still
  * a revert on the caller's own call frame, so its errors belong in the same decode set as the
  * contract's own — this is the scan `KNOWN_ERRORS_ABI`'s header comment previously did NOT cover
  * (confirmed gap: `TransferFromFailed`/`TransferFailed`/`ApproveFailed` were absent).
@@ -139,7 +139,7 @@ test('StaleOracle (IOracleAggregator.sol) is decodable — navWad() reaches it f
 test('KNOWN_ERRORS_ABI names every error declared by a library VaultCore.sol or Governance.sol binds via `using`', () => {
   // The gap Security found: KNOWN_ERRORS_ABI's own scan was three hand-named contract files, not
   // what VaultCore.sol/Governance.sol actually bind via `using`, so SafeTransferLib's three errors
-  // (reachable directly from deposit()'s usdc.safeTransferFrom(...), VaultCore.sol:420) were
+  // (reachable directly from deposit()'s usdc.safeTransferFrom(...), VaultCore.sol:442) were
   // silently outside the scan. This test re-derives the library list from source instead of
   // hand-naming it (see the `usingLibraryNames` doc comment for why an under-parse there throws
   // rather than silently scanning fewer libraries than actually exist), so the NEXT library either

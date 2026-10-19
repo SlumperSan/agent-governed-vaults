@@ -297,7 +297,7 @@ Three-way classification:
 
 | Revert | Status | Why |
 |---|---|---|
-| `ZeroAmount`, `InsufficientShares`, `ExitAlreadyQueued`, `CreatorStakeGate`, `ExitNeedsChildSettlement`, `ChildSettlementPending` | **OK** | gates on the caller's own position, expected |
+| `ZeroAmount`, `InsufficientShares`, `ExitAlreadyQueued`, `CreatorStakeGate`, `ExitNeedsChildSettlement`, `ChildSettlementPending`, `PositionBelowFloor` | **OK** | gates on the caller's own position, expected (`PositionBelowFloor`: `_checkPositionFloor` found a nonzero remainder below `MIN_POSITION_SHARES`) |
 | `StaleOracle` | **DEGRADED** | the SF-2/K-4 breaker. By design, but it *is* a live capital freeze, so it never reads as OK. Attributed to the oracle signal, which pages for it, one root cause, one page |
 | anything else: `Reentrancy`, `Panic`, `Error(string)`, an unrecognized selector, or **empty returndata** | **ALERT** | a non-gate revert means members cannot exit |
 

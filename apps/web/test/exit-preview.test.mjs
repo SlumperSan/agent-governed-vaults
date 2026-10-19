@@ -182,7 +182,7 @@ test('a RESIDUAL is not a child unwind — the dust bound is the contract’s ow
 });
 
 test('the 10% performance fee is modelled as a CEILING, on every leg', () => {
-  // VaultCore.sol:660-704 withholds perfFee UNIFORMLY across the USDC leg and every token slice
+  // VaultCore.sol:695-739 withholds perfFee UNIFORMLY across the USDC leg and every token slice
   // AFTER the point the rest of this module stops. The exact fee needs the per-(member,operator)
   // HWM loss carry, which no projection exposes — so only the bound `gain / 10` is modelled.
   const r = previewExit({

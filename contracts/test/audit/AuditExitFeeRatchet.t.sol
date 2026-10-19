@@ -33,7 +33,7 @@ contract RatchetPerfFeeEngine is IFeeEngine {
 /// single share-wei. NAV rises while totalShares stays 1, so one share-wei becomes worth tens of
 /// USDC. A depositor (V) whose deposit or `activate` lands in `[p, 2p)` mints floor(V/p) = 1
 /// share-wei and A takes half of the vault on exit: V loses up to a quarter of the deposit
-/// (190 USDC victim: 46.59 USDC lost, 15 cycles, about 0.03 USDC of gas).
+/// (190 USDC victim: 46.59 USDC lost, 15 cycles).
 ///
 /// THE FIX. `_checkPositionFloor` (called from `_settleExit` on the immediate path and from the Mode F
 /// queue branch of `requestExit`) reverts `PositionBelowFloor` when the EXITER's remainder is nonzero
@@ -47,9 +47,17 @@ contract RatchetPerfFeeEngine is IFeeEngine {
 /// exitFeeDecayPeriod 604800; OBSERVATION_WINDOW is the contract's 4 hours). Empty basket (basket
 /// assets only add dust). USDC has 6 decimals.
 ///
-/// The tests are written to be red on the unfixed contract and green with the fix. `PositionBelowFloor`
-/// is matched by selector so the red-before run needs no contract change; `test_pinsMatchTheContract`
-/// pins that the local selector and floor are the contract's own.
+/// All tests are green with the fix. Run against the unfixed contract (with `test_pinsMatchTheContract`,
+/// which names `VaultCore.PositionBelowFloor`, removed so the file compiles), seven of the other twelve
+/// are red: test_trimToOneWeiIsRefused, test_victimLossIsBoundedAgainstTheOriginalAttack,
+/// test_floorBoundaryIsExact, test_noMemberIsTrappedByAnotherMembersDust,
+/// test_creatorSoleHolderCannotTrimToDust, test_modeFQueuedTrimIsRefusedAtQueueTime and
+/// testFuzz_noExitLeavesADustPosition. The other five (test_soleHolderFullExitIsUnaffected,
+/// test_trimToTheFloorThenRatchetIsHarmless, test_modeFQueuedExitsThatClearTheFloorSettle,
+/// test_modeFQueuedExitIsNotStrandedByASubFloorTopUp, test_modeFQueuedFullExitIsNotTrappedByADustPeer)
+/// pass either way: they pin behaviour that has to hold with the floor in place. `PositionBelowFloor`
+/// is matched by selector; `test_pinsMatchTheContract` pins that the local selector and floor are the
+/// contract's own.
 contract AuditExitFeeRatchet is Test {
     uint256 constant U = 1e6; // 1 USDC in units
     uint256 constant FLOOR = 1e18; // VaultCore.MIN_POSITION_SHARES
@@ -316,8 +324,8 @@ contract AuditExitFeeRatchet is Test {
     }
 
     /// The floor check reads the exiter's own remainder, not the pool.
-    /// Min deposit 1 unit lets a position below the floor exist: D holds 1e12 share-wei next to a
-    /// large holder C. C exits in full (the pool is left at D's dust); D exits in full. A burn that
+    /// Min deposit 1 unit lets a position below the floor exist: B holds 1e12 share-wei next to a
+    /// large holder A. A exits in full (the pool is left at B's dust); B exits in full. A burn that
     /// would leave a nonzero remainder below the floor reverts `PositionBelowFloor`.
     function test_noMemberIsTrappedByAnotherMembersDust() public {
         VaultCore v = _deployVault(1);
@@ -329,7 +337,7 @@ contract AuditExitFeeRatchet is Test {
         v.skipWindow();
         vm.stopPrank();
         vm.startPrank(B);
-        v.deposit(1); // 1 unit into a 1000 USDC vault: 1e12 / 1e9 of the supply... a dust position
+        v.deposit(1); // 1 unit into a 1000 USDC vault mints 1e12 share-wei: a position below the floor
         v.skipWindow();
         vm.stopPrank();
         uint256 dust = v.sharesOf(B);

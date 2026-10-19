@@ -200,7 +200,7 @@ const MAX_COOLDOWN_WAIT_SEC = 2 * 3600;
  *    complete having proved the negative half against a proposal that no longer exists — merely
  *    completing, not proving what the drill exists to prove.
  * 2. A restart must be REFUSED once the Mode-F exit has queued. `votingEligibleShares` is
- *    `sharesOf - queuedExitShares` (VaultCore.sol:1025-1028,1039-1041, confirmed by reading both
+ *    `sharesOf - queuedExitShares` (VaultCore.sol:1060-1063,1074-1076, confirmed by reading both
  *    call sites), so a signer with shares locked in the queue could never supply quorum to a
  *    fresh round again. This is checked live rather than assumed reachable: in THIS drill's step
  *    order `reveal` always precedes `requestExitModeF`, so a stale-reveal restart should never
@@ -220,7 +220,7 @@ async function recoverStaleRound(pid, p, now) {
   assert(queued === 0n,
     `cannot restart the Mode-F round: signer already has ${queued} shares queued for exit on ` +
     `${state.vault} — a fresh round could never reach quorum (votingEligibleShares = sharesOf - ` +
-    'queuedExitShares, VaultCore.sol:1025-1028,1039-1041). This should be structurally impossible ' +
+    'queuedExitShares, VaultCore.sol:1060-1063,1074-1076). This should be structurally impossible ' +
     'at this step (reveal precedes requestExitModeF in this drill) — investigate rather than restart.');
 
   log('──────────────────────────────────────────────');

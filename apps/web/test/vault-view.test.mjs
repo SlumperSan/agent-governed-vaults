@@ -217,7 +217,7 @@ test('votingEligibility mirrors votingEligibleShares, including a partial queue'
 test('votingEligibility carves out the parent vault, queued exit or not', () => {
   // The carve-out is the FIRST branch in the contract and does not read queuedExitShares at all:
   // a registered parent holds shares in its child and is excluded from eligible stake and from
-  // the holder count (`_snapshot` pushes 0 for it — VaultCore.sol:509-517).
+  // the holder count (`_snapshot` pushes 0 for it — VaultCore.sol:531-539).
   const p = votingEligibility({ shares: 500n * WAD, queuedExitShares: 0n, isParentVault: true });
   assert.equal(p.eligibleShares, 0n);
   assert.equal(p.lockedShares, 0n, 'zero because it is the parent, not because anything is queued');

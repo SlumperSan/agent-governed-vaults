@@ -65,7 +65,7 @@ flow quantifies that before the confirm.
 ## Three things this app refuses to state as a number
 
 1. **The performance fee is a range.** `_settleExit` withholds it uniformly across the USDC leg and
-   every token slice (VaultCore.sol:660-704), and `perfFee` is whatever `FeeEngine.onRealize`
+   every token slice (VaultCore.sol:695-739), and `perfFee` is whatever `FeeEngine.onRealize`
    returns, clamped to `gain / 10`. It depends on the per-`(member, operator)` high-water-mark loss
    carry, which no projection exposes. Only the ceiling is computable, so every payout leg renders
    as `min to max` and the panel says which end is which. There is no exact receipt to show, so

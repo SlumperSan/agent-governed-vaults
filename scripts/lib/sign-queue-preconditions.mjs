@@ -175,13 +175,13 @@ export async function finalizePreconditionRefusal(fetchImpl, governance, proposa
 
 /**
  * `Governance`/`VaultCore`'s own preconditions for the approve/deposit pair of a persona-routed
- * deposit — `_deposit` (`contracts/src/VaultCore.sol:407-435`): amount must clear
+ * deposit — `_deposit` (`contracts/src/VaultCore.sol:429-457`): amount must clear
  * `minDepositUsdc()` (read LIVE here rather than trusted from `contracts/config/arc-mainnet.json`,
  * which the builder also checks at build time — this is the defence against the config and the
  * chain having drifted apart since), the depositor's USDC balance must cover it (else the
  * `transferFrom` reverts), and `navWad()` must not revert (VaultCore's own freeze: "Reverts while
  * the oracle breaker is tripped — freezing everything, including exits, by design (K-4)",
- * VaultCore.sol:302-303). `checkAllowance` additionally requires `USDC.allowance(from, vault) >=
+ * VaultCore.sol:324-325). `checkAllowance` additionally requires `USDC.allowance(from, vault) >=
  * amount` — true only for the deposit item, since checking it on the approve item would refuse the
  * very item that sets the allowance. On the APPROVE item (`checkAllowance: false`), the balance
  * check additionally requires `GAS_HEADROOM_RAW` above `amount` — see that constant's own comment:
@@ -231,7 +231,7 @@ export async function personaDepositPreconditionRefusal(fetchImpl, {
 }
 
 /**
- * `VaultCore.activate`'s own precondition (`contracts/src/VaultCore.sol:440-445`):
+ * `VaultCore.activate`'s own precondition (`contracts/src/VaultCore.sol:462-467`):
  * `pendingDeposit(member).amountUsdc > 0 && block.timestamp >= availableAt`. Reads
  * `pendingDeposit(from)` and the chain's own clock on the SAME connection — the same discipline
  * `finalizePreconditionRefusal` above already uses, since a local wall clock is not guaranteed to
@@ -302,8 +302,8 @@ export function seededPersonaRefusal(from, persona, root = ROOT) {
 /**
  * Ordering gate (card 210, owner pivot 2026-09-23): the SECOND persona's deposit item must not be
  * signable until the FIRST persona's deposit has actually minted shares. `sharesOf` stays zero for
- * the entire 4-hour pending-deposit window (VaultCore.sol:407-435), so this is keyed off the first
- * persona's ACTIVATE item, not its deposit item — `_activatePending` (VaultCore.sol:473-479) is the
+ * the entire 4-hour pending-deposit window (VaultCore.sol:429-457), so this is keyed off the first
+ * persona's ACTIVATE item, not its deposit item — `_activatePending` (VaultCore.sol:495-501) is the
  * one call that mints. (The task that briefed this builder said "the first persona's deposit item
  * is done"; shares do not exist at that point, only after activation, so this function reads that
  * as shorthand for "the first persona's deposit has landed and activated" — see this repo's

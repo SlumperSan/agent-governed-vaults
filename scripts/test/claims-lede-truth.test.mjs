@@ -533,14 +533,14 @@ test('the operator\'s lack of power is enumerated, never claimed as a universal'
 // THE CLAIM SPLITS IN TWO AND THE HALVES HAVE OPPOSITE TRUTH VALUES. That is why one guard is not
 // enough and why a single banned phrase would be wrong.
 //
-//   WHAT THE VAULT HOLDS changes constantly with no vote. Read VaultCore: `deposit` (:392, :403),
-//   `activate` (:440 — its own NatSpec says "Callable by anyone"), `skipWindow` (:463),
-//   `requestExit`/`settleQueuedExit` (:551, :591 — also callable by anyone), and
-//   `pullChildEscrow` (:868), which is `external` with NO caller gate and credits `assetBalance`
+//   WHAT THE VAULT HOLDS changes constantly with no vote. Read VaultCore: `deposit` (:414, :425),
+//   `activate` (:462 — its own NatSpec says "Callable by anyone"), `skipWindow` (:485),
+//   `requestExit`/`settleQueuedExit` (:575, :616 — also callable by anyone), and
+//   `pullChildEscrow` (:903), which is `external` with NO caller gate and credits `assetBalance`
 //   directly. A blanket "nothing changes without a vote" is therefore FALSE TODAY, in seven places.
 //
 //   WHAT THE VAULT TRADES is gated. There are exactly THREE `msg.sender == address(governance)`
-//   requires in VaultCore — :786, :824 and :900 — and the only call to
+//   requires in VaultCore — :821, :859 and :935 — and the only call to
 //   `IExecutionAdapter.executeSwap` in the contract sits inside the third of them,
 //   `executeRebalance`. So "no silent trades" is TRUE today.
 //

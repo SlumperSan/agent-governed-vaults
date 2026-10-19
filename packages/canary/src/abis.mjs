@@ -370,7 +370,7 @@ export const GOVERNANCE_VIEWS = Object.freeze([
   view('revealedOf', ['uint256', 'address'], ['bool']),
   view('revealedSupportOf', ['uint256', 'address'], ['bool']),
   // Governance's OWN verdict on whether a vault has a pending execution (Governance.sol:736) —
-  // the fact `VaultCore.requestExit` (VaultCore.sol:575-591) branches on to decide Mode I
+  // the fact `VaultCore.requestExit` (VaultCore.sol:575-592) branches on to decide Mode I
   // (instant settlement, this transaction) vs Mode F (queues, irrevocable, settles later at
   // whatever NAV holds once the pending proposal resolves). apps/vaults-ui reads this directly
   // rather than reconstructing it from proposal deadlines client-side (governance.mjs's

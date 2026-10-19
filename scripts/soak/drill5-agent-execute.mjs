@@ -294,7 +294,7 @@ if (want('vote') && !state.phases?.vote?.done) {
     // keeping them apart is what lets it say WHICH one is zero: minimising here first would make
     // a queued-exit voter indistinguishable from one whose shares postdate the proposal.
     //
-    // NOTE THE `uint64`. VaultCore.sol:1040 declares `pastVotingEligibleShares(address, uint64)`;
+    // NOTE THE `uint64`. VaultCore.sol:1075 declares `pastVotingEligibleShares(address, uint64)`;
     // the `uint256` spelling is a DIFFERENT SELECTOR (0xab46cdef vs 0xc5a88eb3) and reverts, which
     // is how the first version of this guard aborted the phase 100% of the time.
     const snap = callU(

@@ -33,7 +33,7 @@
  * `cast wallet sign --no-hash` does here — a real run against the Arc Safe needs a signer that can
  * sign an already-computed digest). Two further creator gates exist and are NOT routed here, because
  * neither applies to the first vault: `VaultFactory.sol:220` (`createChildVault`, `NotParentCreator`)
- * only fires for sub-vaults, which are disabled at launch (`allowSubVaults` false); `VaultCore.sol:602`
+ * only fires for sub-vaults, which are disabled at launch (`allowSubVaults` false); `VaultCore.sol:627`
  * (`_checkCreatorGate`, `CreatorStakeGate`) is not a call gate at all — it requires the CREATOR keep
  * >=5% of shares while non-creator members remain, which is a consequence of the Safe being the
  * stake-locked member once it deposits, not something this PR routes or could route.

@@ -42,7 +42,7 @@ test('ProposalPanel never feeds the creator-inclusive vault.holderCount to the o
   assert.doesNotMatch(
     src,
     /organicStakeWeightedClaim\(vault\.holderCount/,
-    'vault.holderCount is "creator included" (VaultCore.sol:128) — the RWAlly team\'s own Safe, ' +
+    'vault.holderCount is "creator included" (VaultCore.sol:149) — the RWAlly team\'s own Safe, ' +
       'not a seeded persona — so it must never be the base this claim is computed from',
   );
 });

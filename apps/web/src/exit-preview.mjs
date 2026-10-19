@@ -16,7 +16,7 @@
  * present the payout as indicative in that case rather than exact. It is not guessed at.
  *
  * THE PERFORMANCE FEE IS A RANGE, NOT A NUMBER. After the legs above, `_settleExit` withholds
- * `perfFee` UNIFORMLY across the USDC leg and every token slice (VaultCore.sol:660-704):
+ * `perfFee` UNIFORMLY across the USDC leg and every token slice (VaultCore.sol:695-739):
  *
  *     feeFracWad = perfFee * usdcScalar * WAD / payoutValueWad
  *     usdcPay   -= usdcPay * feeFracWad / WAD
