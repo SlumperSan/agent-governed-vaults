@@ -387,8 +387,8 @@ contract AuditExitFeeRatchet is Test {
         assertEq(vault.queuedExitShares(A), 0, "nothing queued");
     }
 
-    /// A queued exit that clears the floor at queue time always settles: a full exit and an exit
-    /// leaving exactly the floor, including after the member tops up in between.
+    /// A queued exit that clears the floor at queue time settles: an exit leaving exactly the floor,
+    /// then a full exit.
     function test_modeFQueuedExitsThatClearTheFloorSettle() public {
         _aOpens(100 * U);
         gov.setPendingExecution(true);
@@ -406,6 +406,33 @@ contract AuditExitFeeRatchet is Test {
         gov.setPendingExecution(false);
         vault.settleQueuedExit(A);
         assertEq(vault.totalShares(), 0);
+    }
+
+    /// A queued exit is irrevocable, so the floor is checked when it is queued and NOT again at
+    /// settlement: a full exit queued (remainder 0) and then a top-up that mints a sub-floor balance
+    /// (min deposit 1 unit into a 1000 USDC vault mints 1e12 share-wei) must still settle, leaving the
+    /// top-up behind. Red if `settleQueuedExit` re-checks the floor (the strand this test pins).
+    function test_modeFQueuedExitIsNotStrandedByASubFloorTopUp() public {
+        VaultCore v = _deployVault(1);
+        _approveAll(v);
+        usdc.mint(A, 1000 * U + 1);
+        vm.startPrank(A);
+        v.deposit(1000 * U);
+        v.skipWindow();
+        uint256 all = v.sharesOf(A);
+        gov.setPendingExecution(true);
+        v.requestExit(all); // remainder 0: clears the floor at queue time
+        v.deposit(1); // window cleared: immediate mint of a sub-floor balance
+        vm.stopPrank();
+        uint256 topUp = v.sharesOf(A) - all;
+        assertGt(topUp, 0);
+        assertLt(topUp, FLOOR);
+        gov.setPendingExecution(false);
+        v.settleQueuedExit(A); // must not revert PositionBelowFloor
+        assertEq(v.sharesOf(A), topUp, "the queued shares left, the top-up stayed");
+        vm.prank(A);
+        v.requestExit(topUp); // and the dust position can still leave in full
+        assertEq(v.totalShares(), 0);
     }
 
     /// The same no-trap property in Mode F: a large holder queues a FULL exit although a dust peer

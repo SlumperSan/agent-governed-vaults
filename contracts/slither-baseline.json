@@ -121,6 +121,10 @@
       "count": 1,
       "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
     },
+    "incorrect-equality::VaultCore._checkPositionFloor": {
+      "count": 1,
+      "reason": "Safe -- the one flagged == is `remaining == 0` on a share count (the exit-fee ratchet floor: a remainder of zero is a full exit, which is always allowed), never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
+    },
     "incorrect-equality::VaultCore._mintShares": {
       "count": 1,
       "reason": "Safe -- every flagged == is on share counts / status enums / totalShares==0 first-deposit-or-sole-holder checks or a Checkpoints same-second overwrite, never a balanceOf a donation could grief (NAV never reads balanceOf, EE-1). SLITHER-TRIAGE.md 'incorrect-equality'."
@@ -336,6 +340,10 @@
     "timestamp::VaultCore._checkCreatorGate": {
       "count": 1,
       "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "timestamp::VaultCore._checkPositionFloor": {
+      "count": 1,
+      "reason": "Accepted (K-4 / by design) -- a comparison of a share-count remainder against a constant that slither taints through the exit path's block.timestamp reads (the tenure clock); the function itself reads no clock. block.timestamp is the protocol's only clock (commitment C-2). SLITHER-TRIAGE.md 'timestamp'."
     },
     "timestamp::VaultCore._deposit": {
       "count": 1,

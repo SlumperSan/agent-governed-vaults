@@ -60,7 +60,7 @@ cap), `exitFeeDecayPeriod`, the adapter allowlist (EX-1), the basket (≤ `MAX_B
 | `activate(member)` | nonReentrant, anyone | Mints a matured pending deposit at **activation-time** NAV (forward pricing on entry) |
 | `cancelPending()` | nonReentrant | Refunds an un-activated pending deposit. **Reads no oracle**, always works during a breaker freeze |
 | `skipWindow()` | nonReentrant | Irrevocable per-agent opt-out of the window; activates any pending immediately |
-| `requestExit(shares)` | nonReentrant | Mode I (no pending execution): settles instantly. Mode F: checks creator gate, queues, de-eligibles the shares. Both modes revert `PositionBelowFloor` when the caller would be left holding a nonzero balance under `MIN_POSITION_SHARES` (1e18 share-wei); Mode F checks it at queue time and again at settlement |
+| `requestExit(shares)` | nonReentrant | Mode I (no pending execution): settles instantly. Mode F: checks creator gate, queues, de-eligibles the shares. Both modes revert `PositionBelowFloor` when the caller would be left holding a nonzero balance under `MIN_POSITION_SHARES` (1e18 share-wei); Mode F checks it at queue time and `settleQueuedExit` does not repeat it |
 | `settleQueuedExit(member)` | nonReentrant, anyone | Settles a queued exit once no execution is pending, at then-current NAV |
 | `claimEscrowed(asset)` | nonReentrant | Pays out an EE-6-escrowed slice |
 | `pullChildEscrow(child, asset)` | nonReentrant, anyone | Crank: claims a slice a child escrowed for this vault and credits internal accounting |

@@ -62,14 +62,16 @@ contract VaultCore {
     /// WHY. The exit fee stays in the vault, so it accrues to whoever holds the supply. Without a
     /// floor an outsider could burn down to ONE share-wei, cycle a second account through deposit and
     /// exit until that wei was worth tens of USDC, and then a depositor whose mint rounded to a single
-    /// share-wei lost up to a quarter of the deposit to the wei's owner. With every balance 0 or at
-    /// least the floor the supply is too, and a depositor's rounding loss is at most the value of one
-    /// share-wei, which is NAV / totalShares: a vault worth N USDC prices one share-wei at no more than
-    /// N * 1e-18 USDC, under one USDC unit (1e-6) for any N below 1e12.
+    /// share-wei lost up to a quarter of the deposit to the wei's owner. No exit now leaves a nonzero
+    /// balance under the floor, so exits cannot drive the supply to dust, and a depositor's rounding
+    /// loss is at most the value of one share-wei, which is NAV / totalShares: with the supply at 1e18
+    /// or more, a vault worth N USDC prices one share-wei at no more than N * 1e-18 USDC, which is
+    /// under one USDC unit (1e-6) for any N below 1e12.
     /// The floor binds the EXITER's own remainder, never the pool's, so no member can be trapped by
-    /// what other members hold. A position below the floor can only come from a mint (a share price far
-    /// above the launch price, or a minimum deposit worth under one share); it can always leave in
-    /// full, and a holder of such a position cannot block anyone else's exit.
+    /// what other members hold. A balance under the floor can only come from a mint of a deposit worth
+    /// less than one share at the current share price (reachable only when one share is worth more than
+    /// the minimum deposit, or when the minimum deposit is itself under one share); it cannot be
+    /// trimmed, only left in full, and a holder of one cannot block anyone else's exit.
     uint256 public constant MIN_POSITION_SHARES = 1e18;
 
     /// @dev H-4: the maximum value a single rebalance leg may give up against the vault's own
@@ -563,7 +565,7 @@ contract VaultCore {
     ///   NOT settle as a side effect of execution — `settleQueuedExit` is a separate call anyone
     ///   can make once no execution is pending.
     /// @param shares share amount to redeem (≤ balance, and what is left must be 0 or at least
-    /// MIN_POSITION_SHARES, else `PositionBelowFloor`, checked at queue time in Mode F too; one queued
+    /// MIN_POSITION_SHARES, else `PositionBelowFloor`, checked at queue time in Mode F; one queued
     /// exit per member at a time)
     /// @dev M-15 note: unlike `deposit`, exit has no `minValueOut` overload. The byte budget did
     /// not fit both, and the deposit side is the primary user-side defence (the C-4/H-1/H-2
@@ -631,10 +633,10 @@ contract VaultCore {
     }
 
     /// @dev The exit-fee ratchet floor (see MIN_POSITION_SHARES): the exiter's remaining balance is
-    /// zero or at least the floor. Checked at queue time for Mode F (a queued exit is irrevocable, so
-    /// it must never be able to revert at settlement) and again at every settlement; a queued exit
-    /// that passed at queue time still passes, because the member's balance can only grow while the
-    /// exit is queued (no second exit is allowed, deposits add).
+    /// zero or at least the floor. Like the creator gate it is checked when a Mode F exit is QUEUED
+    /// and when an immediate exit settles, and deliberately NOT again at `settleQueuedExit`: a queued
+    /// exit is irrevocable, and the member may deposit between queue and settle, so a remainder that
+    /// was 0 at queue time can be a sub-floor mint at settle and would strand the exit (MO-3 shape).
     function _checkPositionFloor(uint256 remaining) internal pure {
         require(remaining == 0 || remaining >= MIN_POSITION_SHARES, PositionBelowFloor());
     }
@@ -642,12 +644,14 @@ contract VaultCore {
     function _settleExit(address member, uint256 burnShares, bool fromQueue) internal {
         uint256 memberShares = sharesOf[member];
         require(memberShares >= burnShares, InsufficientShares());
-        _checkPositionFloor(memberShares - burnShares);
         uint256 ts = totalShares;
 
         // Queued exits passed the gate at queue time (L-1); re-checking here could re-strand
         // them if membership grew in between — new joiners had on-chain notice of the queue.
-        if (!fromQueue) _checkCreatorGate(member, burnShares);
+        if (!fromQueue) {
+            _checkCreatorGate(member, burnShares);
+            _checkPositionFloor(memberShares - burnShares);
+        }
 
         // Exit fee: decays with tenure, waived for a sole holder (fee would route to self;
         // last-member waiver per EE-8/EE-9 — it can never route to the operator).
