@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import {
   checkDocs,
   citationsIn,
+  indexSources,
   symbolsAt,
   openPrClaimsIn,
   mergedPrNumbers,
@@ -416,5 +417,29 @@ test('a SHALLOW checkout is refused, because a truncated merged set is a false-n
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the source index never walks build output (dist, dist-ssr), which a concurrent test creates and deletes mid-run', () => {
+  // The race, made deterministic: index while the probes exist. A walk that lists one and stats it
+  // after its owner deleted it dies with ENOENT; one that merely indexes it has walked build output.
+  // Unique names keep two runs from deleting each other's probes.
+  const probeRel = [
+    `apps/vaults-ui/dist-ssr/__doc_claims_probe_${process.pid}__/probe.json`,
+    `apps/vaults-ui/dist/__doc_claims_probe_${process.pid}__/probe.json`,
+  ];
+  for (const rel of probeRel) {
+    const full = path.join(REPO, ...rel.split('/'));
+    mkdirSync(path.dirname(full), { recursive: true });
+    writeFileSync(full, '{}');
+  }
+  let index;
+  try {
+    index = indexSources(REPO, ['apps']);
+  } finally {
+    for (const rel of probeRel) rmSync(path.dirname(path.join(REPO, ...rel.split('/'))), { recursive: true, force: true });
+  }
+  for (const rel of probeRel) {
+    assert.ok(!index.has(rel), `indexSources() walked into build output: ${rel}`);
   }
 });
