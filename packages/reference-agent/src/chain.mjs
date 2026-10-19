@@ -50,6 +50,41 @@
  *   eth_call of an exact write          `simulateCall()`: the one shared simulation used before a
  *                                       crank write is sent. Read-only: it signs and sends nothing
  *
+ * Realization logs (the outside-member track record) add three more calls, all read-only:
+ *
+ *   getBlockNumber(), getCode(vault, block)   find the block the vault was created in by bisection
+ *   getLogs(OperatorRegistry, RealizationRecorded, opId)   every realization of the operator, in
+ *                                       pages, from that block to the head
+ *
+ * **Log-range limits, measured 2026-10-18 with raw `eth_getLogs` on the OperatorRegistry** (the
+ * block span is `to - from`; a page of 10,000 blocks is `to - from = 9,999`):
+ *
+ *   rpc.mainnet.arc.io       accepts a span up to 9,999 (10,000 blocks); a wider one answers
+ *                            `-32012 "requested range too large"`
+ *   arc.gateway.tenderly.co  accepts a span up to 100,000; a wider one answers
+ *                            `-32602 "query exceeds max block range 100000"`
+ *   both                     `-32005 "rate limit exceeded"` on back-to-back requests, whatever the
+ *                            span: 40 pages at 250 ms spacing all passed, 40 with no spacing threw
+ *                            it on 31 (arc.io) and 11 (tenderly). Neither pruned the vault's creation
+ *                            block: `VaultCreated` and `VaultAttested` came back from block 22,443,745
+ *                            on both, and `eth_getCode` answered at that block on both.
+ *
+ * A burst is not a sustained rate, and the first measurement was a burst. Sustained, 160 sequential
+ * pages of 10,000 blocks on arc.io: at 250 ms spacing 44 were refused, the first at request 59; at
+ * 500 ms 43, the first at request 60; at 1,000 ms none. tenderly served a full 420-page scan at 250
+ * ms. So the default pause is 1,000 ms, and a rate limit widens it for the rest of the session.
+ *
+ * So the page defaults to 10,000 blocks (the smaller limit), requests are spaced, a rate limit is
+ * retried with backoff, and a range refusal halves the page. Whatever cannot be read is a NAMED GAP
+ * on the returned record. It is never folded into "zero realizations": a pruning RPC answers `[]`
+ * with confidence (docs/TESTNET-CHECKLIST.md section 2), so the creation block is confirmed by a
+ * positive control (the registry's own `VaultAttested` for the vault, in exactly that block) before
+ * any log is believed.
+ *
+ * `OperatorRegistry.recordRealization` emits `RealizationRecorded` on every call, but the registry's
+ * accumulators move only for a gain or a loss above zero, so the reader sums gain and loss and does
+ * not count events.
+ *
  * **Oracle-freeze detection is a proxy, and it is a warning only in the loosest sense.**
  * `navPerShareWad()` reverts with `StaleOracle` when any basket asset's price is stale
  * (VaultCore.sol:256) — so a failed NAV read means the vault is ALREADY frozen, at which point
@@ -152,6 +187,34 @@ export const OPERATOR_REGISTRY_READ_ABI = Object.freeze([
   ]),
 ]);
 
+/**
+ * OperatorRegistry.RealizationRecorded, emitted by the registry (not the vault) on every
+ * `recordRealization`. `vault`, `opId` and `member` are indexed, so a log query filters on the
+ * operator id. test/chain.test.mjs cross-checks it against contracts/out.
+ */
+export const REALIZATION_EVENT = Object.freeze({
+  type: 'event',
+  name: 'RealizationRecorded',
+  inputs: [
+    { name: 'vault', type: 'address', indexed: true },
+    { name: 'opId', type: 'uint256', indexed: true },
+    { name: 'member', type: 'address', indexed: true },
+    { name: 'gainUsdc', type: 'uint256', indexed: false },
+    { name: 'lossUsdc', type: 'uint256', indexed: false },
+    { name: 'carryAfter', type: 'uint256', indexed: false },
+  ],
+});
+
+/** OperatorRegistry.VaultAttested, emitted by `attestVault` inside the vault's creating transaction. */
+export const VAULT_ATTESTED_EVENT = Object.freeze({
+  type: 'event',
+  name: 'VaultAttested',
+  inputs: [
+    { name: 'vault', type: 'address', indexed: true },
+    { name: 'opId', type: 'uint256', indexed: true },
+  ],
+});
+
 /** Sub-vaults STACK fees up the parent chain — the headline 10% is a floor, not the number the
  *  agent pays (AGENT-QUICKSTART §4). Read the stacked figures, never assume the base. */
 export const SUBVAULT_REGISTRY_READ_ABI = Object.freeze([
@@ -201,6 +264,65 @@ export function decodeProposal(raw) {
 
 export const ZERO_BYTES32 = '0x' + '0'.repeat(64);
 
+/** The longest pause a rate limit can teach the reader. */
+export const MAX_LEARNED_PACE_MS = 8000;
+
+/** The narrowest getLogs page the reader will fall back to when a provider refuses its range. */
+export const MIN_LOG_PAGE_BLOCKS = 500;
+
+/**
+ * Sort an RPC failure into what to do about it. A rate limit is retried; a range refusal narrows
+ * the page; anything else is a gap. The match is on the provider's own words and codes because
+ * viem wraps them differently per transport (measured: arc.io says -32005 "rate limit exceeded" and
+ * -32012 "requested range too large"; tenderly says -32602 "query exceeds max block range 100000").
+ * @param {any} err @returns {'throttled'|'range'|'other'}
+ */
+export function classifyRpcError(err) {
+  const text = [err?.shortMessage, err?.message, err?.details, err?.code, err?.cause?.message, err?.cause?.details, err?.cause?.code, err?.cause?.cause?.message, err?.cause?.cause?.code]
+    .filter((x) => x !== undefined && x !== null)
+    .join(' ');
+  if (/rate.?limit|-32005|\b429\b|too many requests|limit exceeded/i.test(text)) return 'throttled';
+  if (/range|too large|max block|exceeds|-32012|-32602|limited to|10,?000|too many results|response size/i.test(text)) return 'range';
+  return 'other';
+}
+
+/**
+ * The block a vault was created in: the first block where it has code, found by bisection on
+ * `eth_getCode` (VaultCore stores no creation block).
+ *
+ * A pruning RPC can answer `0x` for state it no longer holds, which would make the bisection land
+ * LATE and hide every realization before that block behind a confident empty result. So the answer
+ * is confirmed against a positive control that does not depend on state: the registry's own
+ * `VaultAttested` log for this vault, which the factory triggers inside the creating transaction, must
+ * be in exactly that block. If it is not, the creation block is unconfirmed and the scan does not start.
+ */
+async function findCreationBlock({ c, retrying, sleep, paceMs, registry, vault, head }) {
+  const codeAt = async (block) => {
+    const code = await retrying(() => c.getCode({ address: vault, blockNumber: BigInt(block) }));
+    return typeof code === 'string' && code.length > 2;
+  };
+  try {
+    if (!(await codeAt(head))) return { ok: false, gap: `the vault has no code at the head (block ${head})` };
+    let lo = 0;
+    let hi = head;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (paceMs() > 0) await sleep(paceMs());
+      if (await codeAt(mid)) hi = mid;
+      else lo = mid + 1;
+    }
+    const control = await retrying(() => c.getLogs({ address: registry, event: VAULT_ATTESTED_EVENT, args: { vault }, fromBlock: BigInt(lo), toBlock: BigInt(lo) }));
+    if (!Array.isArray(control) || control.length === 0)
+      return {
+        ok: false,
+        gap: `creation block ${lo} is unconfirmed: the registry's VaultAttested for this vault is not in that block, so the RPC may be pruning state or logs`,
+      };
+    return { ok: true, block: lo };
+  } catch (err) {
+    return { ok: false, gap: `the creation block could not be found: ${String(err?.shortMessage ?? err?.message ?? err)}` };
+  }
+}
+
 /**
  * The viem chain object a reader builds for its RPC. The gas asset comes from the caller (the
  * config's `chain.nativeCurrency`) rather than being fixed to Ether, because Arc pays gas in USDC.
@@ -229,10 +351,20 @@ export const viemChainFor = ({ chainId, chainName, nativeCurrency, rpcUrl }) => 
  * @param {{name:string,symbol:string,decimals:number}} [cfg.nativeCurrency] the chain's gas asset (config.chain.nativeCurrency)
  * @param {string|null} [cfg.governance]
  * @param {(e:{level:string,msg:string,detail?:any})=>void} [cfg.onEvent]
+ * @param {(ms:number)=>Promise<void>} [cfg.sleep]  injected so tests do not wait on the pacing and backoff
  */
-export function createChainReader({ client, rpcUrl, chainId = 84532, chainName = 'base-sepolia', nativeCurrency = { name: 'Ether', symbol: 'ETH', decimals: 18 }, governance = null, onEvent = () => {} }) {
+export function createChainReader({ client, rpcUrl, chainId = 84532, chainName = 'base-sepolia', nativeCurrency = { name: 'Ether', symbol: 'ETH', decimals: 18 }, governance = null, onEvent = () => {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   let _client = client ?? null;
   const failures = new Map(); // vault ⇒ consecutive NAV read failures
+  /**
+   * `${registry}:${opId}:${vault}` ⇒ the realization scan so far. Session-scoped and in memory, the
+   * same pattern as the agent's entry marks: the logs are append-only, so a later tick resumes at
+   * the watermark instead of reading the range again, and a restarted agent simply scans again.
+   * @type {Map<string, {creationBlock:number|null, scanFrom:number, scannedTo:number, windowGap:string|null, pageBlocks:number, byMember:Map<string,{gain:bigint,loss:bigint,events:number}>, pages:number}>}
+   */
+  const realizationScans = new Map();
+  /** The pause a rate limit has taught this reader, ms. Only ever widened, and kept across calls. */
+  let learnedPaceMs = 0;
 
   async function getClient() {
     if (_client) return _client;
@@ -456,6 +588,146 @@ export function createChainReader({ client, rpcUrl, chainId = 84532, chainName =
     },
 
     /**
+     * Every realization the operator's vaults recorded, per member, read from the registry's
+     * `RealizationRecorded` logs from this vault's creation block to the head.
+     *
+     * The scan is bounded three ways and each bound is a NAMED gap, never an empty result:
+     * `budget.pages` caps the log requests this tick (the scan resumes from its watermark on the next
+     * call), `maxBlocks` caps how far behind the head a scan will start, and a request that fails is
+     * reported with the provider's own error. `complete` is true only when every block from the
+     * vault's creation to the head was read. Never throws.
+     *
+     * Filtered on the OPERATOR id, not the vault, so the sum is comparable to the registry's
+     * accumulators (`statsOf` adds up every vault of the operator). Blocks before this vault's
+     * creation are not read, so an operator with an older vault can have a larger registry total
+     * than the window shows; `outsideTrackRecord` (policy.mjs) reports that.
+     *
+     * @param {Object} p
+     * @param {string} p.registry @param {string} p.vault @param {number} p.opId
+     * @param {number} [p.pageBlocks]  blocks per getLogs request (the smaller measured limit is 10,000)
+     * @param {number} [p.maxBlocks]   never start a scan more than this many blocks behind the head
+     * @param {number} [p.pacingMs]    least pause between requests; a rate limit widens it (to 8 s at most) for the session
+     * @param {{pages:number}} [p.budget]  mutable: log requests left this tick, decremented here
+     * @returns {Promise<{complete:boolean, gap:string|null, creationBlock:number|null, scannedFrom:number|null, scannedTo:number|null, head:number|null, pageBlocks:number, members:Array<{member:string,gain:bigint,loss:bigint,events:number}>}>}
+     */
+    async readRealizations({ registry, vault, opId, pageBlocks = 10_000, maxBlocks = 20_000_000, pacingMs = 1000, budget = { pages: Infinity } }) {
+      assert(Number.isInteger(pageBlocks) && pageBlocks > 0, 'chain: pageBlocks must be a positive integer');
+      assert(Number.isInteger(opId) && opId > 0, 'chain: readRealizations needs an attested operator id');
+      const reg = lc(registry);
+      const v = lc(vault);
+      const key = `${reg}:${opId}:${v}`;
+      let st = realizationScans.get(key);
+      if (!st) {
+        st = { creationBlock: null, scanFrom: 0, scannedTo: -1, windowGap: null, pageBlocks, byMember: new Map(), pages: 0 };
+        realizationScans.set(key, st);
+      }
+      /** @type {number|null} */
+      let head = null;
+      /** @type {string|null} */
+      let gap = null;
+      const snapshot = () => {
+        const done = gap === null && st.windowGap === null && st.creationBlock !== null && head !== null && st.scannedTo >= head;
+        return {
+          complete: done,
+          gap: gap ?? st.windowGap ?? (done ? null : 'the scan has not reached the head yet'),
+          creationBlock: st.creationBlock,
+          scannedFrom: st.creationBlock === null ? null : st.scanFrom,
+          scannedTo: st.creationBlock === null ? null : st.scannedTo,
+          head,
+          pageBlocks: st.pageBlocks,
+          members: [...st.byMember].map(([member, t]) => ({ member, ...t })),
+        };
+      };
+      const describe = (err) => String(err?.shortMessage ?? err?.message ?? err);
+      const paceMs = () => Math.max(pacingMs, learnedPaceMs);
+      /**
+       * Retry a rate-limited call with backoff (1, 2, 4, 8 s); anything else, or the last failure, is
+       * rethrown. Each rate limit also doubles the pause between requests for the rest of the session,
+       * because a sustained scan that keeps hitting the limit only spends its retries.
+       */
+      const retrying = async (call) => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await call();
+          } catch (err) {
+            if (classifyRpcError(err) !== 'throttled' || attempt >= 4) throw err;
+            learnedPaceMs = Math.min(MAX_LEARNED_PACE_MS, Math.max(paceMs(), 500) * 2);
+            await sleep(1000 * 2 ** attempt);
+          }
+        }
+      };
+
+      try {
+        const c = await getClient();
+        head = Number(await retrying(() => c.getBlockNumber()));
+
+        if (st.creationBlock === null) {
+          const found = await findCreationBlock({ c, retrying, sleep, paceMs, registry: reg, vault: v, head });
+          if (!found.ok) {
+            gap = found.gap;
+            return snapshot();
+          }
+          st.creationBlock = found.block;
+          st.scanFrom = Math.max(found.block, head - maxBlocks + 1);
+          st.scannedTo = st.scanFrom - 1;
+          st.windowGap =
+            st.scanFrom > found.block
+              ? `the vault was created at block ${found.block}, more than discovery.logs.maxBlocks (${maxBlocks}) behind the head; blocks ${found.block} to ${st.scanFrom - 1} are not read`
+              : null;
+        }
+
+        while (st.scannedTo < head) {
+          if (budget.pages <= 0) {
+            gap = `this tick's log-request budget is spent at block ${st.scannedTo} of ${head}; the scan resumes next tick`;
+            break;
+          }
+          const from = st.scannedTo + 1;
+          let to = Math.min(head, from + st.pageBlocks - 1);
+          /** @type {any[]|null} */
+          let logs = null;
+          for (;;) {
+            try {
+              logs = await retrying(() =>
+                c.getLogs({ address: reg, event: REALIZATION_EVENT, args: { opId: BigInt(opId) }, fromBlock: BigInt(from), toBlock: BigInt(to) }),
+              );
+              break;
+            } catch (err) {
+              const kind = classifyRpcError(err);
+              if (kind === 'range' && st.pageBlocks > MIN_LOG_PAGE_BLOCKS) {
+                // The provider's limit is below the configured page: narrow it for the rest of the scan.
+                st.pageBlocks = Math.max(MIN_LOG_PAGE_BLOCKS, Math.floor(st.pageBlocks / 2));
+                to = Math.min(head, from + st.pageBlocks - 1);
+                continue;
+              }
+              gap = `eth_getLogs ${from} to ${to} failed (${kind === 'throttled' ? 'rate limited after retries' : kind === 'range' ? 'range refused even at the smallest page' : 'error'}): ${describe(err)}`;
+              break;
+            }
+          }
+          if (logs === null) break;
+          budget.pages -= 1;
+          st.pages += 1;
+          for (const log of logs) {
+            const a = log.args ?? {};
+            if (a.member == null || a.gainUsdc == null || a.lossUsdc == null)
+              throw new Error(`RealizationRecorded log without decoded args at block ${log.blockNumber}`);
+            const member = lc(a.member);
+            const t = st.byMember.get(member) ?? { gain: 0n, loss: 0n, events: 0 };
+            t.gain += BigInt(a.gainUsdc);
+            t.loss += BigInt(a.lossUsdc);
+            t.events += 1;
+            st.byMember.set(member, t);
+          }
+          st.scannedTo = to;
+          if (st.scannedTo < head && paceMs() > 0) await sleep(paceMs());
+        }
+      } catch (err) {
+        gap = `realization logs unreadable: ${describe(err)}`;
+        onEvent({ level: 'warn', msg: 'chain read failed: RealizationRecorded logs', detail: { vault: v, error: gap } });
+      }
+      return snapshot();
+    },
+
+    /**
      * The agent's VOTING-ELIGIBLE stake — not its share balance.
      *
      * At a proposal's snapshot timestamp when one is given, because that is the measure the
@@ -647,6 +919,12 @@ export function createStubChainReader(fixture = {}, govFixture = {}, { blockTime
     },
     async readOperatorRecord(_registry, opId) {
       return opId > 0 ? { operatorId: opId, operator: '0x' + '0'.repeat(39) + '1', netRealizedUsdc: '0', lifetimeGainUsdc: '0', lifetimeLossUsdc: '0', lifetimeFeesUsdc: '0', vaultCount: 1 } : null;
+    },
+    async readRealizations({ vault }) {
+      // A fixture may state the vault's realizations; otherwise the stub says it read none, as a gap.
+      const r = fixture[lc(vault)]?.realizations;
+      if (r) return r;
+      return { complete: false, gap: 'stub reader: no chain, no logs', creationBlock: null, scannedFrom: null, scannedTo: null, head: null, pageBlocks: 0, members: [] };
     },
     async readVotingWeight(vault, member, _ts = null) {
       if (!member) return null;

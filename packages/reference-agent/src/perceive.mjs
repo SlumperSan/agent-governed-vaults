@@ -19,6 +19,12 @@
  *            count is `holderCount`, which differs from the API's event-derived count, and its
  *            record has no loss history beyond the registry's two accumulators.
  *
+ * A third read, for a vault the agent could still join, when the `unproven-operator` profile is on or
+ * `policy.join.disclosedAddresses` is not empty: the operator's RealizationRecorded logs, split into
+ * realizations by outside members and by disclosed addresses (`chainReader.readRealizations`, then
+ * `outsideTrackRecord`). It is spent from one per-tick budget of log requests, and what it could not
+ * read comes back as a named gap on the vault's `outsideRecord`, never as an empty record.
+ *
  * Degradation is a first-class outcome. An exhausted spend cap, an unreachable API, or a failing
  * RPC each produce a partial world with the gaps NAMED, and the policy layer decides what a
  * missing value means. The loop never crashes because a read failed, and it never silently treats
@@ -26,8 +32,9 @@
  */
 
 import { createProtocolClient } from '../../agent-sdk/src/index.mjs';
-import { toBaseUnits } from './config.mjs';
+import { toBaseUnits, UNPROVEN_OPERATOR_PROFILE } from './config.mjs';
 import { verifyKnownPayloads } from './payloads.mjs';
+import { outsideTrackRecord } from './policy.mjs';
 
 /**
  * Build the SDK client with the budget wired into its signer.
@@ -101,6 +108,15 @@ export async function paidRead({ call, price, label, budget, log }) {
  */
 export function discoverySource(config) {
   return config.chain?.preset && !config.api?.baseUrl ? 'chain' : 'api';
+}
+
+/**
+ * Whether the join decision needs the operator's realizations split by who made them: the
+ * `unproven-operator` profile is on, or there are disclosed addresses to leave out.
+ * @param {any} config
+ */
+export function wantsOutsideRecord(config) {
+  return config.policy.join.profile === UNPROVEN_OPERATOR_PROFILE || config.policy.join.disclosedAddresses.length > 0;
 }
 
 /**
@@ -249,6 +265,9 @@ export async function perceive({ client, chainReader, budget, config, member, lo
     ({ discovery, health, price, vaults, leaderboard } = await discoverFromApi({ client, budget, config, log, gaps }));
   }
   const operatorById = new Map(leaderboard.map((r) => [Number(r.operatorId), r]));
+  // One budget of log requests for the whole tick, shared by every vault: each scan resumes from its
+  // own watermark on the next tick, so no tick spends more than discovery.logs.maxPagesPerTick.
+  const logBudget = { pages: config.discovery.logs.maxPagesPerTick };
 
   // ── per-vault detail: paid API view + free chain reads ────────────────────
   const observed = [];
@@ -281,6 +300,23 @@ export async function perceive({ client, chainReader, budget, config, member, lo
       : null;
 
     const opId = registryOperatorId ?? Number(v.operatorId ?? 0);
+
+    const held = chain.self?.shares != null && BigInt(chain.self.shares) > 0n;
+    const pending = chain.self?.pendingAmount != null && BigInt(chain.self.pendingAmount) > 0n;
+
+    // ── the outside-member track record, only for a vault the agent could still join ──
+    let outsideRecord = null;
+    if (wantsOutsideRecord(config) && !held && !pending && opId > 0) {
+      const registry = source === 'chain' ? config.chain.operatorRegistry : chain.operatorRegistry ?? config.chain.operatorRegistry;
+      const logs = config.discovery.logs;
+      const raw = !registry
+        ? { complete: false, gap: 'no operator registry address is configured, so the realization logs cannot be read', creationBlock: null, scannedFrom: null, scannedTo: null, head: null, members: [] }
+        : typeof chainReader.readRealizations !== 'function'
+          ? { complete: false, gap: 'this chain reader cannot read logs', creationBlock: null, scannedFrom: null, scannedTo: null, head: null, members: [] }
+          : await chainReader.readRealizations({ registry, vault: address, opId, pageBlocks: logs.pageBlocks, maxBlocks: logs.maxBlocks, pacingMs: logs.pacingMs, budget: logBudget });
+      outsideRecord = outsideTrackRecord({ record: raw, disclosed: config.policy.join.disclosedAddresses, registryRow: operatorById.get(opId) ?? null });
+      if (!outsideRecord.complete) gaps.push(`outside-member realizations for ${address}: ${outsideRecord.gap}`);
+    }
     // A chain row cannot know the cap until the vault itself is read; the policy reads it from
     // `chain` regardless, so this only keeps the row's field honest.
     const summary =
@@ -294,10 +330,8 @@ export async function perceive({ client, chainReader, budget, config, member, lo
       votingWeight,
       registryOperatorId,
       operatorRow: operatorById.get(opId) ?? null,
+      outsideRecord,
     });
-
-    const held = chain.self?.shares != null && BigInt(chain.self.shares) > 0n;
-    const pending = chain.self?.pendingAmount != null && BigInt(chain.self.pendingAmount) > 0n;
     log.perceive(
       `vault ${address.slice(0, 10)}… op=${opId}${opId === 0 ? ' (UNATTESTED)' : ''} ` +
         `nav/share=${chain.navReadable ? String(chain.navPerShareWad) : 'UNREADABLE'} ` +

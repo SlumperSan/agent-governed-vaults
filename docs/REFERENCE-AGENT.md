@@ -41,6 +41,8 @@ PRICE_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e PRICE_PAYTO=0x00000000000
 | `--demo-wallet` | generate a throwaway in-memory key used as the x402 payer *and* the agent's identity. Testnet chain ids only. Does **not** enable execute mode |
 | `--cap=<usdc>` | per-session x402 spend cap (default `0.25`) |
 | `--ticks=<n>` | how many loop passes (default 1) |
+| `--profile=<name>` | a named join profile; the only one is `unproven-operator`, which lets the agent join a vault whose operator has no track record. Off by default; read [Joining a vault with no track record](#joining-a-vault-with-no-track-record) first |
+| `--disclosed=<path>` | a JSON file whose `addresses[].address` entries are left out of the outside-member track record; `docs/seeded-addresses.json` has this shape |
 | `--config=<path>` | JSON file merged over the defaults |
 | `--json` | one JSON record per line instead of prose |
 
@@ -97,7 +99,8 @@ and no x402 payment is signed. Two things differ from the API source:
   it.
 
 The join gates are unchanged. A vault whose operator has no realized gain or loss is listed and then
-refused by `requireProvenOperator`, which is what a new vault looks like. A vault whose own
+refused by `requireProvenOperator`, which is what a new vault looks like (the opt-in profile for that
+case is [below](#joining-a-vault-with-no-track-record)). A vault whose own
 `operatorRegistry` is not the configured one is treated as unattested.
 
 Every policy verdict is returned with its full check list, and the log prints it:
@@ -133,10 +136,106 @@ only state what you change.
 | `minFreeCapacityUsdc` | `"25"` | Refuse unless this much room remains under the cap. `capacityCapUsdc == 0` means **uncapped**, which is unlimited room, not zero |
 | `maxDepth` | `0` | Sub-vault depth ceiling; `0` = top-level vaults only |
 | `maxConcurrentVaults` | `3` | Never hold more positions than this |
+| `profile` | `null` | A named override. `"unproven-operator"` is the only one; see [Joining a vault with no track record](#joining-a-vault-with-no-track-record) |
+| `disclosedAddresses` | `[]` | Addresses left out of the outside-member track record (the `--disclosed` file fills it). Empty and no profile: the logs are not read |
 
 Two further gates are not configurable because failing them open is never correct: **NAV must be
 readable** (an unreadable NAV may mean a stale oracle, and a stale oracle freezes *exits* too), and
 the **deposit must clear the vault minimum**. Every unreadable input fails **closed**.
+
+### Joining a vault with no track record
+
+The first vault of an operator with no earlier vault has an operator with no realized gain or loss,
+and it stays that way until a member has deposited and exited: `OperatorRegistry.recordRealization` moves the operator's
+accumulators only for a gain or a loss above zero, so a flat round trip does not change them. With
+the defaults the agent therefore **refuses such a vault** (`requireProvenOperator` is `true`). That
+default is unchanged, and it is the right one for an agent nobody has told otherwise.
+
+There is one named, opt-in override. Set `policy.join.profile` to `"unproven-operator"` (or pass
+`--profile=unproven-operator`) and the agent:
+
+- sets `requireProvenOperator` to `false`, so an operator with no realizations can be joined;
+- deposits exactly the vault's own `minDepositUsdc`, and refuses a
+  vault whose minimum is above `depositUsdc`, which stays the most the agent puts into one vault
+  because a vault's creator sets its minimum (the `deposit-within-ceiling` check);
+- keeps `policy.exit.onOperatorNetNegative` on, and refuses to start with it off, because that exit
+  is the way out of an operator who turns out to lose money;
+- keeps every other gate: the operator must be attested at the registry, its net must clear the
+  floor, and the fee, capacity, depth, NAV and minimum-deposit gates all apply;
+- prints the risk below in the dry-run banner, and again beside every join decision with the vault's
+  current holder count.
+
+**The risk you accept.** Read from `Governance.finalize`. Below five holders
+(`SIGNER_REGIME_BELOW`), whether a Rebalance passes depends on stake and on how many addresses
+vote. Quorum is met on a strict majority of the members at creation revealing with the FOR stake
+clearing the quorum share, or on FOR stake above half of the snapshot, and a proposal that meets
+quorum passes only when its FOR weight is above its AGAINST weight. A depositor who is alone holds
+all of that stake, so it holds more than half of eligible stake, and whoever joins first holds the
+deciding vote on Rebalance proposals. A RuleChange needs every unit of eligible stake to reveal in favour, so
+one holder who does not reveal blocks it. A vault with no holders makes its first depositor that
+position.
+
+**What the track record can and cannot say.** The registry's figure adds up every member's
+realizations, and nothing on chain marks which of them belong to the team that operates the vault.
+A deposit and exit from a team-operated address therefore enters the operator's record like anyone
+else's. To keep that visible the agent reads the registry's `RealizationRecorded` logs for the
+operator and reports a second figure that leaves out the addresses it was given (`--disclosed`,
+for example `docs/seeded-addresses.json`). Two properties of that list matter. It can only remove
+realizations from the figure and never adds trust, so using it takes no trust in whoever maintains
+it. And an address that is not on it is counted as an outside member, so
+the figure is a ceiling on outside activity, not proof of it. While the list is empty (the shipped
+`docs/seeded-addresses.json` has no addresses), every member counts as outside and the figure is
+the sum over every realization the scan read, from this vault's creation block to the head. That equals
+the registry's own figure unless the operator realized before that block, in an older vault, and
+then the two differ (the paragraph below says how the check reports it).
+
+The figure is read when the profile is on or the list is not empty, and only for a vault the agent
+could still join. It adds one check, `outside-track-record`:
+
+- it **refuses** when the figure could not be read in full, and names why. An unread range is a gap,
+  never "zero realizations";
+- it refuses when the outside members' net is below `minOperatorNetRealizedUsdc`, which catches
+  outside losses that a disclosed address's gains cover in the registry's total;
+- while `requireProvenOperator` is on it also requires at least one outside realization, so an
+  operator proven only by a listed address is refused. Under the profile a figure with no outside
+  realizations is accepted, because that is the state the profile exists for.
+
+**How the logs are read.** The vault's creation block is found by bisecting `eth_getCode`, then
+confirmed against the registry's own `VaultAttested` log for that vault in exactly that block. A
+node that has pruned state or logs answers confidently and empty, and the confirmation is what stops
+that from becoming a scan that starts too late. From there the agent reads `RealizationRecorded`
+filtered by operator id, in pages, to the head. Filtering by operator id (not by vault) keeps the
+sum comparable to the registry's accumulators; when the window is complete and the two differ, the
+check says so, because the operator realized somewhere before this vault existed. That note is
+information only and never changes the verdict. Gains and losses are summed per member. The registry emits the event on every call but moves its accumulators only
+for a gain or loss above zero, so event counts mean nothing here.
+
+The log-range limits of the two Arc RPCs in the preset, measured on 2026-10-18 with raw
+`eth_getLogs` on the OperatorRegistry (the span is `to - from`):
+
+| RPC | Widest span accepted | Refusal | Rate limit |
+| --- | --- | --- | --- |
+| `https://rpc.mainnet.arc.io` | 9,999 blocks (a page of 10,000) | `-32012 "requested range too large"` | `-32005 "rate limit exceeded"` |
+| `https://arc.gateway.tenderly.co` | 100,000 blocks | `-32602 "query exceeds max block range 100000"` | `-32005 "rate limit exceeded"` |
+
+Both served history from the first vault's creation block. Back-to-back requests are rate limited on
+both whatever their span: 40 unspaced pages of 10,000 blocks drew the error 31 times on the first and
+11 on the second, and 40 spaced 250 ms apart drew it never. That was a burst, and a scan is not one.
+Sustained, 160 sequential pages on `rpc.mainnet.arc.io` drew it 44 times at 250 ms spacing (the first
+at request 59), 43 times at 500 ms (the first at request 60) and never at 1,000 ms; a full scan of the
+first vault, about 420 pages, was served at 250 ms by `arc.gateway.tenderly.co`. So the defaults page
+at the smaller limit and pause 1,000 ms between requests, a rate limit is retried with backoff (1, 2,
+4, then 8 seconds) and also doubles the pause for the rest of the session (to 8 seconds at most),
+and a page a provider still refuses is narrowed.
+
+| `discovery.logs` knob | Default | What it means |
+| --- | --- | --- |
+| `pageBlocks` | `10000` | Blocks per `eth_getLogs` request |
+| `maxPagesPerTick` | `120` | Log requests one tick may spend across all vaults. A scan resumes where it stopped, so a vault as old as the first Arc vault was on 2026-10-18 (about 4.2 million blocks, about 420 pages) takes four ticks or more to read at the default pause, and a join is refused with the gap named until it is complete |
+| `maxBlocks` | `20000000` | Never start a scan further than this behind the head; an older vault is a permanent, named gap. Arc made a block every 0.51 s between 2026-09-24 and 2026-10-18, so this is about 117 days, and a vault created at the first Arc vault's block, 22,443,745, passes it near 2027-01-19 |
+| `pacingMs` | `1000` | Least pause between requests; a rate limit widens it for the session |
+
+The scan lives in memory for the session, like the entry marks: a restarted agent reads it again.
 
 ### `policy.exit`: any one trigger is sufficient
 
