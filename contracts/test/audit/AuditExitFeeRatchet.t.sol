@@ -35,12 +35,13 @@ contract RatchetPerfFeeEngine is IFeeEngine {
 /// share-wei and A takes half of the vault on exit: V loses up to a quarter of the deposit
 /// (190 USDC victim: 46.59 USDC lost, 15 cycles, about 0.03 USDC of gas).
 ///
-/// THE FIX. `_settleExit` (and the Mode F queue branch of `requestExit`) refuse any exit that leaves
+/// THE FIX. `_settleExit` (and the Mode F queue branch of `requestExit`) refuse an exit that would leave
 /// the EXITER holding a nonzero balance below `MIN_POSITION_SHARES` (1e18 share-wei, one share at the
 /// 1:1 first mint). The floor is on the exiter's own remainder, not on the pool, so the floor never
 /// refuses a full exit (a remainder of 0), whatever other members hold; the creator gate and the
-/// oracle breaker are separate gates. Every balance is 0 or at least the floor, hence so
-/// is the supply, and the ratchet has no one-wei state to start from.
+/// oracle breaker are separate gates. No exit chooses to leave a sub-floor balance, so exits do not by
+/// themselves drive the supply to one share-wei. A sub-floor balance can still come from a mint,
+/// including a top-up after a full exit was queued, and it can only be left in full.
 ///
 /// This file drives the real VaultCore with the Arc launch parameters from
 /// `contracts/config/arc-mainnet.json` (capacityCapUsdc 0, minDepositUsdc 100 USDC, exitFeeMaxBps 50,
@@ -231,7 +232,7 @@ contract AuditExitFeeRatchet is Test {
         assertLe(loss, 1, "victim loses at most one USDC unit");
     }
 
-    /// The strongest attack the floor still allows: trim to exactly the floor (1e18 share-wei, about
+    /// A strong attack the floor still allows: trim to exactly the floor (1e18 share-wei, about
     /// 1 USDC of NAV), then cycle B 100 times with 1000 USDC. The victim's `activate` is the
     /// pending-activation path of the brief. Loss stays at the rounding unit and the victim mints
     /// a large number of share-wei, not one.
@@ -307,7 +308,7 @@ contract AuditExitFeeRatchet is Test {
         assertEq(vault.sharesOf(A), 0);
     }
 
-    /// A sole holder exits in full at any size, and the sole-holder fee waiver is untouched.
+    /// A sole holder's full exit is not refused by the floor, and the sole-holder fee waiver is untouched.
     function test_soleHolderFullExitIsUnaffected() public {
         _aOpens(100 * U);
         _exitAll(A);
@@ -318,7 +319,7 @@ contract AuditExitFeeRatchet is Test {
     /// The floor is on the exiter's own remainder, so what others hold never makes the floor refuse an exit.
     /// Min deposit 1 unit lets a position below the floor exist: D holds 1e12 share-wei next to a
     /// large holder C. C exits in full (the pool is left at D's dust); D exits in full. A burn that
-    /// would leave a sub-floor remainder of one's OWN is the only refused shape.
+    /// would leave a sub-floor remainder of one's OWN is the only shape the floor refuses.
     function test_noMemberIsTrappedByAnotherMembersDust() public {
         VaultCore v = _deployVault(1);
         _approveAll(v);
@@ -465,9 +466,9 @@ contract AuditExitFeeRatchet is Test {
         assertEq(v.totalShares(), dust);
     }
 
-    // ───────────────────────── fuzz: no exit ever leaves a dust position ─────────────────────────
+    // ───────────────────── fuzz: no immediate exit leaves a dust position ─────────────────────
 
-    /// For every burn size: the exit either lands and leaves the exiter at 0 or at least the floor,
+    /// For every burn size of an immediate (Mode I) exit: the exit either lands and leaves the exiter at 0 or at least the floor,
     /// or reverts with `PositionBelowFloor` and the remainder it would have left was in (0, floor).
     function testFuzz_noExitLeavesADustPosition(uint256 burn) public {
         _aOpens(100 * U);

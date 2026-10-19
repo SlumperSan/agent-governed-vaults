@@ -341,7 +341,7 @@ export function apply(state, e) {
       ensureVault(state, e.vault).exitQueuedCount += 1;
       queuedExitSet(state, e.vault).add(a.member);
       // The SIZE of the entry, not only its existence: `requestExit(shares)` accepts any amount up
-      // to the balance that leaves nothing or at least MIN_POSITION_SHARES, so a queued exit subtracts from voting-eligible stake rather than zeroing
+      // to the balance (a v2-source vault also requires it to leave nothing or at least MIN_POSITION_SHARES; the live Arc set has no floor), so a queued exit subtracts from voting-eligible stake rather than zeroing
       // it, and `memberPosition` cannot state the withheld weight without this.
       //
       // An ABSENT amount is recorded as absent, not as 0n. `abis.mjs` decodes `shares` from a

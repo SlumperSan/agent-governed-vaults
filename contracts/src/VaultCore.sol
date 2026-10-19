@@ -59,19 +59,19 @@ contract VaultCore {
     /// nonzero balance below this many share-wei: the remainder is 0 (a full exit, which the floor never refuses)
     /// or at least this much (`PositionBelowFloor` otherwise). 1e18 share-wei is one share, which is
     /// 1 USDC at the 1:1 first mint and 1% of the 100 USDC minimum first deposit of the Arc launch.
-    /// WHY. The exit fee stays in the vault, so it accrues to whoever holds the supply. Without a
-    /// floor an outsider could burn down to ONE share-wei, cycle a second account through deposit and
-    /// exit until that wei was worth tens of USDC, and then a depositor whose mint rounded to a single
-    /// share-wei lost up to a quarter of the deposit to the wei's owner. No exit now leaves a nonzero
-    /// balance under the floor, so exits cannot drive the supply to dust, and a depositor's rounding
-    /// loss is at most the value of one share-wei, which is NAV / totalShares: with the supply at 1e18
-    /// or more, a vault worth N USDC prices one share-wei at no more than N * 1e-18 USDC, which is
-    /// under one USDC unit (1e-6) for any N below 1e12.
+    /// WHY. The exit fee stays in the vault, so it accrues to whoever holds the supply. Without a floor
+    /// an outsider could burn down to ONE share-wei, cycle a second account through deposit and exit
+    /// until that wei was worth tens of USDC, and then a depositor whose mint rounded to a single
+    /// share-wei lost up to a quarter of the deposit. No exit chooses to leave a nonzero balance under
+    /// the floor, so exits do not by themselves drive the supply to dust. With the supply at 1e18 or
+    /// more, a depositor's rounding loss is at most the value of one share-wei: a vault worth N USDC
+    /// prices one share-wei at no more than N * 1e-18 USDC, under one USDC unit for N below 1e12.
     /// The floor binds the EXITER's own remainder, never the pool's, so other members' holdings never
-    /// make the floor refuse an exit (the creator gate is separate). A balance under the floor can only
-    /// come from a mint of a deposit worth less than one share at the current share price (reachable
-    /// only when one share is worth more than the minimum deposit, or the minimum deposit is under one
-    /// share); it can only be left in full, and never makes the floor refuse another member's exit.
+    /// make the floor refuse an exit (the creator gate is separate). A balance under the floor can
+    /// exist only from a mint: a deposit worth less than one share at the current share price
+    /// (reachable only when one share is worth more than the minimum deposit, or the minimum deposit is
+    /// under one share), or a top-up after a full exit was queued. It can only be left in full and
+    /// never makes the floor refuse another member's exit.
     uint256 public constant MIN_POSITION_SHARES = 1e18;
 
     /// @dev H-4: the maximum value a single rebalance leg may give up against the vault's own

@@ -62,8 +62,8 @@ export function oracleHealth(basket, nowSec) {
  * It is its own derivation because both subtractions are invisible on a page that shows only a
  * share balance. A Mode-F exit locks shares the instant it is QUEUED — `requestExit` writes
  * `queuedExitShares` and calls `_snapshot` in the same transaction (VaultCore.sol:551-556) — and
- * `requestExit(shares)` takes any amount up to the balance that leaves either nothing or at least
- * `MIN_POSITION_SHARES` behind, so a PARTIAL queue leaves a real voting remainder that "queued / not queued" alone cannot express.
+ * `requestExit(shares)` takes any amount up to the balance (on a vault built from the v2 source it must leave
+ * either nothing or at least `MIN_POSITION_SHARES` behind; the live Arc set has no floor), so a PARTIAL queue leaves a real voting remainder that "queued / not queued" alone cannot express.
  *
  * `eligibleShares` is not the same claim as "shares you can vote with today": `commitVote` weighs
  * `min(pastVotingEligibleShares(createdAt-1), votingEligibleShares(now))` (Governance.sol:352-356),
