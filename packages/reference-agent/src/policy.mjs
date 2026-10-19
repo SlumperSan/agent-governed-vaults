@@ -57,7 +57,7 @@ export function asBigInt(v) {
  *    unit of eligible stake must self-reveal, and all of it in favour.
  */
 export const UNPROVEN_OPERATOR_RISK = Object.freeze([
-  'An operator with no recorded gain or loss has no track record to judge, and a vault created today starts there.',
+  'An operator with no recorded gain or loss has no track record to judge, and the first vault of a new operator starts there.',
   'Below five holders, the outcome of a Rebalance depends on stake and on how many addresses vote (Governance.finalize).',
   'While it is the only holder, a depositor holds more than half of eligible stake, so whoever joins first holds the deciding vote on Rebalance proposals.',
   'A RuleChange needs every unit of eligible stake to reveal in favour, so one holder who does not reveal blocks it.',

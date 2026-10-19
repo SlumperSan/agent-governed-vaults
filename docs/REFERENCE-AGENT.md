@@ -145,8 +145,8 @@ the **deposit must clear the vault minimum**. Every unreadable input fails **clo
 
 ### Joining a vault with no track record
 
-A vault created today has an operator with no realized gain or loss, and it stays that way until a
-member has deposited and exited: `OperatorRegistry.recordRealization` moves the operator's
+The first vault of an operator with no earlier vault has an operator with no realized gain or loss,
+and it stays that way until a member has deposited and exited: `OperatorRegistry.recordRealization` moves the operator's
 accumulators only for a gain or a loss above zero, so a flat round trip does not change them. With
 the defaults the agent therefore **refuses such a vault** (`requireProvenOperator` is `true`). That
 default is unchanged, and it is the right one for an agent nobody has told otherwise.

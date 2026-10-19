@@ -91,6 +91,19 @@ test('the empty-list sentence does not say the outside figure equals the registr
   assert.match(sentence, /equals the registry's own figure unless the operator realized before that block, in an older vault, and then the two differ/);
 });
 
+test('an operator has no record only on its first vault: attestVault reuses the operator id, so no doc or risk line says a new vault starts with none', () => {
+  const registry = read('contracts/src/OperatorRegistry.sol');
+  const attest = registry.slice(registry.indexOf('function attestVault('), registry.indexOf('function operatorOf('));
+  assert.ok(attest.length > 100, 'OperatorRegistry.attestVault was not found: the docs cite it');
+  assert.match(attest, /uint256 opId = operatorIdOf\[operator\];\s*if \(opId == 0\) opId = registerOperator\(operator\);/, 'the operator id is reused, so a later vault of the same operator inherits its record');
+  const flat = (s) => s.replace(/\s+/g, ' ');
+  assert.ok(flat(reference).includes('The first vault of an operator with no earlier vault has an operator with no realized gain or loss'));
+  assert.ok(flat(quickstart).includes('so the first vault of a new operator starts with none.'));
+  assert.ok(UNPROVEN_OPERATOR_RISK[0].includes('the first vault of a new operator starts there'));
+  for (const [name, text] of [['REFERENCE-AGENT.md', reference], ['AGENT-QUICKSTART.md', quickstart], ['the risk text', UNPROVEN_OPERATOR_RISK.join(' ')]])
+    assert.doesNotMatch(flat(text), /vault created today/, `${name} says a vault created today has no record, which is false for an operator with an earlier vault`);
+});
+
 test('the discovery.logs table in REFERENCE-AGENT.md carries the config defaults', () => {
   const logs = DEFAULT_CONFIG.discovery.logs;
   for (const [knob, value] of Object.entries(logs)) {

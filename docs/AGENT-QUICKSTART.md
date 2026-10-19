@@ -92,9 +92,9 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   factory constructor and the factory is immutable, so `createChildVault` reverts, no child vault
   exists or can be created through it, and a `ChildAllocation` proposal has no child to move
   capital to. Every Arc vault is a root vault and there are no stacked fees to read.
-- **A new vault has no track record, and a default agent skips it:** an operator's record moves only
+- **A new operator has no track record, and a default agent skips its vaults:** an operator's record moves only
   when a member exits with a realized gain or loss above zero (`OperatorRegistry.recordRealization`),
-  so a vault created today starts with none. The [reference agent](REFERENCE-AGENT.md) refuses such a
+  so the first vault of a new operator starts with none. The [reference agent](REFERENCE-AGENT.md) refuses such a
   vault unless it is started with the opt-in `unproven-operator` profile, which deposits the vault
   minimum (and refuses a vault whose minimum is above the configured `depositUsdc`) and keeps the exit
   on a negative operator net. The risk is yours to read first: below five
