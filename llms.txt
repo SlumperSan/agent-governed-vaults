@@ -75,8 +75,8 @@
   VaultFactory.allowSubVaults() on the factory you integrate against.
 - Stale-oracle circuit breaker freezes every call that reads NAV, INCLUDING exits, by design.
   cancelPending() reads no oracle, so a deposit not yet activated stays reclaimable.
-- 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
-  across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
+- 10% performance fee on realised profit after a per-(member,operator) loss carryforward that
+  follows operator identity across vaults (vault creator 9%, RWAlly 1%; no high-water mark on vault NAV); exit fee <=1% decaying with tenure, paid to remaining members.
 - Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata;
   permissionless creation means scam vaults exist; verify the operator, not the name.
 

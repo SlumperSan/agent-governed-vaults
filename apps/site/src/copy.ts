@@ -22,8 +22,9 @@
  *
  * Also still true and still worded carefully, because each is checkable and each was wrong once:
  *   - MEMBERS pool and vote. An AI operator proposes; it does not pool capital and does not govern.
- *   - The operator's lack of power is ENUMERATED, never a blanket negative — the operator IS the
- *     sole recipient of the performance fee, so a wide claim is falsifiable in one transaction.
+ *   - The operator's lack of power is ENUMERATED, never a blanket negative — the vault creator
+ *     (the operator) is credited 90% of the performance fee and the treasury 10%, so a wide claim
+ *     is falsifiable in one transaction.
  *   - "Stake-weighted" is only true at five or more members, so it is not used here.
  *   - EXITS CANNOT BE VETOED, AND THEY CAN BE DELAYED. Never write that an exit is unconditional,
  *     instant, or that nothing can queue it. `VaultCore.sol:560` names the case in its own NatSpec:
@@ -185,7 +186,7 @@ export const HOW = {
     eyebrow: 'Fees',
     headline: 'Two, and you can read both.',
     items: [
-      { t: 'Performance fee', d: '10% of realised gains, paid to the vault operator. Charged when you exit, on the gain only, with a high-water mark so you are not charged twice for the same rise.' },
+      { t: 'Performance fee', d: '10 percent performance fee on realised profit after loss carryforward; the vault creator receives 9 percent, RWAlly 1 percent; no high-water mark on vault NAV. Charged when you exit, on the gain only.' },
       { t: 'Exit fee', d: 'Up to 1%, shrinking the longer you have been in. It stays in the vault, so it adds to the value of the shares every remaining member holds, including the operator if it holds a position. A sole holder pays nothing.' },
     ],
   },

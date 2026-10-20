@@ -626,7 +626,7 @@ export const SCOPE_ROWS: readonly ScopeRow[] = [
   {
     "key": "treasury-buyback-not-live",
     "term": "The treasury and the buyback are not live",
-    "body": "There is no treasury contract, no protocol-owned liquidity and no buyback; each of those is design intent. A live fee stream is not that: the 10% performance fee accrues to an operator address and is claimed by that address. It does not reach a treasury contract, and a fee reaching a treasury contract is designed, not built."
+    "body": "There is no treasury contract, no protocol-owned liquidity and no buyback; each of those is design intent. A live fee stream is not that: of the 10% performance fee, the vault creator can claim 90% and the treasury address set once on each chain can claim 10%, each by calling the fee engine&rsquo;s claim function from that address. That is 9% and 1% of profit. Nothing in the contracts sends either share on to a buyback or to liquidity; what the treasury address does with its share is a decision made off chain."
   },
   {
     "key": "stock-index-needs-different-oracle",

@@ -462,11 +462,12 @@ test('no public surface describes the sub-five regime as stake-blind', () => {
 //
 // The first version of this branch's own lede said the operator "holds no on-chain authority over
 // a deployed vault". That is attackable, and Ops5 caught it: `FeeEngine.onFeeCollected` /
-// `onFeeCollectedAsset` credit `claimableFees[registry.operatorAddressOf(opId)]`, and `claimFees`
-// pays `claimableFees[msg.sender]` out to the caller. The operator address therefore holds a real,
-// unilateral, on-chain right that nobody else has — the 10% performance fee. It is an ECONOMIC
-// right, not a governance one, and the distinction is sound, but a universal negative invites a
-// reader to find the one exception and they will find it in one transaction.
+// `onFeeCollectedAsset` credit `claimableFees[creator]` and `claimableFees[treasury]`, and `claimFees`
+// pays `claimableFees[msg.sender]` out to the caller. Under fee model A1 the vault creator (who is
+// also the vault's attested operator) therefore holds a real, unilateral, on-chain right that
+// members do not have — 90% of the 10% performance fee — and the treasury holds the other 10% of
+// it. It is an ECONOMIC right, not a governance one, and the distinction is sound, but a universal
+// negative invites a reader to find the one exception and they will find it in one transaction.
 //
 // So: enumerate. "operatorship confers no authority to vote, execute, pause, reprice, or move
 // member funds" is unattackable and no longer than the sentence it replaces.
@@ -511,11 +512,11 @@ test('the operator\'s lack of power is enumerated, never claimed as a universal'
   assert.deepEqual(
     hits.map((h) => h.file),
     [],
-    'The operator IS the sole recipient of the 10% performance fee:\n' +
-      '  FeeEngine.onFeeCollected -> claimableFees[registry.operatorAddressOf(opId)][token] += amt\n' +
-      '  FeeEngine.claimFees      -> pays claimableFees[msg.sender][token] to msg.sender\n' +
-      'That is an economic right, not a governance one — but it IS an on-chain right nobody else\n' +
-      'has, so a universal negative ("no privileged power", "holds no on-chain authority") is\n' +
+    'The vault creator (the operator) receives 90% of the 10% performance fee, the treasury 10% of it:\n' +
+      '  FeeEngine._credit   -> claimableFees[creator][token] += 90%, claimableFees[treasury][token] += 10%\n' +
+      '  FeeEngine.claimFees -> pays claimableFees[msg.sender][token] to msg.sender\n' +
+      'That is an economic right, not a governance one — but it IS an on-chain right members do\n' +
+      'not have, so a universal negative ("no privileged power", "holds no on-chain authority") is\n' +
       'falsifiable in one transaction. ENUMERATE instead:\n' +
       '  "operatorship confers no authority to vote, execute, pause, reprice, or move member funds"\n' +
       `Offending text:\n${report(hits)}`,
@@ -804,7 +805,7 @@ test('no public surface claims the contracts screen who may deposit', () => {
 // is the claim a well-meaning editor writes by accident once RWLY is on the page, and no register —
 // design intent included — makes it true. `grep -ci rwly` returns 0 in Governance.sol, FeeEngine.sol
 // and VaultCore.sol; `FeeEngine.claimFees` pays `claimableFees[msg.sender]` to the CALLER, and the
-// caller is the operator address, not a token. Approved register: "the treasury intends to",
+// caller is the vault creator or the treasury address, not a token. Approved register: "the treasury intends to",
 // "is designed to", "a multisig moves" — all SUBJECT-first with RWLY or the treasury as the actor,
 // never the protocol/contracts/vault/governance/FeeEngine as the actor moving something TO RWLY.
 // ---------------------------------------------------------------------------------------------
@@ -834,7 +835,7 @@ test('no public surface says the protocol pays, routes or accrues anything to RW
     hits.map((h) => h.file),
     [],
     '`grep -ci rwly` returns 0 in Governance.sol, FeeEngine.sol and VaultCore.sol. `FeeEngine.claimFees`\n' +
-      'pays `claimableFees[msg.sender]` to the CALLER, which is the operator address, not a token.\n' +
+      'pays `claimableFees[msg.sender]` to the CALLER, which is the vault creator or the treasury address, not a token.\n' +
       'RWLY is design intent only: say "the treasury intends to", "is designed to" or "a multisig\n' +
       'moves" with RWLY or the treasury as the actor — never that the protocol, the contracts, the\n' +
       'vault, Governance or FeeEngine routes, pays, distributes, accrues, credits, sends or allocates\n' +
@@ -929,7 +930,7 @@ test('probe: the fee-bypass ban catches the shipped forms and spares the routing
     'Exit fees never route to the operator at all.',
     'it accrues to the members who remain, and can never be routed to the operator.',
     'It stays in the vault, so it adds to the value of the shares every remaining member holds, including the operator if it holds a position.',
-    'The 10% performance fee goes to the operator.',
+    '10 percent performance fee on realised profit after loss carryforward; the vault creator receives 9 percent, RWAlly 1 percent; no high-water mark on vault NAV.',
   ]) {
     assert.equal(caught(ok), false, `the guard reds true copy: ${ok}`);
   }

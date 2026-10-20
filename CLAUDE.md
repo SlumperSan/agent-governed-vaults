@@ -67,8 +67,9 @@ what the approved replacement wording is.
 Three rules that guard has already had to be widened to catch:
 
 - **Enumerate the operator's lack of power; never claim it as a universal.** The operator is the
-  sole recipient of the 10% performance fee, so a blanket negative about what the operator holds
-  on-chain is falsifiable in one transaction. Write "operatorship confers no authority to vote,
+  vault creator (the operator) is credited 90% of the 10% performance fee and the RWAlly treasury
+  10%, so a blanket negative about what the operator holds on-chain is falsifiable in one
+  transaction. Write "operatorship confers no authority to vote,
   execute, pause, reprice, or move member funds". Note that guard 6 matches the banned *shape*, so
   it reds a file that quotes the wide form even to prohibit it. This paragraph is written the long
   way round for that reason.

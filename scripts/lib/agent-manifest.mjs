@@ -126,7 +126,7 @@ export const FUNCTION_TABLE = [
     contract: 'FeeEngine',
     function: 'claimFees(address)',
     gate: 'anyone',
-    whoMayCall: 'The caller, for the token amount credited to the caller\'s address in claimableFees. Fees are credited to the attested operator address.',
+    whoMayCall: 'The caller, for the token amount credited to the caller\'s address in claimableFees. Each fee is credited 90% to the vault creator and 10% to the treasury.',
   },
   { contract: 'FeeEngine', function: 'pullEscrowed(address,address)', gate: 'anyone', whoMayCall: 'Anyone, for an attested vault holding an escrowed fee slice.' },
 ];
