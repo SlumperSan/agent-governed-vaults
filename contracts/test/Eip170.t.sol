@@ -141,8 +141,8 @@ contract Eip170Test is Test {
     }
 
     /// AgentVaultCore is VaultCore plus one immutable and one override, deployed directly (not through
-    /// the deployer's pinned blob), so it has its own floor. Measured 21,118 B runtime against the
-    /// 24,576 B cap when it was added, which is 3,458 B of margin; the floor is the same 2,000 B as
+    /// the deployer's pinned blob), so it has its own floor. Measured 21,206 B runtime against the
+    /// 24,576 B cap on 2026-10-20 (`forge build --sizes`), which is 3,370 B of margin; the floor is the same 2,000 B as
     /// VaultCore's. Same shape as above, so a runtime over the cap fails with the message and not
     /// with a Panic(0x11).
     uint256 constant AGENT_CORE_MIN_RUNTIME_MARGIN = 2_000;

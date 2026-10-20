@@ -231,7 +231,17 @@ contract RWAllyAgentRegistry {
     bytes32 private constant NAME_HASH = keccak256("ERC8004IdentityRegistry");
     bytes32 private constant VERSION_HASH = keccak256("1");
     bytes4 private constant ERC1271_MAGICVALUE = 0x1626ba7e;
-    uint256 private constant MAX_DEADLINE_DELAY = 5 minutes;
+    /// @dev ERC-6492 magic suffix: a signature ending in these 32 bytes is a wrapped
+    /// `abi.encode(factory, factoryCalldata, innerSignature)` from a not-yet-deployed smart account.
+    bytes32 private constant ERC6492_SUFFIX =
+        0x6492649264926492649264926492649264926492649264926492649264926492;
+    /// @dev How far ahead a wallet's signed consent may be dated. One hour, not the five minutes of the
+    /// reference registry: a smart account (ERC-4337) signs its consent when the user operation is built,
+    /// and that operation may then wait in a bundler mempool for a low fee to clear, so five minutes
+    /// expires it before it lands. The consent only designates a wallet for one agent id and one holder
+    /// (all three are in the signed digest) and is replayable only by that holder, so a longer window adds
+    /// no authority; an hour bounds how long a stale consent stays usable and still clears a congested mempool.
+    uint256 private constant MAX_DEADLINE_DELAY = 1 hours;
     /// @dev secp256k1 group order / 2: signatures with a larger `s` are malleable twins and are refused.
     uint256 private constant HALF_N = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
 
@@ -470,8 +480,18 @@ contract RWAllyAgentRegistry {
     }
 
     /// @notice Designate `newWallet` as the agent wallet. `signature` is a 65-byte EIP-712 signature
-    /// by `newWallet` (EOA) or an ERC-1271 signature accepted by it (contract wallet), over
-    /// AgentWalletSet(agentId, newWallet, owner, deadline), valid for at most five minutes.
+    /// by `newWallet` (EOA), an ERC-1271 signature accepted by it (contract wallet), or an ERC-6492
+    /// wrapped signature from a smart account that is not deployed yet (counterfactual), over
+    /// AgentWalletSet(agentId, newWallet, owner, deadline), valid for at most `MAX_DEADLINE_DELAY`
+    /// (one hour; see that constant for why).
+    /// ERC-6492: when `newWallet` has no code, the wrapped factory call is made so the account exists,
+    /// then the inner signature is checked by ERC-1271 as usual; when it already has code the factory is
+    /// not called and only the inner signature is checked. The factory call is made by this contract
+    /// with caller-chosen calldata, so the factory may not be this contract or the fee token (this
+    /// contract is the spender of registrants' fee-token allowances and a call to the token could spend
+    /// one); it holds no other funds, allowances or powers. This is defence in depth: neither target can
+    /// create code at `newWallet`, so the code check after the call would revert the whole call anyway. The call result is ignored: success is
+    /// decided only by `newWallet` having code and accepting the inner signature afterwards.
     /// KNOWN LIMITATION: the ERC-1271 call to a contract `newWallet` has no gas allowance and no
     /// returndata bound. The caller (the holder) chooses
     /// `newWallet`, so a wallet that burns gas or returns a large payload costs only that caller;
@@ -492,12 +512,7 @@ contract RWAllyAgentRegistry {
             )
         );
         if (_recover(digest, signature) != newWallet) {
-            (bool ok, bytes memory res) =
-                newWallet.staticcall(abi.encodeCall(IERC1271.isValidSignature, (digest, signature)));
-            require(
-                ok && res.length >= 32 && abi.decode(res, (bytes4)) == ERC1271_MAGICVALUE,
-                InvalidWalletSignature()
-            );
+            _requireContractSignature(newWallet, digest, signature);
         }
         _metadata[agentId]["agentWallet"] = abi.encodePacked(newWallet);
         emit MetadataSet(agentId, "agentWallet", "agentWallet", abi.encodePacked(newWallet));
@@ -609,6 +624,31 @@ contract RWAllyAgentRegistry {
         } catch {
             revert ERC721InvalidReceiver(to);
         }
+    }
+
+    /// @dev ERC-1271 check, unwrapping an ERC-6492 signature first (deploying the account if needed).
+    function _requireContractSignature(address wallet, bytes32 digest, bytes calldata signature) private {
+        bytes memory inner = signature;
+        uint256 len = signature.length;
+        if (len >= 32 && bytes32(signature[len - 32:]) == ERC6492_SUFFIX) {
+            address factory;
+            bytes memory factoryCalldata;
+            (factory, factoryCalldata, inner) = abi.decode(signature[:len - 32], (address, bytes, bytes));
+            if (wallet.code.length == 0) {
+                require(
+                    factory != address(this) && factory != feeToken && factory.code.length > 0,
+                    InvalidWalletSignature()
+                );
+                factory.call(factoryCalldata); // result ignored: the code check below decides
+                require(wallet.code.length > 0, InvalidWalletSignature());
+            }
+        }
+        (bool ok, bytes memory res) =
+            wallet.staticcall(abi.encodeCall(IERC1271.isValidSignature, (digest, inner)));
+        require(
+            ok && res.length >= 32 && abi.decode(res, (bytes4)) == ERC1271_MAGICVALUE,
+            InvalidWalletSignature()
+        );
     }
 
     function _recover(bytes32 digest, bytes calldata signature) private pure returns (address) {

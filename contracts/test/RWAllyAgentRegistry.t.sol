@@ -64,6 +64,35 @@ contract Wallet1271 {
     }
 }
 
+/// An ERC-6492-style account factory: CREATE2-deploys a Wallet1271 and arms it with one signature.
+contract Factory6492 {
+    uint256 public calls;
+
+    function predict(bytes32 salt) external view returns (address) {
+        return address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            bytes1(0xff), address(this), salt, keccak256(type(Wallet1271).creationCode)
+                        )
+                    )
+                )
+            )
+        );
+    }
+
+    function deploy(bytes32 salt, bytes32 d, bytes calldata s) external {
+        ++calls;
+        Wallet1271 w = new Wallet1271{salt: salt}();
+        w.allow(d, s);
+    }
+
+    function noop() external {
+        ++calls;
+    }
+}
+
 contract RWAllyAgentRegistryTest is Test {
     RWAllyAgentRegistry reg;
     MockERC20 usdc;
@@ -173,14 +202,15 @@ contract RWAllyAgentRegistryTest is Test {
         vm.recordLogs();
         vm.prank(alice);
         reg.register();
-        assertEq(vm.getRecordedLogs().length, 3, "register(): Transfer, Registered, MetadataSet");
+        assertEq(vm.getRecordedLogs().length, 4, "register(): Transfer, Locked, Registered, MetadataSet");
 
         vm.recordLogs();
         vm.prank(alice);
         reg.register("ipfs://a");
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertEq(logs.length, 4, "register(uri): Transfer, MetadataUpdate, Registered, MetadataSet");
-        assertEq(logs[1].topics[0], MetadataUpdate.selector);
+        assertEq(logs.length, 5, "register(uri): Transfer, Locked, MetadataUpdate, Registered, MetadataSet");
+        assertEq(logs[1].topics[0], Locked.selector);
+        assertEq(logs[2].topics[0], MetadataUpdate.selector);
 
         vm.expectEmit(false, false, false, true);
         emit MetadataUpdate(1);
@@ -500,7 +530,7 @@ contract RWAllyAgentRegistryTest is Test {
         reg.setAgentWallet(id, w, dl, good);
 
         // deadline too far
-        uint256 far = vm.getBlockTimestamp() + 5 minutes + 1; // via-ir caches block.timestamp across vm.warp
+        uint256 far = vm.getBlockTimestamp() + 1 hours + 1; // via-ir caches block.timestamp across vm.warp
         vm.prank(alice);
         vm.expectRevert(RWAllyAgentRegistry.DeadlineTooFar.selector);
         reg.setAgentWallet(id, w, far, good);
@@ -546,6 +576,118 @@ contract RWAllyAgentRegistryTest is Test {
         vm.prank(alice);
         vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
         reg.setAgentWallet(id, address(w), dl, hex"aabbcd");
+    }
+
+    /// The consent deadline may sit a full hour ahead (a bundler mempool wait) and no further.
+    function test_setAgentWallet_deadlineCapIsOneHour() public {
+        uint256 id = _alice();
+        (address w, uint256 wk) = makeAddrAndKey("wallet");
+        uint256 dl = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(wk, _digest(id, w, alice, dl));
+        vm.prank(alice);
+        reg.setAgentWallet(id, w, dl, abi.encodePacked(r, s, v));
+        assertEq(reg.getAgentWallet(id), w);
+
+        uint256 far = block.timestamp + 1 hours + 1;
+        (v, r, s) = vm.sign(wk, _digest(id, w, alice, far));
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.DeadlineTooFar.selector);
+        reg.setAgentWallet(id, w, far, abi.encodePacked(r, s, v));
+    }
+
+    // ── agent wallet: ERC-6492 (counterfactual smart account) ────────────────
+
+    bytes32 private constant SUFFIX_6492 = 0x6492649264926492649264926492649264926492649264926492649264926492;
+
+    function _wrap6492(address factory, bytes memory factoryCalldata, bytes memory inner)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodePacked(abi.encode(factory, factoryCalldata, inner), SUFFIX_6492);
+    }
+
+    function _cfSetup(bytes32 salt)
+        internal
+        returns (Factory6492 f, address wallet, uint256 id, uint256 dl, bytes32 d)
+    {
+        f = new Factory6492();
+        wallet = f.predict(salt);
+        id = _alice();
+        dl = block.timestamp + 30 minutes;
+        d = _digest(id, wallet, alice, dl);
+    }
+
+    function test_setAgentWallet_erc6492_deploysTheCounterfactualAccount_thenChecksTheInnerSignature()
+        public
+    {
+        bytes32 salt = keccak256("cf");
+        (Factory6492 f, address wallet, uint256 id, uint256 dl, bytes32 d) = _cfSetup(salt);
+        bytes memory inner = hex"aabbcc";
+        assertEq(wallet.code.length, 0, "not deployed yet");
+        bytes memory sig = _wrap6492(address(f), abi.encodeCall(Factory6492.deploy, (salt, d, inner)), inner);
+        vm.prank(alice);
+        reg.setAgentWallet(id, wallet, dl, sig);
+        assertGt(wallet.code.length, 0, "the factory call ran");
+        assertEq(reg.getAgentWallet(id), wallet);
+    }
+
+    function test_setAgentWallet_erc6492_badInnerSignature_reverts() public {
+        bytes32 salt = keccak256("cf");
+        (Factory6492 f, address wallet, uint256 id, uint256 dl, bytes32 d) = _cfSetup(salt);
+        bytes memory sig =
+            _wrap6492(address(f), abi.encodeCall(Factory6492.deploy, (salt, d, hex"aabbcc")), hex"aabbcd");
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+        reg.setAgentWallet(id, wallet, dl, sig);
+        assertEq(reg.getAgentWallet(id), alice, "unchanged");
+    }
+
+    function test_setAgentWallet_erc6492_factoryThatDeploysNothing_reverts() public {
+        bytes32 salt = keccak256("cf");
+        (Factory6492 f, address wallet, uint256 id, uint256 dl,) = _cfSetup(salt);
+        bytes memory sig = _wrap6492(address(f), abi.encodeCall(Factory6492.noop, ()), hex"aabbcc");
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+        reg.setAgentWallet(id, wallet, dl, sig);
+    }
+
+    /// An already-deployed account: the factory is not called, only the inner signature counts.
+    function test_setAgentWallet_erc6492_deployedAccount_skipsTheFactory() public {
+        uint256 id = _alice();
+        Wallet1271 w = new Wallet1271();
+        uint256 dl = block.timestamp + 1 minutes;
+        bytes memory inner = hex"aabbcc";
+        w.allow(_digest(id, address(w), alice, dl), inner);
+        Factory6492 f = new Factory6492();
+        bytes memory sig =
+            _wrap6492(address(f), abi.encodeCall(Factory6492.deploy, (bytes32(0), 0, "")), inner);
+        vm.prank(alice);
+        reg.setAgentWallet(id, address(w), dl, sig);
+        assertEq(reg.getAgentWallet(id), address(w));
+        assertEq(f.calls(), 0, "factory untouched");
+    }
+
+    /// The factory call is made by the registry, so it must not reach the fee token (the registry is
+    /// the spender of every registrant's allowance) or the registry itself.
+    function test_setAgentWallet_erc6492_factoryMayNotBeTheFeeTokenOrTheRegistry() public {
+        uint256 id = _alice();
+        usdc.mint(bob, 100e6);
+        vm.prank(bob);
+        usdc.approve(address(reg), type(uint256).max);
+        address target = makeAddr("undeployed");
+        uint256 dl = block.timestamp + 1 minutes;
+
+        bytes memory steal =
+            abi.encodeWithSignature("transferFrom(address,address,uint256)", bob, alice, 100e6);
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+        reg.setAgentWallet(id, target, dl, _wrap6492(address(usdc), steal, hex"aabbcc"));
+        assertEq(usdc.balanceOf(bob), 100e6, "allowance not spent");
+
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+        reg.setAgentWallet(id, target, dl, _wrap6492(address(reg), hex"", hex"aabbcc"));
     }
 
     // ── owner powers: exactly four, nothing over any identity ────────────────

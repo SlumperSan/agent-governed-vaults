@@ -161,9 +161,9 @@
       "count": 1,
       "reason": "By design -- same staticcall pattern as IdentityGate.agentIdOf above."
     },
-    "low-level-calls::RWAllyAgentRegistry.setAgentWallet": {
-      "count": 1,
-      "reason": "By design. The ERC-1271 verification call to the wallet being designated, as the ERC-8004 reference registry does: the caller must already be the identity's holder, the returned magic value and length are checked, and any other outcome reverts with InvalidWalletSignature. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
+    "low-level-calls::RWAllyAgentRegistry._requireContractSignature": {
+      "count": 2,
+      "reason": "By design. The ERC-1271 verification staticcall to the wallet being designated, as the ERC-8004 reference registry does, and the ERC-6492 factory call that deploys a counterfactual smart account first: the caller must already be the identity's holder, the factory may not be the registry or the fee token, the returned magic value and length are checked, and any other outcome reverts with InvalidWalletSignature. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "missing-inheritance::OperatorRegistry": {
       "count": 1,
@@ -229,6 +229,10 @@
       "count": 1,
       "reason": "Covered by its own nonReentrant mutex (read 2026-09-24: contracts/src/FeeEngine.sol#144, `function pullEscrowed(...) external nonReentrant`). A site not named in SLITHER-TRIAGE.md's reentrancy-no-eth/-events/-benign row (that row's 'FeeEngine has no mutex' names onFeeCollected specifically, not this function) -- reconciled 2026-09-24."
     },
+    "reentrancy-benign::RWAllyAgentRegistry.setAgentWallet": {
+      "count": 1,
+      "reason": "Benign. The only external calls are the ERC-6492 factory call (not the registry or the fee token) and the ERC-1271 staticcall; the one write after them sets the agentWallet metadata of an id the caller holds, identities are soulbound so the holder cannot change under the call, and the same write is a legal direct call. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
+    },
     "reentrancy-benign::VaultCore._redeemChildMeasured": {
       "count": 1,
       "reason": "Covered by VaultCore's nonReentrant mutex across the exit path. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
@@ -256,6 +260,10 @@
     "reentrancy-events::Governance.execute": {
       "count": 1,
       "reason": "Governance carries no mutex anywhere by design; argued by CEI, not the VaultCore lock. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
+    },
+    "reentrancy-events::RWAllyAgentRegistry.setAgentWallet": {
+      "count": 1,
+      "reason": "Benign, same reasoning as reentrancy-benign::RWAllyAgentRegistry.setAgentWallet above: MetadataSet is emitted after the factory call, and a reentrant call can only emit its own events first."
     },
     "reentrancy-events::VaultFactory.createChildVault": {
       "count": 1,
@@ -351,7 +359,7 @@
     },
     "timestamp::RWAllyAgentRegistry.setAgentWallet": {
       "count": 1,
-      "reason": "By design. The agent-wallet signature carries a deadline that must be in the future and no more than five minutes out, the ERC-8004 reference behaviour; block.timestamp is the only clock available. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
+      "reason": "By design. The agent-wallet signature carries a deadline that must be in the future and no more than one hour out (MAX_DEADLINE_DELAY, long enough for a user operation to wait in a bundler mempool); block.timestamp is the only clock available. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "timestamp::UniswapV3Adapter.executeSwap": {
       "count": 1,
@@ -416,6 +424,10 @@
     "too-many-digits::VaultDeployer.constructor": {
       "count": 1,
       "reason": "False positive -- a compiler-embedded creation-code blob and a left-aligned 4-byte selector padded to a word, neither a literal anyone typed. SLITHER-TRIAGE.md 'too-many-digits'."
+    },
+    "unchecked-lowlevel::RWAllyAgentRegistry._requireContractSignature": {
+      "count": 1,
+      "reason": "By design. The ERC-6492 factory call's result is ignored on purpose: success is decided only by the wallet having code and accepting the inner signature by ERC-1271 afterwards, and both revert with InvalidWalletSignature otherwise. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
     "uninitialized-local::VaultCore._settleExit": {
       "count": 2,
