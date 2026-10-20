@@ -21,7 +21,7 @@ UI change closes with this loop, and the report includes the artifacts, not a de
 | console / network | `read_console_messages`, `read_network_requests` | **zero** external hosts is a hard requirement — any non-`self` request is a failure |
 | performance | Chrome DevTools MCP (`chrome-devtools`, user scope) | trace the scroll path; 60fps or it is not done |
 | library docs | Context7 MCP | `motion`, `gsap`, `@react-three/fiber` current APIs — do not guess from training data |
-| wording | `rwally-claims-contract` skill + the guard suites | they read `apps/site/*.html`; `dist/` needs a prerender step first |
+| wording | `rwally-claims-contract` skill + the guard suites | they read the built pages in `apps/site/dist/`; run `npm run build --workspace apps/site` first |
 
 The built-in Browser pane already covers what Playwright MCP would add; do not install a second
 browser automation layer.
