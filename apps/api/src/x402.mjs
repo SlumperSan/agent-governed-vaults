@@ -95,6 +95,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
+import { VersionedMessage } from '@solana/web3.js';
 
 const HEADER_REQUIRED = 'payment-required';
 const HEADER_SIGNATURE = 'payment-signature';
@@ -396,6 +397,49 @@ function isDefiniteRejection(reason) {
 }
 
 /**
+ * The replay key of a serialized Solana transaction: the base64 of its MESSAGE bytes, or `null` when
+ * the bytes are not exactly a signature section followed by one canonical message.
+ *
+ * The message is what every signature covers, so two envelopes with the same message are the same
+ * payment. Keying on anything wider let one payment through several times. The base64 text as sent
+ * failed first: `Buffer.from(b64, 'base64')` accepts stripped padding, whitespace and the URL-safe
+ * alphabet (R494 B1). The decoded wire bytes failed next (R494b B2): the facilitator overwrites the
+ * fee payer slot with its own signature, `VersionedTransaction.deserialize` drops trailing bytes, and
+ * the signature count accepts a non-minimal shortvec, so junk in slot 0, extra bytes or `0x82 0x00`
+ * for 2 each made a new key for one broadcast. None of those touch the message.
+ *
+ * Trailing bytes are refused rather than ignored, and so is a message that does not re-serialize to
+ * the bytes it came from: the facilitator signs and broadcasts the re-serialized form, so anything
+ * else is not what it would send.
+ *
+ * @param {string} b64
+ * @returns {string|null}
+ */
+function svmReplayKey(b64) {
+  const raw = Buffer.from(b64, 'base64');
+  // The signature count: a compact-u16 (shortvec), at most three bytes.
+  let count = 0;
+  let i = 0;
+  for (;;) {
+    if (i >= raw.length || i >= 3) return null;
+    const byte = raw[i];
+    count |= (byte & 0x7f) << (7 * i);
+    i += 1;
+    if (!(byte & 0x80)) break;
+  }
+  const messageBytes = raw.subarray(i + 64 * count);
+  if (messageBytes.length === 0) return null;
+  let message;
+  try {
+    message = VersionedMessage.deserialize(messageBytes);
+  } catch {
+    return null;
+  }
+  if (!Buffer.from(message.serialize()).equals(messageBytes)) return null;
+  return messageBytes.toString('base64');
+}
+
+/**
  * Core gate. Framework-agnostic: given a raw request's headers and a price + facilitator, returns
  * either a 402 response spec (challenge) or an "authorized" verdict with the PAYMENT-RESPONSE
  * header to echo. Replay protection is delegated to the facilitator (EIP-3009 nonces are
@@ -449,8 +493,8 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   if (!localCheck.ok) return require402(`payment invalid: ${localCheck.reason}`);
 
   // AN SVM ENVELOPE HAS NO `nonce`, so reading one leaves this guard inert on that path. The
-  // transaction bytes are the right key: they carry the payer's signature over a specific blockhash,
-  // so two envelopes with identical bytes ARE the same payment. Solana refuses a duplicate signature
+  // transaction message is the right key: the payer signs it over a specific blockhash, so two
+  // envelopes with the same message ARE the same payment. Solana refuses a duplicate signature
   // within the blockhash's ~2-minute life on its own, which is the real protection; this is the
   // local half, and an inert local half is worse than an absent one because it looks present.
   //
@@ -467,14 +511,10 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   // once `verifyAndSettle` returned, so every copy of one payment that arrived during that await
   // passed the check: three concurrent copies, three 200s, three broadcasts (A16 H1). An EIP-3009
   // nonce is a bytes32, so `0xAB..` and `0xab..` are the same authorization under the same signature
-  // and must be one key. The SVM key is the DECODED transaction bytes, re-encoded canonically: it was
-  // the base64 text as sent, and `Buffer.from(b64, 'base64')` (what `decodeTransaction` settles from)
-  // accepts stripped padding, whitespace, newlines and the URL-safe alphabet, so one signed
-  // transaction in four spellings was served four times (R494 B1).
+  // and must be one key. The SVM key is the transaction MESSAGE, see `svmReplayKey`.
   let key = nonce;
   if (price.svm) {
-    key = Buffer.from(nonce, 'base64').toString('base64');
-    // Text that decodes to no bytes would leave the guard inert; it is no transaction either.
+    key = svmReplayKey(nonce);
     if (!key) return require402('payment invalid: bad-transaction');
   } else if (typeof nonce === 'string' && nonce) {
     key = nonce.toLowerCase();
@@ -518,7 +558,7 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
  * @param {{ok:boolean, receiptId?:string}} p.settled
  * @param {string|undefined} p.nonce           the nonce (or SVM transaction) as the client sent it;
  *                                             `gate()` keys its replay set on the lower-cased form
- *                                             (an SVM transaction on its canonical base64)
+ *                                             (an SVM transaction on its message bytes)
  */
 export function buildSettlementResponse({ price, env, settled, nonce }) {
   const payer = env?.authorization?.from;

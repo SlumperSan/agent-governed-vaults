@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { gate, buildChallenge, checkEnvelopeAgainstPrice, decodeSignatureHeader, decodeHeaderJson, HEADERS } from '../src/x402.mjs';
 import { createApi } from '../src/server.mjs';
 import { applyAll } from '../../../packages/indexer/src/projections.mjs';
+import { Keypair, SystemProgram, Transaction } from '@solana/web3.js';
 
 const USDC = '0x' + 'c'.repeat(40);
 const PAYTO = '0x' + 'd'.repeat(40);
@@ -161,6 +162,18 @@ const svmPrice = {
 };
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64');
 
+// A real serialized transaction, in the state an envelope arrives in: signed by the payer (slot 1),
+// fee payer slot 0 still empty for the facilitator to fill.
+const svmPayer = Keypair.generate();
+const svmTx = (() => {
+  const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: svmPayer.publicKey, toPubkey: Keypair.generate().publicKey, lamports: 1 }));
+  tx.feePayer = Keypair.generate().publicKey;
+  tx.recentBlockhash = '11111111111111111111111111111111';
+  tx.partialSign(svmPayer);
+  return tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+})();
+const SVM_TX = svmTx.toString('base64');
+
 test('a client CANNOT disable the price checks by claiming a scheme', async () => {
   // THE REGRESSION THIS PINS. `checkEnvelopeAgainstPrice` branched on `env.scheme` — a string the
   // client writes — so against an EVM price an envelope that merely said `scheme:'exact-svm'` and
@@ -198,7 +211,7 @@ test('an SVM envelope reaches the facilitator when the SERVER’s price is SVM',
   // the shipped `buildSvmEnvelope` produces neither — so `gate()` 402'd every SVM payment forever
   // and the facilitator was never reached through the only production entry point, while the
   // commit that removed the boot refusal said the path was finished. This is that path, end to end.
-  const env = { x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: 'AQAB' };
+  const env = { x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: SVM_TX };
   assert.notEqual(decodeSignatureHeader(b64(env)), null, 'the decoder must accept the SVM shape');
   assert.equal(checkEnvelopeAgainstPrice(svmPrice, env, 1000).ok, true);
 
@@ -206,13 +219,13 @@ test('an SVM envelope reaches the facilitator when the SERVER’s price is SVM',
   const spy = { async verifyAndSettle(_c, e) { seenEnvelope = e; return { ok: true, receiptId: 'sig' }; } };
   const v = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: spy, nowMs: 1000 });
   assert.equal(v.status, 200, `expected settlement, got ${v.status} ${v.body?.error ?? ''}`);
-  assert.equal(seenEnvelope?.transaction, 'AQAB');
+  assert.equal(seenEnvelope?.transaction, SVM_TX);
 });
 
 test('the SVM replay key is the transaction, because there is no nonce to read', async () => {
   // `env.authorization?.nonce` is undefined on this path, so the guard was present and inert —
   // which is worse than absent, because it looks like protection.
-  const env = { x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: 'AQAB' };
+  const env = { x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: SVM_TX };
   const seen = new Set();
   const ok = { async verifyAndSettle() { return { ok: true, receiptId: 'sig' }; } };
   const first = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: ok, nowMs: 1000, seenNonces: seen });
@@ -225,11 +238,11 @@ test('the SVM replay key is the transaction, because there is no nonce to read',
 test('several spellings of one SVM transaction, sent concurrently, are served once (R494 B1)', async () => {
   // `Buffer.from(b64, 'base64')` reads all of these as the same bytes, so the facilitator would sign
   // and submit one transaction for each; the key was the text as sent, so each passed the guard.
-  const bytes = Buffer.from([0xfb, 0xff, 0xbf, ...Array.from({ length: 14 }, (_, i) => i * 15 + 1)]); // `+/` for base64url
-  const canonical = bytes.toString('base64');
-  const spellings = [canonical, canonical.replace(/=+$/, ''), `${canonical}\n`, `${canonical.slice(0, 8)} ${canonical.slice(8)}`, bytes.toString('base64url')];
-  assert.equal(new Set(spellings).size, spellings.length, 'the spellings must differ as text');
-  for (const s of spellings) assert.deepEqual(Buffer.from(s, 'base64'), bytes, 'and decode to the same bytes');
+  const canonical = SVM_TX;
+  // Which of these differ from `canonical` depends on the random keys (padding, `+/`), so dedupe.
+  const spellings = [...new Set([canonical, canonical.replace(/=+$/, ''), `${canonical}\n`, `${canonical.slice(0, 8)} ${canonical.slice(8)}`, svmTx.toString('base64url')])];
+  assert.ok(spellings.length >= 3, 'at least three spellings must differ as text');
+  for (const s of spellings) assert.deepEqual(Buffer.from(s, 'base64'), svmTx, 'and decode to the same bytes');
 
   const seen = new Set();
   let calls = 0;
@@ -242,9 +255,50 @@ test('several spellings of one SVM transaction, sent concurrently, are served on
   }));
   release();
   const results = await Promise.all(pending);
-  assert.deepEqual(results.map((v) => v.status).sort(), [200, 402, 402, 402, 402]);
+  assert.deepEqual(results.map((v) => v.status).sort(), [200, ...spellings.slice(1).map(() => 402)]);
   for (const v of results.filter((r) => r.status === 402)) assert.match(v.body.error, /replayed-nonce/);
   assert.equal(calls, 1, 'one transaction must reach the facilitator once');
+});
+
+test('wire variants of one signed SVM transaction, sent concurrently, are served once (R494b B2)', async () => {
+  // The facilitator overwrites the fee payer slot with its own signature and broadcasts
+  // `tx.serialize()`, rebuilt from the parsed transaction. So junk in slot 0, trailing bytes and a
+  // non-minimal signature count (`0x82 0x00` for 2) are each one broadcast, and keying on the wire
+  // bytes served each of them.
+  assert.equal(svmTx[0], 2, 'the fixture carries two signature slots');
+  const feeSlotJunk = Buffer.from(svmTx);
+  feeSlotJunk.fill(0xaa, 1, 65);
+  const trailing = Buffer.concat([svmTx, Buffer.from([1, 2, 3, 4])]);
+  const nonMinimalCount = Buffer.concat([Buffer.from([0x82, 0x00]), svmTx.subarray(1)]);
+  const variants = { canonical: svmTx, feeSlotJunk, trailing, nonMinimalCount };
+
+  const seen = new Set();
+  let calls = 0;
+  let release = () => {};
+  const held = new Promise((r) => { release = r; });
+  const slow = { async verifyAndSettle() { calls += 1; await held; return { ok: true, receiptId: 'sig' }; } };
+  const pending = Object.values(variants).map((bytes) => gate({
+    headers: { [HEADERS.SIGNATURE]: b64({ x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: bytes.toString('base64') }) },
+    price: svmPrice, facilitator: slow, nowMs: 1000, seenNonces: seen,
+  }));
+  release();
+  const results = await Promise.all(pending);
+  const statuses = Object.fromEntries(Object.keys(variants).map((k, i) => [k, results[i].status]));
+  assert.equal(results.filter((r) => r.status === 200).length, 1, `exactly one 200, got ${JSON.stringify(statuses)}`);
+  assert.equal(calls, 1, 'one payment must reach the facilitator once');
+  assert.equal(seen.size, 1, 'one payment, one key');
+});
+
+test('an SVM transaction with trailing bytes is refused before the facilitator', async () => {
+  let billed = false;
+  const spy = { async verifyAndSettle() { billed = true; return { ok: true, receiptId: 'sig' }; } };
+  const transaction = Buffer.concat([svmTx, Buffer.from([0])]).toString('base64');
+  const seen = new Set();
+  const v = await gate({ headers: { [HEADERS.SIGNATURE]: b64({ x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction }) }, price: svmPrice, facilitator: spy, nowMs: 1000, seenNonces: seen });
+  assert.equal(v.status, 402);
+  assert.match(v.body.error, /bad-transaction/);
+  assert.equal(billed, false);
+  assert.equal(seen.size, 0, 'a refused transaction reserves no key');
 });
 
 test('an SVM transaction that decodes to no bytes is refused before the facilitator', async () => {
@@ -269,7 +323,7 @@ test('a client cannot pick its own replay key by attaching an invented nonce', a
   const statuses = [];
   for (let i = 0; i < 5; i += 1) {
     const env = {
-      x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: 'AQAB',
+      x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: SVM_TX,
       authorization: { nonce: `0xinvented${i}` },
     };
     const r = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: ok, nowMs: 1000, seenNonces: seen });
