@@ -1,0 +1,1 @@
+{ "chains": { "ethereum-dryrun": { "chainId": 1, "rpcs": ["http://127.0.0.1:8545", "http://localhost:8545"], "oracles": ["ORACLE_ADDR"], "fromBlock": "0x0" } } }
