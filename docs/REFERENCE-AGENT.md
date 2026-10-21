@@ -454,8 +454,10 @@ rather than "no active proposal on this vault". The next tick retries.
 
 ### Voting weight is not the share balance
 
-Commits are gated on `pastVotingEligibleShares(member, proposal.createdAt)`, the measure the
-contract counts, and the same one quorum uses. Shares deposited after a proposal opened, still
+Commits are gated on `pastVotingEligibleShares(member, proposal.createdAt)`, an approximation of the
+measure the contract counts: `Governance` weighs each vote at the lesser of
+`pastVotingEligibleShares(member, createdAt - 1)` and the member's current `votingEligibleShares`,
+and quorum is computed from that same weight. Shares deposited after a proposal opened, still
 inside the observation window, or locked behind a Mode-F exit carry **no** vote, so committing on
 `sharesOf` would cast votes that can never count. An unreadable weight falls to zero, which blocks
 the commit.
@@ -543,8 +545,9 @@ What is still true about the demo path:
 ### The oracle-freeze trigger detects, it does not warn
 
 `navPerShareWad()` reverts with `StaleOracle` when a basket price is stale, so a failed NAV read
-means the vault is **already frozen**, at which point exits are frozen too (ARCHITECTURE §11) and
-`requestExit` will revert as well. The oracle exposes no per-asset freshness view, so a genuine
+means the vault is **already frozen**, at which point exits that price a basket asset are frozen
+too (ARCHITECTURE §11): an immediate (Mode I) `requestExit` and `settleQueuedExit` will revert as
+well, while a Mode F `requestExit` still queues, because queueing reads no price. The oracle exposes no per-asset freshness view, so a genuine
 early warning is not readable on-chain. The trigger is worth keeping; breakers can clear, and an
 agent that queues its exit the moment it notices is ahead of one that waits, but it is detection
 after the fact, not prevention. Do not read "oracle-freeze warning" as protection against being

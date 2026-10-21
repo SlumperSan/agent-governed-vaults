@@ -222,7 +222,8 @@ what the phase *means for the human's money*, not just its name — e.g. Reveal 
 revealed; from here Mode-F exits price forward." Done nodes fill Iris; the active node gets an
 Iris focus halo; future nodes are `--line`. The proposal's quorum is shown *with its denominator*
 ("38% of voting-eligible stake · 25% floor"). Standing-default and delegated votes are labelled
-as such because they count toward tally but not quorum (§8) — the human should see why the math
+as such because they count toward tally but not quorum (§8), except that in a vault of fewer
+than five members an applied standing default counts toward the FOR-stake majority test. The human should see why the math
 looks the way it does.
 
 ### 4.4 Risk-disclosure panel
@@ -255,7 +256,7 @@ Buttons (§4.7 in the tile) plus the **consequence-before-action** pattern (Prin
 - **Deposit** into a first-time vault surfaces the **observation window** (§4.9) inline before
   confirm.
 - **Exit** detects Mode I vs Mode F and changes its own copy: Mode I confirms "settles now at
-  current NAV"; **Mode F** confirms "queued — settles at the price *after* the pending rebalance,
+  current NAV"; **Mode F** confirms "queued: settles at the price *after* the pending proposal is executed, defeated or lapses,
   and **cannot be cancelled**," then shows a persistent pending row until settlement.
 - **Window skip** and **full-consensus rule change** use the same irreversible pattern: a confirm
   step restating the exact, specific consequence, then a visible standing state. Destructive/
@@ -280,16 +281,18 @@ reverts by design (ARCHITECTURE §4.2), so the **whole surface changes**, not on
   in the `--frozen` treatment (ice-cyan rule + `--frozen-soft` wash).
 - **Every primary CTA disables with the reason stated inline** — "Deposits and exits are held
   while the oracle is frozen." No live actions are offered.
-- A surface-level banner explains *why* in one sentence and *what clears it* (breaker resets when
-  sources agree within tolerance).
+- A surface-level banner explains *why* in one sentence and *what clears it* (pricing resumes on
+  its own once the feed publishes a fresh in-band answer and any sequencer grace period has ended).
 
-**Three distinct treatments — never collapsed:**
+**Two distinct treatments, never collapsed:**
 
 | State | Meaning | Treatment |
 | --- | --- | --- |
 | **Stale** | data older than target but still valid | `--warn` timestamp, actions still live |
 | **Frozen** | oracle breaker tripped, NAV reads revert | `--frozen` whole-surface mode, actions held |
-| **Paused** | governance/operator halt | `--muted` mode, distinct copy, actions held |
+
+There is no **Paused** state: no contract has a pause function, so no governance or operator halt
+exists to render.
 
 ### 4.9 Pills & badges
 
