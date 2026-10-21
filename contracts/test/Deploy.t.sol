@@ -10,8 +10,9 @@ import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {FeeEngine} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
-import {VaultFactory} from "../src/VaultFactory.sol";
+import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
+import {AgentVaultDeployer} from "../src/AgentVaultDeployer.sol";
 import {TreasuryConfig} from "../script/lib/TreasuryConfig.sol";
 
 /// @dev Exposes the internal `TreasuryConfig.read` so a test can call it at a chosen chain id.
@@ -23,8 +24,17 @@ contract TreasuryConfigHarness is Test {
 
 /// Proves the deploy script wires the system correctly and locks every one-shot back-reference.
 contract DeployTest is Create2ProxyFixture {
+    /// The agent ID registry is not a Deploy.s.sol singleton: the script reads its recorded address
+    /// from `config/agent-registry-create2.json` and refuses to run unless it already has code.
+    /// Etching any runtime there stands in for "deployed first"; `factory.agentRegistry()` is only
+    /// ever compared to it.
     function setUp() public {
         _etchCreate2Proxy();
+        vm.etch(_recordedRegistry(), hex"00");
+    }
+
+    function _recordedRegistry() internal view returns (address) {
+        return vm.parseJsonAddress(vm.readFile("config/agent-registry-create2.json"), ".address");
     }
 
     function test_deployWiresAndLocks() public {
@@ -35,6 +45,7 @@ contract DeployTest is Create2ProxyFixture {
             FeeEngine feeEngine,
             Governance gov,
             VaultDeployer vaultDeployer,
+            AgentVaultDeployer agentVaultDeployer,
             VaultFactory factory
         ) = d.run();
 
@@ -46,6 +57,15 @@ contract DeployTest is Create2ProxyFixture {
         assertEq(address(factory.subVaultRegistry()), address(subReg), "factory subReg");
         // #10: the factory's one construction path, pinned immutably at deploy time.
         assertEq(address(factory.vaultDeployer()), address(vaultDeployer), "factory vaultDeployer");
+        // The agent path: the recorded registry and the agent deployer, both pinned, one shot spent.
+        assertTrue(factory.agentPathInitialized(), "agent path initialised");
+        assertEq(factory.agentRegistry(), _recordedRegistry(), "factory agentRegistry");
+        assertEq(
+            address(factory.agentVaultDeployer()), address(agentVaultDeployer), "factory agentVaultDeployer"
+        );
+        vm.prank(PROTOCOL_INITIALIZER);
+        vm.expectRevert(VaultFactory.AgentPathAlreadyInitialized.selector);
+        factory.initializeAgentPath(address(1), IVaultDeployer(address(2)));
 
         // Every wiring is now permanently locked. The deployer is the Deploy contract; even
         // AS the deployer, re-wiring reverts AlreadyWired (one-shot). Non-deployers get
@@ -85,6 +105,7 @@ contract DeployTest is Create2ProxyFixture {
             FeeEngine feeEngine,
             Governance gov,
             VaultDeployer vaultDeployer,
+            AgentVaultDeployer agentVaultDeployer,
             VaultFactory factory
         ) = d.run();
         assertEq(address(registry), p.operatorRegistry, "OperatorRegistry");
@@ -92,6 +113,7 @@ contract DeployTest is Create2ProxyFixture {
         assertEq(address(feeEngine), p.feeEngine, "FeeEngine");
         assertEq(address(gov), p.governance, "Governance");
         assertEq(address(vaultDeployer), p.vaultDeployer, "VaultDeployer");
+        assertEq(address(agentVaultDeployer), p.agentVaultDeployer, "AgentVaultDeployer");
         assertEq(address(factory), p.vaultFactory, "VaultFactory");
         assertTrue(factory.initialized(), "factory initialised");
         assertTrue(registry.initialized() && subReg.initialized() && gov.initialized(), "wired");
@@ -102,7 +124,7 @@ contract DeployTest is Create2ProxyFixture {
     /// placeholder; the one-shot is spent, so a second call reverts.
     function test_deploySetsTheFeeTreasuryOnce() public {
         Deploy d = new Deploy();
-        (,, FeeEngine feeEngine,,,) = d.run();
+        (,, FeeEngine feeEngine,,,,) = d.run();
         assertEq(feeEngine.treasury(), TreasuryConfig.LOCAL_TREASURY, "treasury set by the script");
         vm.prank(PROTOCOL_INITIALIZER);
         vm.expectRevert(FeeEngine.AlreadyInitialized.selector);
@@ -122,6 +144,20 @@ contract DeployTest is Create2ProxyFixture {
         h.read();
         vm.chainId(31337);
         assertEq(h.read(), TreasuryConfig.LOCAL_TREASURY, "local chain falls back to the placeholder");
+    }
+
+    /// @notice The agent registry must exist before the script runs: the factory pins its address for
+    /// good, so the script refuses (before sending anything) when the recorded address has no code.
+    function test_deployRefusesWhenTheAgentRegistryIsNotDeployed() public {
+        vm.etch(_recordedRegistry(), "");
+        Deploy d = new Deploy();
+        vm.expectRevert(
+            bytes(
+                "Deploy: the agent registry at config/agent-registry-create2.json has no code on this chain; deploy it first"
+            )
+        );
+        d.run();
+        assertEq(ProtocolCreate2.predict().vaultFactory.code.length, 0, "nothing was deployed");
     }
 
     function test_proxyFixtureMatchesTheKnownCodehash() public view {
