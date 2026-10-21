@@ -20,6 +20,9 @@ K0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80   # anvil 
 PI=0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35
 WETH=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 WBTC=0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599 USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 FETH=0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419 FBTC=0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c
+# PLACEHOLDER fork treasury (a dead-looking address nobody holds a key for), not the real RWAlly treasury.
+# Deploy.s.sol requires FEE_TREASURY on any real chain id, chain 1 included; the real one is a freeze decision.
+FEE_TREASURY=${FEE_TREASURY:-0x000000000000000000000000000000000000fEE1}; export FEE_TREASURY
 step() { echo; echo "######## $1"; }
 cleanup() { [ -f "$WORK/anvil.pid" ] && kill "$(cat "$WORK/anvil.pid")" 2>/dev/null; rm -rf "$REPO"/contracts/cache/*.s.sol/1; }
 trap cleanup EXIT
@@ -81,13 +84,13 @@ BLESSED_ORACLES=$ORA forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" 
 echo "block after refusals $(cast block-number -r $R)"
 step "3c. Deploy.s.sol as PROTOCOL_INITIALIZER (anvil impersonation, no key)"
 cast rpc anvil_impersonateAccount $PI -r $R >/dev/null; cast rpc anvil_setBalance $PI 0x8AC7230489E80000 -r $R >/dev/null
-BLESSED_ORACLES=$ORA forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --unlocked --sender $PI --broadcast 2>&1 | grep -E "^  [A-Z][A-Za-z]+ +0x|COMPLETE|Error"
+BLESSED_ORACLES=$ORA FEE_TREASURY=$FEE_TREASURY forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --unlocked --sender $PI --broadcast 2>&1 | grep -E "^  [A-Z][A-Za-z]+ +0x|COMPLETE|Error"
 step "4. per-transaction gas (EIP-7825 cap 16,777,216; anvil does not enforce it, so it is checked here)"
 for f in DeployChainlinkOracle.s.sol Deploy.s.sol; do node -e '
 const j=require(process.argv[1]); j.transactions.forEach((t,i)=>{const r=j.receipts[i]; const g=parseInt(t.transaction.gas); console.log([g<=16777216?"PASS":"FAIL", t.transactionType, t.contractName||"-", t.function||"", "from="+t.transaction.from, "gasLimit="+g, "gasUsed="+parseInt(r.gasUsed), "status="+r.status].join(" "))})' "$FOUNDRY_BROADCAST/$f/1/run-latest.json"; done
 step "5. read-back"
 "$HERE/readback.sh"
-for p in "OperatorRegistry 0xf80382d75920A41647F6934610f40493A3920Ea8" "SubVaultRegistry 0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0" "Governance 0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11"; do set $p; a=$(cast code $2 -r $R | tr A-F a-f); b=$(jq -r .deployedBytecode.object out/$1.sol/$1.json | tr A-F a-f); [ "$a" == "$b" ] && echo "PASS  runtime == local build: $1" || echo "FAIL  runtime differs: $1"; done
+for n in OperatorRegistry SubVaultRegistry Governance; do set $n $(jq -er ".contracts.$n.address" "$REPO/contracts/config/create2-manifest.json"); a=$(cast code $2 -r $R | tr A-F a-f); b=$(jq -r .deployedBytecode.object out/$1.sol/$1.json | tr A-F a-f); [ "$a" == "$b" ] && echo "PASS  runtime == local build: $1" || echo "FAIL  runtime differs: $1"; done
 step "6. initialisation preflight (repo script, two endpoints)"
 sed "s/ORACLE_ADDR/$ORA/" "$HERE/plan.tmpl.json" > "$WORK/plan.json"; sed "s/ORACLE_ADDR/0x000000000000000000000000000000000000dEaD/" "$HERE/plan.tmpl.json" > "$WORK/plan-wrong.json"
 node "$REPO/scripts/protocol-initialize-preflight.mjs" --plan "$WORK/plan.json"; echo "exit $?"

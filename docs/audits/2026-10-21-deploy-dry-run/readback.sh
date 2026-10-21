@@ -4,9 +4,11 @@
 # The feedOf expectations are the dry run's stand-in inputs; edit them to the frozen config.
 R=${R:-http://127.0.0.1:8545}
 PI=0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35
-REG=0xf80382d75920A41647F6934610f40493A3920Ea8 SUB=0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0
-FEE=0x71b75692565B47B2fA803a38d0933b99FA6E6999 GOV=0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11
-DEP=0x9d24cef2bC101CBc02303819ac8f611eA7cbAC23 FAC=0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d
+HERE=$(cd "$(dirname "$0")" && pwd); MANIFEST=$HERE/../../../contracts/config/create2-manifest.json
+# The six singleton addresses come from the manifest, never from literals here, so they cannot drift.
+m() { jq -er ".contracts.$1.address" "$MANIFEST" || { echo "no $1 in $MANIFEST" >&2; exit 1; }; }
+REG=$(m OperatorRegistry) SUB=$(m SubVaultRegistry) FEE=$(m FeeEngine)
+GOV=$(m Governance) DEP=$(m VaultDeployer) FAC=$(m VaultFactory)
 ORA=${ORA:?set ORA to the blessed oracle}
 WETH=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 WBTC=0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599 USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 pass=0 fail=0
@@ -30,6 +32,8 @@ eq "VaultFactory.initialized" "$(call $FAC 'initialized()(bool)')" true
 eq "VaultFactory.oracleAllowlistEnforced" "$(call $FAC 'oracleAllowlistEnforced()(bool)')" true
 eq "VaultFactory.isAllowedOracle(oracle)" "$(call $FAC 'isAllowedOracle(address)(bool)' $ORA)" true
 eq "VaultFactory.isAllowedOracle(random)" "$(call $FAC 'isAllowedOracle(address)(bool)' 0x000000000000000000000000000000000000dEaD)" false
+if [ -n "${FEE_TREASURY:-}" ]; then eq "FeeEngine.treasury" "$(call $FEE 'treasury()(address)')" "$FEE_TREASURY"
+else n=$(call $FEE 'treasury()(address)'); [ "$(lc "$n")" != 0x0000000000000000000000000000000000000000 ] && { echo "PASS  FeeEngine.treasury is set ($n); set FEE_TREASURY to compare it"; pass=$((pass+1)); } || { echo "FAIL  FeeEngine.treasury is unset"; fail=$((fail+1)); }; fi
 eq "OperatorRegistry.factory" "$(call $REG 'factory()(address)')" $FAC
 eq "OperatorRegistry.feeEngine" "$(call $REG 'feeEngine()(address)')" $FEE
 eq "OperatorRegistry.initialized" "$(call $REG 'initialized()(bool)')" true
@@ -55,4 +59,5 @@ rev $FAC 'initialize(address[])' "[$ORA]"
 rev $REG 'wire(address,address)' $FAC $FEE
 rev $SUB 'wire(address)' $FAC
 rev $GOV 'wireSubVaultRegistry(address)' $SUB
+rev $FEE 'initialize(address)' 0x000000000000000000000000000000000000bEEF
 echo "-- result: $pass pass, $fail fail"

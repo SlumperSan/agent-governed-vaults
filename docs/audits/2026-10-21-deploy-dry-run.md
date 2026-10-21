@@ -5,9 +5,18 @@ key and nothing sent to any network. It covers `contracts/script/DeployChainlink
 `contracts/script/Deploy.s.sol` at `protocol/main` `c3277fc`, plus a real Safe v1.4.1 set up 2 of 3 as
 the vault creator.
 
-**Result: the run completes. 57 checks pass, 0 fail.** One blocker changed the method (no mainnet
-fork was possible, see below), and three gaps in the scripts and runbook need a decision before the
-freeze. The checklist at the end is the part to use on the day.
+**Frozen at `c3277fc`, before the FeeEngine A1 treasury split (#477).** The measured run, the
+transcript and every gas figure are from that commit. Since then `Deploy.s.sol` also calls
+`FeeEngine.initialize(FEE_TREASURY)` and the `FeeEngine` and `VaultFactory` addresses changed. The
+harness and the checklist below read the current `contracts/config/create2-manifest.json` and the
+current deploy script, and the counts are re-derived from that script; every gas figure not
+re-measured is marked "from the 2026-10-21 run at c3277fc, re-measure at freeze". The harness has not
+been re-run on the current set.
+
+**Result at `c3277fc`: the run completes. 57 checks pass, 0 fail.** One blocker changed the method
+(no mainnet fork was possible, see below), and three gaps in the scripts and runbook need a decision
+before the freeze. The checklist at the end is for the freeze, after the harness is re-run on the
+frozen commit.
 
 - Harness, re-runnable: [`2026-10-21-deploy-dry-run/run-all.sh`](2026-10-21-deploy-dry-run/run-all.sh)
 - Full transcript of the run summarised here: [`2026-10-21-deploy-dry-run/transcript.txt`](2026-10-21-deploy-dry-run/transcript.txt)
@@ -50,9 +59,9 @@ listed in the checklist.
 | 2b | `DeployChainlinkOracle`, throwaway anvil key, bands at ratio 200 | `ChainlinkOracle` at `0x5FC8…5707`; both feeds `feed OK`; sequencer feed `address(0)` |
 | 3a | `Deploy.s.sol` with empty `BLESSED_ORACLES` | **refused** before any send (C-6 guard) |
 | 3b | `Deploy.s.sol` signed by the throwaway key | **refused** before any send: the broadcast is pinned to `PROTOCOL_INITIALIZER` |
-| 3c | `Deploy.s.sol` as `PROTOCOL_INITIALIZER` (anvil impersonation, no key) | 10 transactions, all status 1; six addresses equal the manifest |
-| 4 | per-transaction gas against the EIP-7825 cap (16,777,216) | largest gas limit 7,222,688 (`VaultDeployer`); all 11 under the cap |
-| 5 | read-back: immutables, wires, oracle config, replays | 38 of 38 pass; three runtimes equal the local build |
+| 3c | `Deploy.s.sol` as `PROTOCOL_INITIALIZER` (anvil impersonation, no key) | 10 transactions at `c3277fc` (11 on the current script, with `FeeEngine.initialize`), all status 1; six addresses equal the manifest at that commit |
+| 4 | per-transaction gas against the EIP-7825 cap (16,777,216) | at `c3277fc`: largest gas limit 7,222,688 (`VaultDeployer`); all 11 under the cap (11 = 1 oracle + 10 deploy-script transactions); re-measure at freeze |
+| 5 | read-back: immutables, wires, oracle config, replays | at `c3277fc`: 38 of 38 pass; three runtimes equal the local build; the current `readback.sh` adds the treasury and `FeeEngine.initialize` replay checks |
 | 6 | `scripts/protocol-initialize-preflight.mjs`, two endpoints | `preflight ok`; negative plan exits 1 |
 | 7 | `update-create2-manifest.mjs --check` | matches |
 | 8 | real Safe v1.4.1, 2 of 3, creates and registers the first vault | one signature **refused** (`GS020`); `registerVault` from any non-creator refused; two of three succeed; creator and operator are the Safe |
@@ -62,21 +71,31 @@ this session), so the harness checks the cap itself in step 4.
 
 ### Gas, as measured
 
-| Sender | Transactions | Gas used |
+All gas figures in this table are from the 2026-10-21 run at `c3277fc`, re-measure at freeze. The
+`PROTOCOL_INITIALIZER` row predates `FeeEngine.initialize` and the larger `FeeEngine` initcode
+(3,039 B then, 3,305 B now per the manifest), so it understates the current batch.
+
+| Sender | Transactions | Gas used (from the 2026-10-21 run at `c3277fc`, re-measure at freeze) |
 |---|---|---|
 | any key (oracle deploy, plain CREATE) | 1 | 537,930 |
-| `PROTOCOL_INITIALIZER` (six CREATE2, `initialize`, three wires) | 10 | 10,672,157 |
+| `PROTOCOL_INITIALIZER`, as run at `c3277fc` (six CREATE2, `VaultFactory.initialize`, three wires) | 10 | 10,672,157 |
+| `PROTOCOL_INITIALIZER`, current script (the same ten plus `FeeEngine.initialize`) | 11 | not measured, re-measure at freeze |
 | creator Safe (`createVault`, `registerVault`, via `execTransaction`) | 2 | 4,826,350 |
 
-At 1 gwei the `PROTOCOL_INITIALIZER` batch costs about 0.0107 ETH and scales linearly; forge sets
-each gas limit at 130% of its estimate, so the key needs that headroom on hand when each transaction
-is sent.
+`Deploy.s.sol` now sends 11 transactions: six CREATE2 creates, then the five one-shot calls
+(`factory.initialize`, `registry.wire`, `subReg.wire`, `governance.wireSubVaultRegistry`,
+`feeEngine.initialize`). A full rehearsal is 1 + 11 + 2 = 14 transactions. Forge sets each gas limit at 130% of its estimate, so the key needs that headroom on
+hand when each transaction is sent. The cost in ETH scales linearly with the day's gas price and
+should be recomputed from the re-measured gas; the 0.0107 ETH at 1 gwei quoted in the first run
+covered only the 10 transactions at `c3277fc`.
 
 ## Constructor arguments, role grants and ownership
 
-**Constructor arguments.** Two singletons take any. Both were read back from the deployed immutables:
+**Constructor arguments.** Two singletons take any. Both were read back from the deployed immutables
+at `c3277fc` (the current `FeeEngine` additionally has a one-shot `initialize(treasury)`, below):
 
-- `FeeEngine(registry)`: `registry()` is the `OperatorRegistry` address.
+- `FeeEngine(registry)`: `registry()` is the `OperatorRegistry` address. The constructor argument is
+  fixed by the CREATE2 initcode, so it is not a free choice.
 - `VaultFactory(registry, governance, feeEngine, subVaultRegistry, vaultDeployer, allowSubVaults)`:
   all five addresses match the set, and `allowSubVaults()` is `false` (C-1, root vaults only).
 - `ChainlinkOracle(assets, feeds, heartbeats, minWad, maxWad, usdc, sequencer)`: `feedOf(asset)`
@@ -90,11 +109,14 @@ covered by its initcode hash instead).
 **Role grants: there are none to make.** `contracts/src` contains no `Ownable`, no `AccessControl`,
 no `onlyOwner`, no `grantRole` and no `transferOwnership`. On the same-address (v2, CREATE2) set built
 from the current source, the privileged caller is the constant `PROTOCOL_INITIALIZER` (`0x0f80…9f35`),
-with four one-shot calls: `VaultFactory.initialize` and the three wires. (The live Arc set, v1 by
-plain CREATE, has no `initialize`.) The run proved each is spent: replayed from that
-address after bring-up, `initialize` reverts `AlreadyInitialized` and the three wires revert
-`AlreadyWired` / `AlreadyWiredSubRegistry`. `ChainlinkOracle` and the execution adapters have no
-admin at all.
+with five one-shot calls: `VaultFactory.initialize`, the three wires and `FeeEngine.initialize`
+(the per-chain treasury, `FEE_TREASURY`; `docs/DEPLOYMENT.md` counts the same five). (The live Arc
+set, v1 by plain CREATE, has no `initialize`.) The run at `c3277fc` proved the first four spent:
+replayed from that address after bring-up, `VaultFactory.initialize` reverts `AlreadyInitialized` and
+the three wires revert `AlreadyWired` / `AlreadyWiredSubRegistry`. `FeeEngine.initialize` is new since
+that run: `FeeEngine.sol` reverts a second call with `AlreadyInitialized`, and the current
+`readback.sh` replays it, but that replay has not been run. `ChainlinkOracle` and the execution
+adapters have no admin at all.
 
 **Ownership handoff to the 2 of 3: there is no protocol ownership to hand off.** Nothing in the
 singleton set can be transferred to a Safe, and `PROTOCOL_INITIALIZER` cannot be a Safe either: it
@@ -172,7 +194,11 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
 - [ ] Each of the six manifest addresses has empty code. If one has code, someone has run the same
       public initcode first; the script will then revert in simulation. Compare that runtime with the
       local build and finish the remaining creates by hand, per `docs/DEPLOYMENT.md` §10.
-- [ ] `PROTOCOL_INITIALIZER` balance covers about 10.7M gas at the day's fee, with 30% headroom.
+- [ ] `PROTOCOL_INITIALIZER` balance covers the 11-transaction batch at the day's fee, with 30%
+      headroom. Gas total: re-measure at freeze (10,672,157 for the 10 transactions at `c3277fc`; the
+      current batch is larger).
+- [ ] `FEE_TREASURY` decided: the real per-chain treasury address, non-zero, set once and never
+      changed. The harness uses a placeholder (`0x…fEE1`) that is not the real treasury.
 - [ ] Each feed proxy: code present, `description()` ends in `/ USD`, `decimals()` is 8, answer
       inside its band, aggregator pin recorded.
 
@@ -180,11 +206,15 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
 
 - [ ] `DeployChainlinkOracle.s.sol` with the committed config (any key; the oracle has no admin).
       Read `feedOf(asset)` back and compare with the config (finding 1).
-- [ ] `Deploy.s.sol` with `BLESSED_ORACLES=<that oracle>`, signed as `PROTOCOL_INITIALIZER`. Expect 10
-      transactions, largest gas limit near 7.2M, all under 16,777,216.
+- [ ] `Deploy.s.sol` with `BLESSED_ORACLES=<that oracle>` and `FEE_TREASURY=<the treasury>`, signed as
+      `PROTOCOL_INITIALIZER`. Expect 11 transactions (six creates, then the five one-shot calls
+      listed under Gas), all under 16,777,216. The largest gas limit was 7,222,688 at `c3277fc`
+      (`VaultDeployer`); re-measure at freeze.
 - [ ] `node scripts/protocol-initialize-preflight.mjs --plan <plan>` with two real endpoints: `preflight ok`.
-- [ ] `R=<rpc> ORA=<oracle> docs/audits/2026-10-21-deploy-dry-run/readback.sh` on each endpoint, with
-      the `feedOf` expectations edited to the frozen config: 0 fail.
+- [ ] `R=<rpc> ORA=<oracle> FEE_TREASURY=<the treasury> docs/audits/2026-10-21-deploy-dry-run/readback.sh`
+      on each endpoint, with the `feedOf` expectations edited to the frozen config: 0 fail. It reads
+      the six addresses from the manifest and checks `FeeEngine.treasury()` and that
+      `FeeEngine.initialize` replays as a revert.
 
 **Creator Safe and first vault**
 
@@ -199,8 +229,8 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
 
 - [ ] Deployment record `contracts/config/deployments/ethereum-mainnet.json` written from two-endpoint
       reads; `docs/NOW.md` updated in the same commit.
-- [ ] `PROTOCOL_INITIALIZER` key back in cold storage. It has spent its four calls on Ethereum, but
-      it still makes the four one-shot calls on every chain where the v2 set is not yet initialised.
+- [ ] `PROTOCOL_INITIALIZER` key back in cold storage. It has spent its five one-shot calls on Ethereum, but
+      it still makes the five one-shot calls on every chain where the v2 set is not yet initialised.
 
 ## Re-running this
 
@@ -209,6 +239,10 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
 SAFE_ARTIFACTS=<node_modules>/@safe-global/safe-contracts/build/artifacts/contracts \
   docs/audits/2026-10-21-deploy-dry-run/run-all.sh
 ```
+
+The harness exports `FEE_TREASURY` to `Deploy.s.sol` (default: the placeholder `0x…fEE1`, override
+with your own). `readback.sh` and `safe-2of3.mjs` read the six singleton addresses from
+`contracts/config/create2-manifest.json`.
 
 `SAFE_ARTIFACTS` comes from `npm i @safe-global/safe-contracts@1.4.1-build.0`; without it step 8 is
 skipped and says so. `SOLC=<path>` passes a local solc to forge with `--offline`. Every key in the

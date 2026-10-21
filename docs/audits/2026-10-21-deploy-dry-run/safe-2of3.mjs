@@ -19,8 +19,10 @@ const addr = (k) => cast(['wallet', 'address', '--private-key', k]);
 const art = (p) => JSON.parse(readFileSync(`${artifacts}/${p}`, 'utf8')).bytecode;
 const send = (args) => JSON.parse(cast(['send', '--private-key', K[0], '--json', '-r', R, ...args]));
 const deploy = (code) => send(['--create', code]).contractAddress;
-const FAC = '0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d', GOV = '0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11';
-const REG = '0xf80382d75920A41647F6934610f40493A3920Ea8', ORA = process.env.ORA;
+// Singleton addresses come from the manifest, never from literals, so they cannot drift from it.
+const manifest = JSON.parse(readFileSync(`${wt}/contracts/config/create2-manifest.json`, 'utf8')).contracts;
+const at = (n) => { if (!manifest[n]?.address) throw new Error(`no ${n} in create2-manifest.json`); return manifest[n].address; };
+const FAC = at('VaultFactory'), GOV = at('Governance'), REG = at('OperatorRegistry'), ORA = process.env.ORA;
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', WBTC = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const PI = '0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35';
 
