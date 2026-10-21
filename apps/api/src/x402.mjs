@@ -367,6 +367,35 @@ export function checkEnvelopeAgainstPrice(price, env, nowMs) {
 }
 
 /**
+ * Facilitator refusals that are reached before anything is broadcast, so the payment certainly did
+ * not settle and its replay key may be released for a corrected retry. Taken from the reasons the
+ * in-repo facilitators return (`facilitator.mjs` shape and signer checks, `facilitator-server.mjs`
+ * price checks, `svm-exact.mjs` transaction decoding). Everything else keeps the key reserved:
+ * a transport failure (`*-unreachable`, `*-http-*`, `*-malformed-response`), a settle-leg failure,
+ * `authorization-used`, and any reason not listed here.
+ *
+ * shortcut: a third-party facilitator's `/verify` `invalidReason` is free text this list cannot
+ * recognise, so on `FACILITATOR=standard` a refused payment keeps its key and the client must sign a
+ * fresh nonce (each 402 issues one); upgrade if the facilitator interface gains a settled/unsettled
+ * flag.
+ */
+const DEFINITE_REJECTIONS = new Set([
+  'no-envelope', 'no-authorization', 'nonpositive-value', 'authorization-expired',
+  'signer-mismatch', 'smart-account-needs-rpc', 'smart-account-signature-invalid',
+  'counterfactual-account-not-deployed', 'stub-deny', 'no-challenge-price',
+  'no-challenge', 'challenge-bad-payTo', 'recipient-mismatch', 'asset-mismatch', 'network-mismatch',
+  'underpaid', 'no-price', 'nonpositive-price', 'price-names-no-network', 'unsupported-x402-version',
+  'no-transaction', 'no-instructions', 'no-transfer', 'more-than-one-transfer',
+  'token-instruction-is-not-transferchecked', 'source-is-destination', 'authority-is-fee-payer',
+]);
+const DEFINITE_REJECTION_PREFIX = /^(bad-|wrong-|transaction-|transfer-|expected-two-signers-got:)/;
+
+/** @param {string|undefined} reason */
+function isDefiniteRejection(reason) {
+  return typeof reason === 'string' && (DEFINITE_REJECTIONS.has(reason) || DEFINITE_REJECTION_PREFIX.test(reason));
+}
+
+/**
  * Core gate. Framework-agnostic: given a raw request's headers and a price + facilitator, returns
  * either a 402 response spec (challenge) or an "authorized" verdict with the PAYMENT-RESPONSE
  * header to echo. Replay protection is delegated to the facilitator (EIP-3009 nonces are
@@ -434,14 +463,25 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   // `env.scheme` branch fixed above, one line beneath the comment explaining why it was a defect.
   // A client-supplied field must never select which server check runs, nor what it runs on.
   const nonce = price.svm ? env.transaction : env.authorization?.nonce;
-  if (seenNonces && nonce) {
-    if (seenNonces.has(nonce)) return require402('payment invalid: replayed-nonce');
+  // THE KEY IS RESERVED BEFORE THE AWAIT, NOT RECORDED AFTER IT. It was checked here and added only
+  // once `verifyAndSettle` returned, so every copy of one payment that arrived during that await
+  // passed the check: three concurrent copies, three 200s, three broadcasts (A16 H1). An EIP-3009
+  // nonce is a bytes32, so `0xAB..` and `0xab..` are the same authorization under the same signature
+  // and must be one key; the SVM key is base64 transaction bytes, which are case-sensitive and stay
+  // verbatim.
+  const key = typeof nonce === 'string' && nonce && !price.svm ? nonce.toLowerCase() : nonce;
+  if (seenNonces && key) {
+    if (seenNonces.has(key)) return require402('payment invalid: replayed-nonce');
+    seenNonces.add(key);
   }
 
+  // A throw from the facilitator leaves the key reserved: the payment may have settled.
   const settled = await facilitator.verifyAndSettle({ price }, env);
-  if (!settled.ok) return require402(`settlement failed: ${settled.reason ?? 'unknown'}`);
+  if (!settled.ok) {
+    if (seenNonces && key && isDefiniteRejection(settled.reason)) seenNonces.delete(key);
+    return require402(`settlement failed: ${settled.reason ?? 'unknown'}`);
+  }
 
-  if (seenNonces && nonce) seenNonces.add(nonce);
   return {
     status: 200,
     headers: {
@@ -467,7 +507,8 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
  * @param {PriceSpec} p.price
  * @param {object} p.env                       the decoded PAYMENT-SIGNATURE envelope
  * @param {{ok:boolean, receiptId?:string}} p.settled
- * @param {string|undefined} p.nonce           the replay key `gate()` recorded
+ * @param {string|undefined} p.nonce           the nonce (or SVM transaction) as the client sent it;
+ *                                             `gate()` keys its replay set on the lower-cased form
  */
 export function buildSettlementResponse({ price, env, settled, nonce }) {
   const payer = env?.authorization?.from;

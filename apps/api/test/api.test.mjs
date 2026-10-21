@@ -97,6 +97,54 @@ test('replayed nonce rejected on second use', async () => {
   assert.match(second.body.error, /replayed-nonce/);
 });
 
+test('three concurrent copies of one payment are served once (A16 H1)', async () => {
+  // The key was added only after `verifyAndSettle` resolved, so every copy that arrived during the
+  // await passed the check. The deferred holds all three inside that window.
+  const seen = new Set();
+  let calls = 0;
+  let release = () => {};
+  const held = new Promise((r) => { release = r; });
+  const slow = { async verifyAndSettle() { calls += 1; await held; return { ok: true, receiptId: 'r' }; } };
+  const hdr = { [HEADERS.SIGNATURE]: envelope({ nonce: '0x' + 'a'.repeat(64) }) };
+  const pending = [1, 2, 3].map(() => gate({ headers: hdr, price, facilitator: slow, nowMs: 1000, seenNonces: seen }));
+  release();
+  const statuses = (await Promise.all(pending)).map((v) => v.status).sort();
+  assert.deepEqual(statuses, [200, 402, 402]);
+  assert.equal(calls, 1, 'the facilitator must be asked to settle one payment once');
+});
+
+test('an upper-cased nonce is the same payment and is refused as a replay', async () => {
+  const seen = new Set();
+  const nonce = '0x' + 'ab'.repeat(32);
+  const first = await gate({ headers: { [HEADERS.SIGNATURE]: envelope({ nonce }) }, price, facilitator: okFacilitator, nowMs: 1000, seenNonces: seen });
+  assert.equal(first.status, 200);
+  const second = await gate({ headers: { [HEADERS.SIGNATURE]: envelope({ nonce: '0X' + 'AB'.repeat(32) }) }, price, facilitator: okFacilitator, nowMs: 1000, seenNonces: seen });
+  assert.equal(second.status, 402);
+  assert.match(second.body.error, /replayed-nonce/);
+});
+
+test('a definite rejection releases the key; a transport failure or a throw keeps it', async () => {
+  const nonce = '0x' + 'c'.repeat(64);
+  const hdr = { [HEADERS.SIGNATURE]: envelope({ nonce }) };
+  const refuse = (reason) => ({ async verifyAndSettle() { return { ok: false, reason }; } });
+
+  const seen = new Set();
+  assert.equal((await gate({ headers: hdr, price, facilitator: refuse('signer-mismatch'), nowMs: 1000, seenNonces: seen })).status, 402);
+  assert.equal(seen.size, 0, 'nothing was broadcast, so a corrected retry may use the nonce');
+  assert.equal((await gate({ headers: hdr, price, facilitator: okFacilitator, nowMs: 1000, seenNonces: seen })).status, 200);
+
+  for (const reason of ['facilitator-unreachable: timeout', 'settle-failed: reverted', 'authorization-used', undefined]) {
+    const kept = new Set();
+    await gate({ headers: hdr, price, facilitator: refuse(reason), nowMs: 1000, seenNonces: kept });
+    assert.equal(kept.size, 1, `${reason}: the payment may have settled, so the key stays reserved`);
+  }
+
+  const thrown = new Set();
+  const boom = { async verifyAndSettle() { throw new Error('socket hang up'); } };
+  await assert.rejects(gate({ headers: hdr, price, facilitator: boom, nowMs: 1000, seenNonces: thrown }));
+  assert.equal(thrown.size, 1, 'a throw keeps the key reserved');
+});
+
 test('malformed signature header decodes to null → 402', () => {
   assert.equal(decodeSignatureHeader('not-base64-!!!'), null);
   assert.equal(decodeSignatureHeader(Buffer.from('{"x402Version":1}').toString('base64')), null); // wrong version
