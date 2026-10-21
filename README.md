@@ -85,9 +85,11 @@ it is a refusal rather than a delay.
 All three are the safety design working, and all three are described exactly in
 [Contracts](#contracts).
 
-Two fees, both readable in the contracts: a **10% performance fee** on realised profit after loss
-carryforward, charged on exit (the vault creator receives 9%, RWAlly 1%, with no high-water mark on
-vault NAV); and an **exit fee of up to 1%** that decays
+Two fees, both readable in the contracts: a **10% performance fee** on realised gains, paid to the
+operator, charged on exit against a high-water mark (this is the deployed Arc v1 fee engine; the v2
+fee engine in this repository, deployed on no chain yet, keeps the same 10% fee on realised profit
+after loss carryforward with no high-water mark on vault NAV, and credits the vault creator 9% of
+profit and RWAlly 1%); and an **exit fee of up to 1%** that decays
 with tenure, retained by the vault so it accrues to the members who stay. A sole holder pays no
 exit fee.
 
@@ -186,9 +188,10 @@ evidence about the mainnet deployment, and the gate board remains the authority 
 adapters (`AggregationRouterAdapter`, `DirectPoolAdapter`), `SubVaultRegistry`, `VaultFactory`
 (with `VaultDeployer`, which carries `VaultCore`'s creation code).
 
-- Creator locks ≥5% (withdrawal gate); 10% performance fee on realized profit after a cross-vault,
-  per-`(member, operator)` loss carryforward that follows operator identity (creator 9%, RWAlly 1%
-  of profit; no high-water mark on vault NAV).
+- Creator locks ≥5% (withdrawal gate); 10% performance fee on realized profit with a cross-vault,
+  per-`(member, operator)` high-water mark that follows operator identity. On the v2 fee engine
+  (source only, deployed on no chain yet) each fee is credited 90% to the vault creator and 10% to
+  the RWAlly treasury, which is 9% and 1% of profit.
 - Commit-reveal governance; quorum vs. a 25% floor, a signer-count-plus-stake regime under 5 members;
   rules immutable after funding except full consensus + timelock (≤30d).
 - 4-hour observation window; instant pro-rata in-kind exit, forward-priced (Mode F) from the

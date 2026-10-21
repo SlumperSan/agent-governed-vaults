@@ -166,6 +166,7 @@ import {
   FEE_BYPASSES_OPERATOR,
   RWLY_ATTRIBUTION,
   RWLY_BACKED_BY_VAULT,
+  a1SplitStatedAsLiveHits,
   swapSitesOf,
   ungatedSwapSites,
 } from '../lib/claims-shapes.mjs';
@@ -462,12 +463,16 @@ test('no public surface describes the sub-five regime as stake-blind', () => {
 //
 // The first version of this branch's own lede said the operator "holds no on-chain authority over
 // a deployed vault". That is attackable, and Ops5 caught it: `FeeEngine.onFeeCollected` /
-// `onFeeCollectedAsset` credit `claimableFees[creator]` and `claimableFees[treasury]`, and `claimFees`
-// pays `claimableFees[msg.sender]` out to the caller. Under fee model A1 the vault creator (who is
-// also the vault's attested operator) therefore holds a real, unilateral, on-chain right that
-// members do not have — 90% of the 10% performance fee — and the treasury holds the other 10% of
-// it. It is an ECONOMIC right, not a governance one, and the distinction is sound, but a universal
-// negative invites a reader to find the one exception and they will find it in one transaction.
+// `onFeeCollectedAsset` credit `claimableFees[registry.operatorAddressOf(opId)]`, and `claimFees`
+// pays `claimableFees[msg.sender]` out to the caller. The operator address therefore holds a real,
+// unilateral, on-chain right that nobody else has — the 10% performance fee. It is an ECONOMIC
+// right, not a governance one, and the distinction is sound, but a universal negative invites a
+// reader to find the one exception and they will find it in one transaction.
+//
+// That is the deployed Arc v1 FeeEngine. The v2 FeeEngine (fee model A1, source only, deployed on
+// no chain) credits `claimableFees[creator]` 90% and `claimableFees[treasury]` 10% of each fee
+// instead; the vault creator is also the vault's attested operator at creation, so the right is
+// still real and the universal is still falsifiable. Both versions are covered by this guard.
 //
 // So: enumerate. "operatorship confers no authority to vote, execute, pause, reprice, or move
 // member funds" is unattackable and no longer than the sentence it replaces.
@@ -512,11 +517,12 @@ test('the operator\'s lack of power is enumerated, never claimed as a universal'
   assert.deepEqual(
     hits.map((h) => h.file),
     [],
-    'The vault creator (the operator) receives 90% of the 10% performance fee, the treasury 10% of it:\n' +
-      '  FeeEngine._credit   -> claimableFees[creator][token] += 90%, claimableFees[treasury][token] += 10%\n' +
-      '  FeeEngine.claimFees -> pays claimableFees[msg.sender][token] to msg.sender\n' +
-      'That is an economic right, not a governance one — but it IS an on-chain right members do\n' +
-      'not have, so a universal negative ("no privileged power", "holds no on-chain authority") is\n' +
+    'On the deployed Arc v1 FeeEngine the operator IS the sole recipient of the 10% performance fee:\n' +
+      '  FeeEngine.onFeeCollected -> claimableFees[registry.operatorAddressOf(opId)][token] += amt\n' +
+      '  FeeEngine.claimFees      -> pays claimableFees[msg.sender][token] to msg.sender\n' +
+      '(The v2 FeeEngine, not deployed, credits the vault creator 90% and the treasury 10% instead.)\n' +
+      'That is an economic right, not a governance one — but it IS an on-chain right nobody else\n' +
+      'has, so a universal negative ("no privileged power", "holds no on-chain authority") is\n' +
       'falsifiable in one transaction. ENUMERATE instead:\n' +
       '  "operatorship confers no authority to vote, execute, pause, reprice, or move member funds"\n' +
       `Offending text:\n${report(hits)}`,
@@ -805,7 +811,7 @@ test('no public surface claims the contracts screen who may deposit', () => {
 // is the claim a well-meaning editor writes by accident once RWLY is on the page, and no register —
 // design intent included — makes it true. `grep -ci rwly` returns 0 in Governance.sol, FeeEngine.sol
 // and VaultCore.sol; `FeeEngine.claimFees` pays `claimableFees[msg.sender]` to the CALLER, and the
-// caller is the vault creator or the treasury address, not a token. Approved register: "the treasury intends to",
+// caller is the operator address (v1) or the vault creator or treasury address (v2), not a token. Approved register: "the treasury intends to",
 // "is designed to", "a multisig moves" — all SUBJECT-first with RWLY or the treasury as the actor,
 // never the protocol/contracts/vault/governance/FeeEngine as the actor moving something TO RWLY.
 // ---------------------------------------------------------------------------------------------
@@ -835,7 +841,7 @@ test('no public surface says the protocol pays, routes or accrues anything to RW
     hits.map((h) => h.file),
     [],
     '`grep -ci rwly` returns 0 in Governance.sol, FeeEngine.sol and VaultCore.sol. `FeeEngine.claimFees`\n' +
-      'pays `claimableFees[msg.sender]` to the CALLER, which is the vault creator or the treasury address, not a token.\n' +
+      'pays `claimableFees[msg.sender]` to the CALLER, which is an address (the operator on v1, the creator or treasury on v2), not a token.\n' +
       'RWLY is design intent only: say "the treasury intends to", "is designed to" or "a multisig\n' +
       'moves" with RWLY or the treasury as the actor — never that the protocol, the contracts, the\n' +
       'vault, Governance or FeeEngine routes, pays, distributes, accrues, credits, sends or allocates\n' +
@@ -930,7 +936,8 @@ test('probe: the fee-bypass ban catches the shipped forms and spares the routing
     'Exit fees never route to the operator at all.',
     'it accrues to the members who remain, and can never be routed to the operator.',
     'It stays in the vault, so it adds to the value of the shares every remaining member holds, including the operator if it holds a position.',
-    '10 percent performance fee on realised profit after loss carryforward; the vault creator receives 9 percent, RWAlly 1 percent; no high-water mark on vault NAV.',
+    'The 10% performance fee goes to the operator.',
+    'The v2 fee engine, deployed on no chain yet, credits the vault creator 9% of profit and RWAlly 1%.',
   ]) {
     assert.equal(caught(ok), false, `the guard reds true copy: ${ok}`);
   }
@@ -944,6 +951,86 @@ test('probe: the fee-bypass ban catches the shipped forms and spares the routing
 // has to be rewritten — which is the correct outcome for a guard to force, not a nuisance.
 // ---------------------------------------------------------------------------------------------
 const RWLY_ABSENT_FROM = ['contracts/src/Governance.sol', 'contracts/src/FeeEngine.sol', 'contracts/src/VaultCore.sol'];
+
+// ---------------------------------------------------------------------------------------------
+// Guard 10 - the A1 fee split is v2 ONLY, and v2 is deployed nowhere.
+//
+// Fee model A1 (the vault creator is credited 90% of each performance fee, the treasury 10%) is
+// implemented in the v2 FeeEngine source. The only FeeEngine on any chain is Arc v1, which credits
+// `claimableFees[registry.operatorAddressOf(opId)]` the whole fee. A sentence that states the split
+// without naming v2 is therefore false of every deployed contract. Matched by SHAPE (a creator beside
+// a 90% or 9% figure, the treasury or RWAlly beside a 10% or 1% figure), and the scope has to sit in
+// the SAME sentence: a "v2" two sentences away does not rescue a sentence a reader quotes alone.
+//
+// Walks the prose extensions every other guard walks, plus `.ts`/`.tsx` under apps/ (the site copy
+// lives in `apps/site/src/copy.ts` and `disclaimers-copy.ts`, which `PUBLIC_EXT` does not cover) and
+// `scripts/lib/agent-manifest.mjs` (the source the published manifest is generated from).
+// When v2 is deployed and v1 is retired, this guard is the list of sentences to rewrite.
+// ---------------------------------------------------------------------------------------------
+const a1ExtraSurfaces = () => {
+  const out = [];
+  (function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name) && entry.name !== 'dist') walk(path.join(dir, entry.name));
+      } else if (['.ts', '.tsx'].includes(path.extname(entry.name))) {
+        out.push(path.join(dir, entry.name));
+      }
+    }
+  })(path.join(REPO, 'apps'));
+  out.push(path.join(REPO, 'scripts', 'lib', 'agent-manifest.mjs'));
+  return out.map((f) => ({ file: path.relative(REPO, f).split(path.sep).join('/'), text: readFileSync(f, 'utf8') }));
+};
+
+test('no public surface states the v2 fee split without scoping it to v2', () => {
+  const surfaces = [...surfacesWithText(), ...a1ExtraSurfaces()];
+  assert.ok(
+    surfaces.some((s) => s.file === 'apps/site/src/copy.ts') && surfaces.some((s) => s.file === 'apps/site/src/disclaimers-copy.ts'),
+    'the site copy files must be inside this guard\'s walk',
+  );
+  const hits = [];
+  for (const { file, text } of surfaces) {
+    for (const s of a1SplitStatedAsLiveHits(text)) hits.push({ file, quote: s.slice(0, 200) });
+  }
+  assert.deepEqual(
+    hits.map((h) => h.file),
+    [],
+    'Fee model A1 (creator 90% of each performance fee, treasury 10%) exists only in the v2 FeeEngine\n' +
+      'source, which is deployed on no chain. The deployed Arc v1 FeeEngine credits the operator address\n' +
+      'the whole fee (FeeEngine.onFeeCollected -> claimableFees[registry.operatorAddressOf(opId)]).\n' +
+      'Name v2 in the same sentence, for example "The v2 fee engine, deployed on no chain yet, credits\n' +
+      'the vault creator 9% of profit and RWAlly 1%."\n' +
+      `Offending text:\n${report(hits)}`,
+  );
+});
+
+test('probe: the A1 scope ban catches the split stated as live and spares the v2-scoped form', () => {
+  const caught = (s) => a1SplitStatedAsLiveHits(s).length > 0;
+  for (const bad of [
+    'The vault creator receives 9% of profit and RWAlly 1%.',
+    'Each fee is credited 90% to the vault creator and 10% to the treasury.',
+    '10 percent performance fee on realised profit after loss carryforward; the vault creator receives 9 percent, RWAlly 1 percent.',
+    'The treasury is credited 10% of every performance fee.',
+    'Creators earn 90% of the fee.',
+    '9% of profit goes to the vault creator.',
+    '10% of every performance fee is credited to the treasury.',
+    '1% of profit goes to RWAlly.',
+    'RWAlly takes 1% of profit.',
+    'The v2 engine is coming. The vault creator receives 9% of profit.',
+  ]) {
+    assert.equal(caught(bad), true, `the guard no longer catches: ${bad}`);
+  }
+  for (const ok of [
+    'The v2 fee engine, deployed on no chain yet, credits the vault creator 9% of profit and RWAlly 1%.',
+    'On the v2 fee engine (source only) each fee is credited 90% to the vault creator and 10% to the RWAlly treasury.',
+    'The 10% performance fee goes to the operator.',
+    'Creator locks 5% (withdrawal gate); the exit fee is up to 1%.',
+    'A 19% effective performance fee at depth 2.',
+    'The treasury and the buyback are not live.',
+  ]) {
+    assert.equal(caught(ok), false, `the guard reds true copy: ${ok}`);
+  }
+});
 
 test('RWLY is absent from contracts/src entirely', () => {
   for (const f of RWLY_ABSENT_FROM) {

@@ -81,8 +81,11 @@ becoming the sustained concurrent load it is trying to detect.
 ## 3. Deploy (one command)
 
 ```bash
-cd contracts && forge script script/DeployTestnet.s.sol:DeployTestnet --rpc-url "$BASE_SEPOLIA_RPC" --account deployer --password-file "$HOME/.secrets/deployer.pw" --broadcast --verify
+cd contracts && FEE_TREASURY="$FEE_TREASURY_ADDR" forge script script/DeployTestnet.s.sol:DeployTestnet --rpc-url "$BASE_SEPOLIA_RPC" --account deployer --password-file "$HOME/.secrets/deployer.pw" --broadcast --verify
 ```
+
+`FEE_TREASURY` is the testnet treasury address the v2 `FeeEngine` is initialised with (once); the script
+refuses to run on a non-local chain without it.
 
 This deploys, in one broadcast:
 
@@ -166,7 +169,7 @@ With `ETHERSCAN_API_KEY` set, `--verify` in the deploy command verifies every co
 broadcast. To verify later (or after a partial failure):
 
 ```bash
-cd contracts && forge script script/DeployTestnet.s.sol:DeployTestnet --rpc-url "$BASE_SEPOLIA_RPC" --resume --verify
+cd contracts && FEE_TREASURY="$FEE_TREASURY_ADDR" forge script script/DeployTestnet.s.sol:DeployTestnet --rpc-url "$BASE_SEPOLIA_RPC" --resume --verify
 ```
 
 Manual fallback for a single contract (constructor args from the broadcast JSON):
