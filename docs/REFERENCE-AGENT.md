@@ -414,6 +414,20 @@ salt    = keccak256(account.signMessage(message))
 Every input is public and recoverable from chain state, so any process holding the same account
 derives the same salt forever. Nothing is written to disk; there is nothing to lose.
 
+An account that sets `saltVersion: 'v2'` signs a voter-bound message instead:
+
+```
+message = "x402-vaults:reveal-salt:v2:{chainId}:{vault}:{pid}:{voter}"
+```
+
+`voter` is `account.address` lowercased, the address that sends `commitVote`. v2 is for agents
+whose voting address is not the key that signs, such as a smart account: one signing key serving
+several accounts gets a different salt for each, where v1 would give them the same salt and the
+first reveal would expose the others' direction. The signing key must be a dedicated salt key, not
+a rotating session key, because rotating it would make every outstanding commit unrevealable. v1 is
+unchanged and remains the default, and recovery on a v2 account tries v1 as well, so a commit made
+before the switch still reveals (`packages/reference-agent/src/salt.mjs`).
+
 The commitment matches `revealVote` (`Governance.sol:409`) exactly:
 
 ```
@@ -431,8 +445,8 @@ cast keccak $(cast abi-encode "f(uint256,address,bool,bytes32)" 7 0x111111111111
 ### Recovery after a restart
 
 An outstanding commit is discovered from **chain state**, never from local storage:
-`commitOf(pid, voter) != 0 && !revealedOf(pid, voter)`. The agent then re-derives the salt and
-tries both support values against the on-chain commitment; exactly one reproduces it, and that is
+`commitOf(pid, voter) != 0 && !revealedOf(pid, voter)`. The agent then re-derives the salt (v2 then
+v1 on a v2 account) and tries both support values against the on-chain commitment; exactly one reproduces it, and that is
 the recovery; the direction is recovered from the hash, not from memory. It verifies the
 reconstruction before spending gas on a call that would otherwise revert.
 
