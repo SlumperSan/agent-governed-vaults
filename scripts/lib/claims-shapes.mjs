@@ -402,24 +402,3 @@ export const KEY_ONLY_CHOICE =
 
 /** @param {string} flatText @returns {string[]} */
 export const keyOnlyChoiceHits = (flatText) => [...flatText.matchAll(KEY_ONLY_CHOICE)].map((m) => m[0]);
-
-// ---------------------------------------------------------------------------------------------
-// Fee model A1 is the v2 FeeEngine's split. It is NOT live: the only deployed FeeEngine (Arc v1,
-// contracts/config/deployments/arc-mainnet.json) credits the operator address the whole fee.
-// So a sentence that states the 90/10 split (creator 90% of the fee or 9% of profit, treasury or
-// RWAlly 10% of the fee or 1% of profit) must say "v2" in that same sentence.
-// ---------------------------------------------------------------------------------------------
-/** The creator's share stated as a figure: "the vault creator receives 9% of profit", "90% to the creator". */
-export const A1_CREATOR_SHARE =
-  /\bcreators?\b[^.;]{0,80}?\b(?:90|9)(?:\.0+)?\s*(?:%|percent)|\b(?:90|9)(?:\.0+)?\s*(?:%|percent)[^.;]{0,80}?\bcreators?\b/i;
-/** The treasury's (or RWAlly's) share stated as a figure: "RWAlly 1%", "10% to the treasury". */
-export const A1_TREASURY_SHARE =
-  /\b(?:treasury|RWAlly)\b[^.;]{0,80}?\b(?:10|1)(?:\.0+)?\s*(?:%|percent)|\b(?:10|1)(?:\.0+)?\s*(?:%|percent)[^.;]{0,80}?\b(?:treasury|RWAlly)\b/i;
-/** The version scope that makes the split true: the sentence names v2. */
-export const A1_V2_SCOPE = /\bv2\b/i;
-
-/** @param {string} flatText @returns {string[]} sentences that state the A1 split with no v2 scope */
-export const a1SplitStatedAsLiveHits = (flatText) =>
-  sentencesOf(flatText).filter(
-    (s) => (A1_CREATOR_SHARE.test(s) || A1_TREASURY_SHARE.test(s)) && !A1_V2_SCOPE.test(s),
-  );

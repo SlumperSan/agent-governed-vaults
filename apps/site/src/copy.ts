@@ -22,10 +22,8 @@
  *
  * Also still true and still worded carefully, because each is checkable and each was wrong once:
  *   - MEMBERS pool and vote. An AI operator proposes; it does not pool capital and does not govern.
- *   - The operator's lack of power is ENUMERATED, never a blanket negative — on the deployed Arc v1
- *     FeeEngine the operator address IS the sole recipient of the performance fee (the v2 engine,
- *     deployed on no chain yet, credits the vault creator and the treasury), so a wide claim is
- *     falsifiable in one transaction.
+ *   - The operator's lack of power is ENUMERATED, never a blanket negative — the operator IS the
+ *     sole recipient of the performance fee, so a wide claim is falsifiable in one transaction.
  *   - "Stake-weighted" is only true at five or more members, so it is not used here.
  *   - EXITS CANNOT BE VETOED, AND THEY CAN BE DELAYED. Never write that an exit is unconditional,
  *     instant, or that nothing can queue it. `VaultCore.sol:560` names the case in its own NatSpec:
@@ -123,7 +121,7 @@ export const HOME = {
       'position — and operatorship confers no authority to vote, execute, pause, reprice, or move ' +
       'member funds.',
     points: [
-      { t: 'One key, and every call it has is one-shot', d: 'No owner, no admin role, no proxy, no upgrade path, no pause switch. One deploy key exists. On the Arc deployment live today its calls were three one-shot wirings that point the registries at each other, all three already made, each reverting if tried again. The same-address deployment built from the current source adds a fourth one-shot call that sets which price oracles the factory will accept, once per chain, before any vault can be created there, and a fifth that sets which treasury address the v2 fee engine credits a share of each performance fee, also once per chain; neither can be changed afterwards. That is the whole list of what the deploy key can do.' },
+      { t: 'One key, and every call it has is one-shot', d: 'No owner, no admin role, no proxy, no upgrade path, no pause switch. One deploy key exists. On the Arc deployment live today its calls were three one-shot wirings that point the registries at each other, all three already made, each reverting if tried again. The same-address deployment built from the current source adds a fourth one-shot call that sets which price oracles the factory will accept, once per chain, before any vault can be created there, and it cannot be changed afterwards. That is the whole list of what the deploy key can do.' },
       { t: 'No vetoed exits', d: 'Nobody can refuse, gate or veto your exit. It can be delayed — a live vote queues it, a stale feed freezes it — but a delay is a rule anyone can read, not a decision someone makes about you.' },
       { t: 'Every trade is on the record', d: 'Every trade is recorded on-chain, with the proposal and the votes that authorised it where there was one. Every rebalance needs a passed vote, and the orders are fixed before anyone votes on them.' },
       { t: 'No guessing on price', d: 'If a price feed goes stale the vault freezes rather than trading on bad data. That includes exits.' },
@@ -187,7 +185,7 @@ export const HOW = {
     eyebrow: 'Fees',
     headline: 'Two, and you can read both.',
     items: [
-      { t: 'Performance fee', d: '10% of realised gains, paid to the vault operator. Charged when you exit, on the gain only, with a high-water mark so you are not charged twice for the same rise. That is the deployed Arc v1 fee engine. The v2 fee engine, deployed on no chain yet, keeps the 10% fee on realised profit after loss carryforward with no high-water mark on vault NAV, and credits the vault creator 9% of profit and RWAlly 1%.' },
+      { t: 'Performance fee', d: '10% of realised gains, paid to the vault operator. Charged when you exit, on the gain only, with a high-water mark so you are not charged twice for the same rise.' },
       { t: 'Exit fee', d: 'Up to 1%, shrinking the longer you have been in. It stays in the vault, so it adds to the value of the shares every remaining member holds, including the operator if it holds a position. A sole holder pays nothing.' },
     ],
   },

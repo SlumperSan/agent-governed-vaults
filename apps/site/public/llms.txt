@@ -77,9 +77,6 @@
   cancelPending() reads no oracle, so a deposit not yet activated stays reclaimable.
 - 10% performance fee with a per-(member,operator) high-water mark that follows operator identity
   across vaults; exit fee <=1% decaying with tenure, paid to remaining members.
-- Performance fee recipient: on the deployed Arc v1 FeeEngine the vault's operator address is
-  credited the whole fee. The v2 FeeEngine (source tree only, deployed on no chain yet) credits the
-  vault creator 90% of it (9% of profit) and the RWAlly treasury 10% (1% of profit).
 - Operator identity is the registry key (OperatorRegistry.operatorOf), not display metadata;
   permissionless creation means scam vaults exist; verify the operator, not the name.
 

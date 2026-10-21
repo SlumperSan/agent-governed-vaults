@@ -67,13 +67,12 @@ what the approved replacement wording is.
 Three rules that guard has already had to be widened to catch:
 
 - **Enumerate the operator's lack of power; never claim it as a universal.** On the deployed Arc v1
-  FeeEngine the operator address is the sole recipient of the 10% performance fee (the v2 FeeEngine,
-  deployed on no chain yet, credits the vault creator 90% of it and the RWAlly treasury 10%), so a
-  blanket negative about what the operator holds on-chain is falsifiable in one transaction. Write "operatorship confers no authority to vote,
+  FeeEngine the operator address is the sole recipient of the 10% performance fee (the v2 FeeEngine
+  in the source credits the vault creator and the treasury instead), so a blanket negative about what the operator holds
+  on-chain is falsifiable in one transaction. Write "operatorship confers no authority to vote,
   execute, pause, reprice, or move member funds". Note that guard 6 matches the banned *shape*, so
   it reds a file that quotes the wide form even to prohibit it. This paragraph is written the long
-  way round for that reason. Never state the v2 fee split as if it were live: scope it to v2 in the
-  same sentence (the A1 guard in `claims-lede-truth.test.mjs` enforces it).
+  way round for that reason.
 - **Members pool and vote; an AI operator does neither on-chain.** `Governance.propose` gates on
   stake, not operatorship, and `Governance.sol` contains zero occurrences of "operator".
 - **"Stake-weighted" is true only at five or more members.** Qualify it or do not use it.
