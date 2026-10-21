@@ -247,7 +247,7 @@ const stubClients = ({ name = 'USDC', version = '2', separator } = {}) => {
         throw new Error(`unexpected read ${functionName}`);
       },
       async simulateContract() { return { request: {} }; },
-      async waitForTransactionReceipt() { return { status: 'success' }; },
+      async waitForTransactionReceipt({ hash }) { return { status: 'success', transactionHash: hash }; },
     },
     walletClient: { account: ACCOUNT, async writeContract() { return '0x' + '7'.repeat(64); } },
   };

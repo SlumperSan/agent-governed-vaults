@@ -187,13 +187,23 @@ export function createStubFacilitator({ accept = true, receiptPrefix = 'stub' } 
   };
 }
 
+/** Default bound on the settling facilitator's wait for the settlement receipt. */
+export const SETTLE_RECEIPT_TIMEOUT_MS = 30_000;
+/**
+ * Default abort for the API's call to a run-your-own facilitator. It must exceed
+ * SETTLE_RECEIPT_TIMEOUT_MS plus the pre-broadcast round trips (verify, authorizationState,
+ * simulate, send): if the client gives up first, a transfer that settles on chain answers
+ * `facilitator-unreachable`, so the payer pays and is not served.
+ */
+export const HTTP_FACILITATOR_TIMEOUT_MS = 45_000;
+
 /**
  * Production default: delegate verify+settle to a REMOTE facilitator over HTTP. Under
  * `FACILITATOR=http` the API server holds no key; this posts the challenge+envelope and returns
  * the remote verdict. Non-custodial.
  * @param {{url:string, fetchImpl?:typeof fetch, timeoutMs?:number}} cfg
  */
-export function createHttpFacilitator({ url, fetchImpl = fetch, timeoutMs = 10_000 }) {
+export function createHttpFacilitator({ url, fetchImpl = fetch, timeoutMs = HTTP_FACILITATOR_TIMEOUT_MS }) {
   return {
     async verifyAndSettle(challenge, envelope) {
       const ctrl = new AbortController();
@@ -476,7 +486,7 @@ export async function assertUsdcDomain(cfg) {
  * @param {() => number} [cfg.now]
  * @param {number} [cfg.receiptTimeoutMs] bound on the wait for the settlement receipt (default 30s)
  */
-export function createSettlingFacilitator({ publicClient, walletClient, usdcAddress, chainId, usdcName, usdcVersion, now = () => Date.now(), receiptTimeoutMs = 30_000 }) {
+export function createSettlingFacilitator({ publicClient, walletClient, usdcAddress, chainId, usdcName, usdcVersion, now = () => Date.now(), receiptTimeoutMs = SETTLE_RECEIPT_TIMEOUT_MS }) {
   if (!ADDR_RE.test(usdcAddress ?? '')) throw new Error('settling facilitator: usdcAddress required');
   const domainCfg = { chainId, usdcName, usdcVersion, usdcAddress, publicClient };
 
@@ -533,6 +543,11 @@ export function createSettlingFacilitator({ publicClient, walletClient, usdcAddr
         } catch (err) {
           return { ok: false, reason: `settle-unreachable: no receipt for ${hash}: ${err?.shortMessage ?? err?.message ?? err}` };
         }
+        // viem resolves with the REPLACEMENT's receipt when another tx from the same sender and
+        // nonce replaced ours: that receipt is a different transfer, so ours never settled.
+        // shortcut: a repriced copy of the same call (an operator speed-up) is refused too, read
+        // viem's onReplaced reason if this settler ever reprices its own transactions.
+        if (receipt?.transactionHash !== hash) return { ok: false, reason: `settle-replaced: ${hash}` };
         if (receipt?.status !== 'success') return { ok: false, reason: `settle-reverted: ${hash}` };
         return { ok: true, receiptId: hash };
       } catch (err) {

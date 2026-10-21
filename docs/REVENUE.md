@@ -360,7 +360,7 @@ payment and a catalog entry.
    with `extra` omitted, PayAI answers `invalid_exact_evm_missing_eip712_domain`. A client that does
    not independently read the USDC EIP-712 domain off the token has nothing to sign against, and
    that domain differs between chains, so guessing it is not safe —
-   `apps/api/src/facilitator.mjs:422`'s `readUsdcDomain` already documents reading it rather than
+   `apps/api/src/facilitator.mjs:432`'s `readUsdcDomain` already documents reading it rather than
    assuming it.
 
 All three live in `apps/api/src/x402.mjs`. None were edited here, and #290 records them so they are

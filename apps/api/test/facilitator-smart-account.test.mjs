@@ -9,7 +9,9 @@ import assert from 'node:assert/strict';
 import { createPublicClient, custom, serializeErc6492Signature } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildTypedData } from '../../../packages/agent-sdk/src/eip3009.mjs';
-import { recoverPayer, verifyEnvelopeShape, createSettlingFacilitator } from '../src/facilitator.mjs';
+import {
+  recoverPayer, verifyEnvelopeShape, createSettlingFacilitator, createHttpFacilitator, HTTP_FACILITATOR_TIMEOUT_MS, SETTLE_RECEIPT_TIMEOUT_MS,
+} from '../src/facilitator.mjs';
 
 const USDC = '0x' + 'c'.repeat(40);
 const SMART = '0x' + '5'.repeat(40); // the smart account (payer)
@@ -158,7 +160,7 @@ test('a publicClient whose verifyTypedData throws is a refusal, never an accepta
 
 // ── settlement ──
 
-function settler({ valid = true, code = '0x6000', receipt = async () => ({ status: 'success' }) } = {}) {
+function settler({ valid = true, code = '0x6000', receipt = async ({ hash }) => ({ status: 'success', transactionHash: hash }) } = {}) {
   const seen = { simulate: [], verify: 0, receipt: [] };
   const publicClient = {
     verifyTypedData: async () => { seen.verify++; return valid; },
@@ -223,9 +225,36 @@ test('settle: success is reported only after a mined success receipt for the bro
 });
 
 test('settle: a reverted receipt is a settlement failure, never ok', async () => {
-  const { facilitator } = settler({ receipt: async () => ({ status: 'reverted' }) });
+  const { facilitator } = settler({ receipt: async ({ hash }) => ({ status: 'reverted', transactionHash: hash }) });
   const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
   assert.deepEqual(r, { ok: false, reason: 'settle-reverted: 0xhash' });
+});
+
+test('settle: a success receipt for a replacement transaction is not our settlement', async () => {
+  // viem answers with the replacement's receipt when another tx took our nonce.
+  const { facilitator } = settler({ receipt: async () => ({ status: 'success', transactionHash: '0xother' }) });
+  const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.deepEqual(r, { ok: false, reason: 'settle-replaced: 0xhash' });
+});
+
+test('the API client outlasts the settler: HTTP timeout is above the receipt wait, and the settler uses that wait', async () => {
+  assert.ok(HTTP_FACILITATOR_TIMEOUT_MS > SETTLE_RECEIPT_TIMEOUT_MS,
+    `client ${HTTP_FACILITATOR_TIMEOUT_MS} ms must exceed receipt wait ${SETTLE_RECEIPT_TIMEOUT_MS} ms, or a settled payer gets facilitator-unreachable`);
+  const { seen, facilitator } = settler();
+  await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.equal(seen.receipt[0].timeout, SETTLE_RECEIPT_TIMEOUT_MS);
+
+  // The HTTP client's default abort really is that constant.
+  const delays = [];
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = /** @type {any} */ ((fn, ms, ...a) => { delays.push(ms); return realSetTimeout(fn, ms, ...a); });
+  try {
+    await createHttpFacilitator({ url: 'x', fetchImpl: /** @type {any} */ (async () => ({ ok: true, json: async () => ({ ok: true }) })) })
+      .verifyAndSettle({}, env(SMART_SIG));
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+  assert.deepEqual(delays, [HTTP_FACILITATOR_TIMEOUT_MS]);
 });
 
 test('settle: no receipt in time is the transport-shaped could-not-tell, never ok and never a revert', async () => {
