@@ -43,7 +43,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { loadConfig } from './config.mjs';
+import { loadConfig, redactUrls } from './config.mjs';
 import { createChainReader, createStubChainReader } from './chain.mjs';
 import { createLogger } from './log.mjs';
 import { createAgent } from './agent.mjs';
@@ -210,6 +210,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(String(err?.stack ?? err));
+  // Not through the logger, so redact here: a viem error's text embeds the RPC URL it called.
+  console.error(redactUrls(String(err?.stack ?? err)));
   process.exitCode = 1;
 });
