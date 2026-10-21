@@ -272,8 +272,11 @@ Fees claimed to an unexpected address, or module events that match no known caus
 
 - **Act:** reconcile against the FeeEngine walkthrough's expected flows; every canary transition
   in the soak reconciled to a specific drill action (SOAK-REPORT §6). An unattributable event
-  is itself the finding. Publish what is known; fee flows touch operator money, not member
-  principal (fees are taken from realized gains at claim time).
+  is itself the finding. Publish what is known; fee flows touch fee recipients' credited
+  balances, not member principal (the deployed Arc v1 FeeEngine credits the operator; the v2
+  source credits the vault creator and the treasury). In the source the fee is withheld from a
+  member's realized gain when they exit (`VaultCore._settleExit`), and recipients withdraw it
+  later with `FeeEngine.claimFees`.
 
 ## 6. Facilitator outage (x402 settlement down)
 
@@ -300,7 +303,8 @@ Fees claimed to an unexpected address, or module events that match no known caus
 
 ## 8. Compromised operator or governance capture of a vault
 
-An operator key signs bad proposals, or a member accumulates quorum and passes a hostile
+A member key that holds enough stake to propose signs bad proposals (the operator's own key only
+if the operator is also such a member), or a member accumulates quorum and passes a hostile
 rebalance.
 
 > ### ⚠ Read first: SUB-VAULTS ARE DISABLED AT LAUNCH (C-1 remediation, "root vaults only")
