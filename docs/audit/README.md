@@ -111,17 +111,17 @@ Cross-references:
           realization writes │                     │ voting exclusion, edges)
                              │                     │
 ┌───────────────┐  executes  ┌▼─────────────────┐  │        ┌──────────────────┐
-│  Governance   │───────────►│    VaultCore     │──┘ prices │ OracleAggregator │
-│ commit-reveal │ rebalance/ │  shares / NAV /  │◄──────────│ ≥3-source median │
-│ quorum/deleg. │ child-alloc│  deposits/exits  │ + breaker │ + staleness trip │
-│ timelock      │◄───────────│  sub-vault flows │           └──────────────────┘
+│  Governance   │───────────►│    VaultCore     │──┘ prices │ ChainlinkOracle  │
+│ commit-reveal │ rebalance/ │  shares / NAV /  │◄──────────│ 1 feed per asset │
+│ quorum/deleg. │ child-alloc│  deposits/exits  │ fail-     │ heartbeat + band │
+│ timelock      │◄───────────│  sub-vault flows │ closed    └──────────────────┘
 └───────────────┘ Mode-F     └─┬──────────┬─────┘
     hasPendingExecution        │          │ onRealize / onFeeCollected*
                      swaps via │          ▼
                     ┌──────────▼─────┐  ┌───────────┐
-                    │IExecutionAdapter│ │ FeeEngine │  10% perf fee, HWM netting,
-                    │ 2 impls: agg-   │ │           │  per-token operator claims
-                    │ router + V2 pool│ └───────────┘
+                    │IExecutionAdapter│ │ FeeEngine │  10% perf fee net of carry;
+                    │ 3 impls: agg-   │ │           │  creator 90%, treasury 10%
+                    │ router, V2, V3  │ └───────────┘
                     └────────────────┘
 ```
 
@@ -132,7 +132,7 @@ Cross-references:
 | `VaultCore.sol` | ~850 | Shares/NAV, deposits + observation window, two-mode exits, in-kind redemption + escrow, rebalance execution, sub-vault allocate/redeem/look-through, creator gate, exit fee, capacity cap, voting-stake checkpoints | **Critical**: holds all funds |
 | `Governance.sol` | ~490 | Proposals (3 types), commit-reveal, 3 quorum regimes, standing defaults, delegation + concentration cap, timelock, execute | **Critical**: authorizes every fund movement |
 | `OracleAggregator.sol` | ~140 | ≥3-source lower-median price with per-source staleness + quorum breaker. **RETIRED (C-6)**: moved to `contracts/test/retired/`, not production source. Assets are priced by `src/oracle/ChainlinkOracle.sol` | Out of production scope: was **Critical** |
-| `FeeEngine.sol` | ~130 | 10% perf fee netted against registry carry; operator fee claims per token | High |
+| `FeeEngine.sol` | ~130 | 10% performance fee on realized gain net of the registry loss carryforward; collected fees are claimable per token by the vault creator (90%) and the treasury (10%) | High |
 | `OperatorRegistry.sol` | ~150 | Operator identity, (member, operator) loss carryforward, monotone leaderboard stats | High |
 | `AggregationRouterAdapter.sol` | ~76 | Off-chain-routed DEX-aggregation execution (pinned router + selector allowlist) | High — external calls |
 | `DirectPoolAdapter.sol` | ~94 | On-chain V2-pool execution (second adapter proving venue abstraction) | High — external calls |
@@ -169,12 +169,12 @@ defenses only make sense against the right adversary:
    canonical factory reference these; the factory is what makes carry marks and leaderboard
    rows trustworthy (CM-5). Nothing stops someone deploying a *look-alike* stack, but it
    won't be attested in the canonical registry.
-2. **Per-vault creator choices (trusted by that vault's members only):** the
-   `OracleAggregator` instance, the adapter allowlist, the basket, fee/capacity/window
-   parameters. All immutable at vault creation and visible on-chain before anyone deposits —
-   "read the config before you deposit" is the security model, so constructor validation
-   (oracle source floor, staleness ceiling, exit-fee cap, basket cap) is load-bearing: it
-   bounds what a malicious creator can configure a honeypot with.
+2. **Per-vault creator choices (trusted by that vault's members only):** the oracle (chosen
+   from the factory's allowlist when it is enforced), the adapter allowlist, the basket,
+   fee/capacity/window parameters. All immutable at vault creation and visible on-chain before
+   anyone deposits — "read the config before you deposit" is the security model, so validation
+   (the factory oracle allowlist and basket-coverage probe, exit-fee cap, basket cap) is
+   load-bearing: it bounds what a malicious creator can configure a honeypot with.
 3. **Modules as adversaries on the exit path:** even the *canonical* governance/feeEngine/
    registry are treated as potentially faulty where member liveness is at stake. Every module
    call on the exit path is gas-bounded (300k), returndata-bounded (1 word), and non-blocking
@@ -209,10 +209,13 @@ Key boundary facts a reviewer should hold onto:
   vault's config forever, and that is the intent).
 - The `wire()` calls on OperatorRegistry / SubVaultRegistry / Governance are **one-shot
   deploy-time wiring**, not admin powers: callable only by the deployer, only once, revert
-  `AlreadyWired` thereafter (proven by `test_deployWiresAndLocks`). On the same-address deployment
-  built from the current source `VaultFactory.initialize` is a fourth call of the same kind, callable
-  only by `PROTOCOL_INITIALIZER`, only once (`AlreadyInitialized`); the live Arc factory has no
-  such call, its allowlist being fixed in its constructor.
+  thereafter (`AlreadyWired` on the two registries, `AlreadyWiredSubRegistry` on Governance;
+  proven by `test_deployWiresAndLocks`). On the same-address deployment built from the current
+  source `VaultFactory.initialize(allowedOracles)` and `FeeEngine.initialize(treasury)` are two
+  more calls of the same kind, callable only by `PROTOCOL_INITIALIZER`, only once
+  (`AlreadyInitialized`); vault creation reverts `NotInitialized` until the factory's runs, and
+  `onRealize` takes no fee until the engine's runs. The live Arc factory has no such call, its
+  allowlist being fixed in its constructor.
 - Consequence for findings: "add an owner who can rescue X" is not an accepted remediation
   shape. Fixes must be constructor validation, code-path changes, or documented acceptance.
 
@@ -226,14 +229,18 @@ From `script/Deploy.s.sol` (proven by `test/Deploy.t.sol`):
 3. FeeEngine(registry)                     — immutable registry ref
 4. Governance()                            — no ctor deps
 5. VaultDeployer()                         — no deps; MUST precede the factory (#10)
-6. VaultFactory(registry, governance, feeEngine, subVaultRegistry, vaultDeployer)
-7. registry.wire(factory, feeEngine)       — one-shot, locks attestation + fee recording
-8. subVaultRegistry.wire(factory)          — one-shot, locks child registration
-9. governance.wireSubVaultRegistry(subReg) — one-shot, locks SV-6 floor inheritance
+6. VaultFactory(registry, governance, feeEngine, subVaultRegistry, vaultDeployer, allowSubVaults)
+7. factory.initialize(BLESSED_ORACLES)     — one-shot, sets the oracle allowlist; creation reverts
+                                             NotInitialized until it runs
+8. registry.wire(factory, feeEngine)       — one-shot, locks attestation + fee recording
+9. subVaultRegistry.wire(factory)          — one-shot, locks child registration
+10. governance.wireSubVaultRegistry(subReg) — one-shot, locks SV-6 floor inheritance
+11. feeEngine.initialize(FEE_TREASURY)     — one-shot, sets the treasury; no fee is taken before it
 ```
 
-Oracles and adapters are **not** singletons — each creator supplies their own at
-`createVault` time (per-vault venue/source choice, C-2/SF-1).
+Oracles and adapters are **not** singletons. A creator supplies adapters of their own choosing
+and picks the oracle from the factory's allowlist when it is enforced (per-vault venue choice,
+C-2/SF-1).
 
 Per-vault bring-up is **two-step**: `factory.createVault(params)` deploys + attests, then the
 creator calls `governance.registerVault(vault, cfg)` in a second transaction. Until
@@ -268,9 +275,9 @@ to that contract.
 
 | ID | What | Why accepted |
 | --- | --- | --- |
-| K-4/SF-2 | Stale-oracle breaker freezes exits; induced staleness traps capital | Any exit hatch during staleness IS the stale-price exit the breaker prevents. Mitigations: ≥3 sources, strict-majority quorum, 1-day staleness ceiling. Pending (un-activated) deposits stay cancellable during a freeze |
+| K-4/SF-2 | Stale-oracle breaker freezes exits; induced staleness traps capital | Any exit hatch during staleness IS the stale-price exit the breaker prevents. Mitigations: per-feed heartbeat of at most 25 hours (`MAX_HEARTBEAT = 90_000`), sane-price band, sequencer uptime gate. Pending (un-activated) deposits stay cancellable during a freeze |
 | K-2 | One permanently-offline member freezes rule changes forever | Near-immutability is the intent |
-| E7/EE-5 | Latency-arb on repeat deposits against stale NAV; profitable-drift threshold is gas within the oracle drift band | Bounded by 1-day staleness ceiling + non-zero exit fee; full closure needs oracle-enforced mint-time freshness (design option, not shipped) |
+| E7/EE-5 | Latency-arb on repeat deposits against stale NAV; profitable-drift threshold is gas within the oracle drift band | Bounded by the per-feed heartbeat ceiling of 25 hours + non-zero exit fee; full closure needs oracle-enforced mint-time freshness (design option, not shipped) |
 | G3/CM-5 | Single-vault carry farming to shelter perf fees | 1% exit-fee cap forces ~100:1 transient capital fronting; leaderboard reputation drag. Economic deterrent, not a code fix |
 | PX-1 | USDC blacklist on a vault address freezes the USDC leg | Inherent to USDC settlement; in-kind escrow keeps non-USDC assets exitable |
 | E4 (S6) | Parent exit needing child unwind reverts `ExitNeedsChildSettlement` while the only covering child is mid-rebalance | Clean rollback + bounded retry (child timelock). Window narrowed vs. original deep-stack revert, not eliminated |
@@ -294,8 +301,8 @@ to that contract.
    commit-reveal quorum math at the <5-member regime boundary (CM-7).
 3. `VaultCore._fullNavWad` recursive look-through — depth bounding, and whether any descendant
    state can misprice an ancestor's NAV (S6 E1 fix).
-4. `OracleAggregator` median robustness (lower-median, strict-majority quorum, saturating
-   staleness) and `BoundedCall`/`tryTransfer` returndata handling.
+4. `ChainlinkOracle` fail-closed reads (sequencer gate, heartbeat, sane-price band, USDC pin,
+   immutable `decimals()` assumption) and `BoundedCall`/`tryTransfer` returndata handling.
 5. `AggregationRouterAdapter` vs. the 2026 arbitrary-calldata exploit class (SwapNet/Aperture
    et al.) — the reason the pinned router + selector allowlist + measured-delta minOut exist.
 
