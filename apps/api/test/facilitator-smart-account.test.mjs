@@ -9,7 +9,9 @@ import assert from 'node:assert/strict';
 import { createPublicClient, custom, serializeErc6492Signature } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildTypedData } from '../../../packages/agent-sdk/src/eip3009.mjs';
-import { recoverPayer, verifyEnvelopeShape, createSettlingFacilitator } from '../src/facilitator.mjs';
+import {
+  recoverPayer, verifyEnvelopeShape, createSettlingFacilitator, createHttpFacilitator, HTTP_FACILITATOR_TIMEOUT_MS, SETTLE_RECEIPT_TIMEOUT_MS,
+} from '../src/facilitator.mjs';
 
 const USDC = '0x' + 'c'.repeat(40);
 const SMART = '0x' + '5'.repeat(40); // the smart account (payer)
@@ -158,13 +160,14 @@ test('a publicClient whose verifyTypedData throws is a refusal, never an accepta
 
 // ── settlement ──
 
-function settler({ valid = true, code = '0x6000' } = {}) {
-  const seen = { simulate: [], verify: 0 };
+function settler({ valid = true, code = '0x6000', receipt = async ({ hash }) => ({ status: 'success', transactionHash: hash }) } = {}) {
+  const seen = { simulate: [], verify: 0, receipt: [] };
   const publicClient = {
     verifyTypedData: async () => { seen.verify++; return valid; },
     getCode: async () => code,
     readContract: async () => false,
     simulateContract: async (req) => { seen.simulate.push(req); return { request: req }; },
+    waitForTransactionReceipt: async (args) => { seen.receipt.push(args); return receipt(args); },
   };
   const walletClient = { account: { address: '0x' + '9'.repeat(40) }, writeContract: async () => '0xhash' };
   return { seen, facilitator: createSettlingFacilitator({ publicClient, walletClient, usdcAddress: USDC, chainId: CHAIN }) };
@@ -208,4 +211,57 @@ test('settle: ECDSA still uses the (v,r,s) overload and never asks the chain to 
   assert.equal(r.ok, true);
   assert.equal(seen.verify, 0);
   assert.equal(seen.simulate[0].args.length, 9);
+});
+
+// ── settlement receipt (A16 H2): a broadcast hash is not a settlement ──
+
+test('settle: success is reported only after a mined success receipt for the broadcast hash', async () => {
+  const { seen, facilitator } = settler();
+  const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.deepEqual(r, { ok: true, receiptId: '0xhash' });
+  assert.equal(seen.receipt.length, 1);
+  assert.equal(seen.receipt[0].hash, '0xhash');
+  assert.ok(Number.isFinite(seen.receipt[0].timeout) && seen.receipt[0].timeout > 0, 'the receipt wait must be bounded');
+});
+
+test('settle: a reverted receipt is a settlement failure, never ok', async () => {
+  const { facilitator } = settler({ receipt: async ({ hash }) => ({ status: 'reverted', transactionHash: hash }) });
+  const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.deepEqual(r, { ok: false, reason: 'settle-reverted: 0xhash' });
+});
+
+test('settle: a success receipt for a replacement transaction is not our settlement', async () => {
+  // viem answers with the replacement's receipt when another tx took our nonce.
+  const { facilitator } = settler({ receipt: async () => ({ status: 'success', transactionHash: '0xother' }) });
+  const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.deepEqual(r, { ok: false, reason: 'settle-replaced: 0xhash' });
+});
+
+test('the API client outlasts the settler: HTTP timeout is above the receipt wait, and the settler uses that wait', async () => {
+  assert.ok(HTTP_FACILITATOR_TIMEOUT_MS > SETTLE_RECEIPT_TIMEOUT_MS,
+    `client ${HTTP_FACILITATOR_TIMEOUT_MS} ms must exceed receipt wait ${SETTLE_RECEIPT_TIMEOUT_MS} ms, or a settled payer gets facilitator-unreachable`);
+  const { seen, facilitator } = settler();
+  await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.equal(seen.receipt[0].timeout, SETTLE_RECEIPT_TIMEOUT_MS);
+
+  // The HTTP client's default abort really is that constant.
+  const delays = [];
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = /** @type {any} */ ((fn, ms, ...a) => { delays.push(ms); return realSetTimeout(fn, ms, ...a); });
+  try {
+    await createHttpFacilitator({ url: 'x', fetchImpl: /** @type {any} */ (async () => ({ ok: true, json: async () => ({ ok: true }) })) })
+      .verifyAndSettle({}, env(SMART_SIG));
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+  assert.deepEqual(delays, [HTTP_FACILITATOR_TIMEOUT_MS]);
+});
+
+test('settle: no receipt in time is the transport-shaped could-not-tell, never ok and never a revert', async () => {
+  const { facilitator } = settler({
+    receipt: async () => { throw Object.assign(new Error('Timed out while waiting for transaction'), { shortMessage: 'Timed out while waiting for transaction with hash "0xhash" to be confirmed.' }); },
+  });
+  const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /^settle-unreachable: no receipt for 0xhash: Timed out/);
 });

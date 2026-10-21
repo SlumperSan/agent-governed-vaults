@@ -116,6 +116,11 @@ reorg could in principle un-settle a read that was already served. On a testnet 
 blocks the exposure is ~4 s. An operator who cannot tolerate that should have the facilitator wait
 for a confirmation before returning, and pay for it in latency.
 
+> **Note 2026-10-21:** the paragraph above describes the facilitator as it was at the time of this
+> run. Since PR 496 the settling facilitator waits for a mined success receipt for its own
+> transaction (one confirmation, bounded at 30 s) before returning, so the API answers the paid
+> read only after the transfer is mined. The measurements above are unchanged history.
+
 ## 6. The USDC EIP-712 domain
 
 Read from the contract, not assumed:
