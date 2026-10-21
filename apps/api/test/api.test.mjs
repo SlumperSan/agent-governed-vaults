@@ -222,6 +222,41 @@ test('the SVM replay key is the transaction, because there is no nonce to read',
   assert.match(second.body.error, /replayed-nonce/);
 });
 
+test('several spellings of one SVM transaction, sent concurrently, are served once (R494 B1)', async () => {
+  // `Buffer.from(b64, 'base64')` reads all of these as the same bytes, so the facilitator would sign
+  // and submit one transaction for each; the key was the text as sent, so each passed the guard.
+  const bytes = Buffer.from([0xfb, 0xff, 0xbf, ...Array.from({ length: 14 }, (_, i) => i * 15 + 1)]); // `+/` for base64url
+  const canonical = bytes.toString('base64');
+  const spellings = [canonical, canonical.replace(/=+$/, ''), `${canonical}\n`, `${canonical.slice(0, 8)} ${canonical.slice(8)}`, bytes.toString('base64url')];
+  assert.equal(new Set(spellings).size, spellings.length, 'the spellings must differ as text');
+  for (const s of spellings) assert.deepEqual(Buffer.from(s, 'base64'), bytes, 'and decode to the same bytes');
+
+  const seen = new Set();
+  let calls = 0;
+  let release = () => {};
+  const held = new Promise((r) => { release = r; });
+  const slow = { async verifyAndSettle() { calls += 1; await held; return { ok: true, receiptId: 'sig' }; } };
+  const pending = spellings.map((transaction) => gate({
+    headers: { [HEADERS.SIGNATURE]: b64({ x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction }) },
+    price: svmPrice, facilitator: slow, nowMs: 1000, seenNonces: seen,
+  }));
+  release();
+  const results = await Promise.all(pending);
+  assert.deepEqual(results.map((v) => v.status).sort(), [200, 402, 402, 402, 402]);
+  for (const v of results.filter((r) => r.status === 402)) assert.match(v.body.error, /replayed-nonce/);
+  assert.equal(calls, 1, 'one transaction must reach the facilitator once');
+});
+
+test('an SVM transaction that decodes to no bytes is refused before the facilitator', async () => {
+  let billed = false;
+  const spy = { async verifyAndSettle() { billed = true; return { ok: true, receiptId: 'sig' }; } };
+  const env = { x402Version: 2, scheme: 'exact-svm', network: 'solana-devnet', transaction: '!!!' };
+  const v = await gate({ headers: { [HEADERS.SIGNATURE]: b64(env) }, price: svmPrice, facilitator: spy, nowMs: 1000, seenNonces: new Set() });
+  assert.equal(v.status, 402);
+  assert.match(v.body.error, /bad-transaction/);
+  assert.equal(billed, false);
+});
+
 test('a client cannot pick its own replay key by attaching an invented nonce', async () => {
   // THE ATTACK, AS DEMONSTRATED IN REVIEW. The key was
   // `env.authorization?.nonce ?? (scheme === 'exact-svm' ? env.transaction : undefined)`, and

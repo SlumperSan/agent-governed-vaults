@@ -467,9 +467,18 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   // once `verifyAndSettle` returned, so every copy of one payment that arrived during that await
   // passed the check: three concurrent copies, three 200s, three broadcasts (A16 H1). An EIP-3009
   // nonce is a bytes32, so `0xAB..` and `0xab..` are the same authorization under the same signature
-  // and must be one key; the SVM key is base64 transaction bytes, which are case-sensitive and stay
-  // verbatim.
-  const key = typeof nonce === 'string' && nonce && !price.svm ? nonce.toLowerCase() : nonce;
+  // and must be one key. The SVM key is the DECODED transaction bytes, re-encoded canonically: it was
+  // the base64 text as sent, and `Buffer.from(b64, 'base64')` (what `decodeTransaction` settles from)
+  // accepts stripped padding, whitespace, newlines and the URL-safe alphabet, so one signed
+  // transaction in four spellings was served four times (R494 B1).
+  let key = nonce;
+  if (price.svm) {
+    key = Buffer.from(nonce, 'base64').toString('base64');
+    // Text that decodes to no bytes would leave the guard inert; it is no transaction either.
+    if (!key) return require402('payment invalid: bad-transaction');
+  } else if (typeof nonce === 'string' && nonce) {
+    key = nonce.toLowerCase();
+  }
   if (seenNonces && key) {
     if (seenNonces.has(key)) return require402('payment invalid: replayed-nonce');
     seenNonces.add(key);
@@ -509,6 +518,7 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
  * @param {{ok:boolean, receiptId?:string}} p.settled
  * @param {string|undefined} p.nonce           the nonce (or SVM transaction) as the client sent it;
  *                                             `gate()` keys its replay set on the lower-cased form
+ *                                             (an SVM transaction on its canonical base64)
  */
 export function buildSettlementResponse({ price, env, settled, nonce }) {
   const payer = env?.authorization?.from;
