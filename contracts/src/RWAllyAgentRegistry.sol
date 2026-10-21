@@ -583,8 +583,9 @@ contract RWAllyAgentRegistry {
     /// the residual is that many fee-free identities per day per chain for as long as the compromise
     /// lasts undetected, and the attacker can also fill the cap to stop other mirroring that day. If one
     /// attestor key serves several chains the figure applies on each of them, and the owner must
-    /// submit `setAttestor` on every chain to stop it. It cannot move funds (this contract holds
-    /// none), alter or remove an existing identity, or change the fee.
+    /// submit `setAttestor` on every chain to stop it. It authorizes only `mintMirrored`, which
+    /// transfers no token, so it cannot move funds, alter or remove an existing identity, or change
+    /// the fee.
     ///
     /// @param a the signed attestation.
     /// @param agentURI the agent URI to store; `keccak256(bytes(agentURI))` must equal `a.agentURIHash`.
