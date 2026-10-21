@@ -84,8 +84,8 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
   `VaultCore.oracle()` against the oracle in the deployment record before you deposit and don't
   strand funds in a vault whose feeds you don't trust. Un-activated (observation-window) deposits
   stay reclaimable during a freeze via `cancelPending`, which reads no oracle.
-- **Fees:** 10% of realized profit (per-member high-water mark that follows *operator identity*
-  across vaults) + an exit fee ≤1% decaying with tenure, paid to remaining members. Where sub-vaults
+- **Fees:** 10% of realized gain after netting the member's loss carryforward under that operator,
+  which follows *operator identity* across vaults, + an exit fee ≤1% decaying with tenure, paid to remaining members. Where sub-vaults
   exist they stack fees; read `SubVaultRegistry.stackedPerfFeeBps(vault)` /
   `stackedExitFeeCapBps(vault)`.
 - **Sub-vaults on Arc:** the Arc factory's `allowSubVaults()` reads false. It is set once in the
