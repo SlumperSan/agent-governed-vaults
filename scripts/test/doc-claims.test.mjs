@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import {
   checkDocs,
   citationsIn,
+  indexSources,
   symbolsAt,
   openPrClaimsIn,
   mergedPrNumbers,
@@ -417,4 +418,26 @@ test('a SHALLOW checkout is refused, because a truncated merged set is a false-n
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('the source index never walks build output (dist, dist-ssr), which a concurrent test creates and deletes mid-run', () => {
+  // THE PROBE TREE IS A TEMP REPO, NOT THE REAL ONE. The first version wrote probes under
+  // apps/vaults-ui/dist/, which claims-lede-truth and contracts-size-truth deliberately walk (and
+  // read .json from), so the test itself reintroduced the list-then-read ENOENT race it guards.
+  // indexSources takes the repo as an argument, so nothing here touches a directory another test
+  // walks. The control is a real source file: it proves the walk ran and found sources at all.
+  withFixture(
+    {
+      'apps/x/src/control.mjs': 'export {};',
+      'apps/x/dist/probe.json': '{}',
+      'apps/x/dist-ssr/probe.json': '{}',
+    },
+    (dir) => {
+      const index = indexSources(dir, ['apps']);
+      assert.ok(index.has('apps/x/src/control.mjs'), 'the control source file was not indexed: the walk did not run');
+      for (const rel of ['apps/x/dist/probe.json', 'apps/x/dist-ssr/probe.json']) {
+        assert.ok(!index.has(rel), `indexSources() walked into build output: ${rel}`);
+      }
+    },
+  );
 });
