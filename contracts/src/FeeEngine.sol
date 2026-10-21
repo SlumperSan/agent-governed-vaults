@@ -23,7 +23,7 @@ interface IERC20Balance {
     function balanceOf(address) external view returns (uint256);
 }
 
-/// @title FeeEngine — 10% performance fee on realized profit, HWM via registry carryforward
+/// @title FeeEngine — 10% performance fee on realized gain net of the registry loss carryforward
 /// @notice Sprint 3 module. Crystallization happens ONLY at member redemption (CM-3): the
 /// vault calls onRealize with the member's realized P&L, the engine nets it against the
 /// (member, operator) loss carryforward read from the registry — PRE-update, the registry
@@ -32,19 +32,19 @@ interface IERC20Balance {
 /// The vault may clamp the returned fee (hostile-module defense) and reports what it actually
 /// transferred via onFeeCollected; recipients are credited strictly from collected amounts.
 ///
-/// Fee model A1: of every collected fee the vault creator is credited 90% (9% of profit) and
-/// the RWAlly treasury 10% (1% of profit). The rate and the split are constants, so they are the
-/// same on every chain; only the treasury address is per chain, set once by {initialize}. There
-/// is no high-water mark on vault NAV: the fee is per member, at exit, on realized gain after the
-/// loss carryforward. Until {initialize} lands `onRealize` returns 0, so no fee is taken and none
+/// Fee model A1: of every collected fee the treasury is credited 10% (1% of the net gain), rounded
+/// down, and the vault creator the remainder, 90% (9% of the net gain). The rate and the split
+/// are constants, so they are the same on every chain; only the treasury address is per chain,
+/// set once by {initialize}. There is no high-water mark on vault NAV: the fee is per member, at
+/// exit, on realized gain after the loss carryforward. Until {initialize} lands `onRealize` returns 0, so no fee is taken and none
 /// can reach this contract uncredited.
 contract FeeEngine is IFeeEngine {
     using SafeTransferLib for address;
 
     uint256 public constant PERF_FEE_BPS = 1_000; // 10%
     uint256 internal constant BPS = 10_000;
-    /// @notice The treasury's slice of every collected fee: 10% of the fee, 1% of profit. The
-    /// vault creator receives the remainder (90% of the fee, 9% of profit).
+    /// @notice The treasury's slice of every collected fee: 10% of the fee (1% of the net gain),
+    /// rounded down. The vault creator receives the remainder (90% of the fee, 9% of the net gain).
     uint256 public constant TREASURY_SHARE_BPS = 1_000;
 
     IRegistryView public immutable registry;
@@ -106,9 +106,9 @@ contract FeeEngine is IFeeEngine {
 
     /// @dev Credit `amount` of `token` collected from `vault`: the treasury gets the floored share,
     /// the vault creator the remainder, so the two parts always sum to `amount` exactly. Reverts
-    /// only if the treasury is unset, which no honest vault can reach: {onRealize} returns no fee
-    /// until {initialize}, so no tokens are sent here before it. Crediting the zero address instead
-    /// would lock the treasury's slice for good.
+    /// {TreasuryNotSet} if the treasury is unset, which no honest vault can reach: {onRealize}
+    /// returns no fee until {initialize}, so no tokens are sent here before it. Crediting the zero
+    /// address instead would lock the treasury's slice for good.
     function _credit(address vault, address token, uint256 amount) internal {
         require(treasury != address(0), TreasuryNotSet());
         uint256 toTreasury = amount * TREASURY_SHARE_BPS / BPS;
@@ -177,8 +177,8 @@ contract FeeEngine is IFeeEngine {
         // registry stats happens on the cash leg only (indexer can price the asset legs, S7).
     }
 
-    /// @notice Pull an in-kind fee slice that the vault escrowed after a failed transfer to
-    /// this engine (VaultCore EE-6 path), and credit it to the vault's operator.
+    /// @notice Pull a fee slice (USDC or in-kind) that the vault escrowed after a failed transfer
+    /// to this engine (VaultCore EE-6 path); {_credit} splits it between treasury and creator.
     ///
     /// @dev M-3 remediation. This function is permissionless and measures a balance delta
     /// STRADDLING a full-gas external call (`claimEscrowed`), which a hook token can re-enter.
@@ -188,7 +188,7 @@ contract FeeEngine is IFeeEngine {
     /// The arithmetic of the bug: an inner `pullEscrowed` completes first and correctly credits
     /// its own `X`; the outer frame then measures the whole delta `X + X2` and credits that too,
     /// so `2X + X2` is credited against `X + X2` actually delivered. Whoever claims first is
-    /// paid from the other operator's balance. The precondition is attacker-controlled: escrow
+    /// paid from another recipient's balance. The precondition is attacker-controlled: escrow
     /// is populated only when `tryTransfer` returns false, which a hook token decides on demand.
     ///
     /// (The report notes ERC-777 specifically does NOT work here — this engine is not an
