@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
+import {AgentVaultDeployer} from "../src/AgentVaultDeployer.sol";
+import {AgentVaultCore} from "../src/AgentVaultCore.sol";
 import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {FeeEngine, IRegistryView} from "../src/FeeEngine.sol";
@@ -14,6 +16,7 @@ import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "./mocks/Mocks.sol";
+import {AllowAllRegistry} from "./mocks/RegistryMocks.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
 /// Guards the #10 fix: every contract deployable under EIP-170, VaultCore's creation code
@@ -29,8 +32,13 @@ contract Eip170Test is Test {
     uint256 constant EIP170_RUNTIME_CAP = 24_576;
     uint256 constant EIP3860_INITCODE_CAP = 49_152;
 
-    /// Re-embedding tripwires. Measured at the fix: factory 2,718 B, deployer 938 B.
-    uint256 constant FACTORY_RUNTIME_BUDGET = 5_000;
+    /// Re-embedding tripwires. Measured at the fix: factory 2,718 B, deployer 938 B. The factory now
+    /// carries a second creation path (`createAgentVault`, a copy of `createVault`'s checks with the
+    /// agent-registry gate and `AgentVaultCreated`) and measured 5,435 B runtime on 2026-10-21
+    /// (`forge build --sizes`); the budget moved from 5,000 to 6,500 B, about 1,000 B of headroom. A
+    /// re-embedded creation code is thousands of bytes, so the tripwire still fires; the hard
+    /// EIP-170 cap of 24,576 B stays asserted separately below.
+    uint256 constant FACTORY_RUNTIME_BUDGET = 6_500;
     uint256 constant DEPLOYER_RUNTIME_BUDGET = 2_000;
 
     /// The headroom floor VaultCore must keep. See
@@ -47,6 +55,8 @@ contract Eip170Test is Test {
     FeeEngine fees;
     Governance gov;
     VaultDeployer vaultDeployer;
+    AgentVaultDeployer agentDeployer;
+    AllowAllRegistry idRegistry;
     VaultFactory factory;
 
     address operator = makeAddr("operator");
@@ -66,6 +76,8 @@ contract Eip170Test is Test {
         fees.initialize(address(0x7EA5));
         gov = new Governance();
         vaultDeployer = new VaultDeployer();
+        agentDeployer = new AgentVaultDeployer();
+        idRegistry = new AllowAllRegistry();
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),
             IGovernance(address(gov)),
@@ -77,6 +89,8 @@ contract Eip170Test is Test {
         // C-6: no oracle allowlist (permissive)
         vm.prank(PROTOCOL_INITIALIZER);
         factory.initialize(new address[](0));
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initializeAgentPath(address(idRegistry), IVaultDeployer(address(agentDeployer)));
         vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(factory), address(fees));
         vm.prank(PROTOCOL_INITIALIZER);
@@ -92,13 +106,16 @@ contract Eip170Test is Test {
         uint256 core = vm.getDeployedCode("VaultCore.sol:VaultCore").length;
         uint256 fac = vm.getDeployedCode("VaultFactory.sol:VaultFactory").length;
         uint256 dep = vm.getDeployedCode("VaultDeployer.sol:VaultDeployer").length;
+        uint256 agentDep = vm.getDeployedCode("AgentVaultDeployer.sol:AgentVaultDeployer").length;
 
         assertLt(core, EIP170_RUNTIME_CAP, "VaultCore over EIP-170");
         assertLt(fac, EIP170_RUNTIME_CAP, "VaultFactory over EIP-170");
         assertLt(dep, EIP170_RUNTIME_CAP, "VaultDeployer over EIP-170");
+        assertLt(agentDep, EIP170_RUNTIME_CAP, "AgentVaultDeployer over EIP-170");
 
         assertLt(fac, FACTORY_RUNTIME_BUDGET, "VaultFactory grew past its budget - re-embedded?");
         assertLt(dep, DEPLOYER_RUNTIME_BUDGET, "VaultDeployer grew past its budget - re-embedded?");
+        assertLt(agentDep, DEPLOYER_RUNTIME_BUDGET, "AgentVaultDeployer grew past its budget - re-embedded?");
     }
 
     /// VaultCore's EIP-170 margin is not slack — it is the budget that decides whether a known
@@ -142,8 +159,8 @@ contract Eip170Test is Test {
         assertLt(core, EIP170_RUNTIME_CAP - CORE_MIN_RUNTIME_MARGIN, "VaultCore headroom spent");
     }
 
-    /// AgentVaultCore is VaultCore plus one immutable and one override, deployed directly (not through
-    /// the deployer's pinned blob), so it has its own floor. Measured 21,206 B runtime against the
+    /// AgentVaultCore is VaultCore plus one immutable and one override, built by AgentVaultDeployer
+    /// (not the VaultDeployer pinned blob), so it has its own floor. Measured 21,206 B runtime against the
     /// 24,576 B cap on 2026-10-20 (`forge build --sizes`), which is 3,370 B of margin; the floor is the same 2,000 B as
     /// VaultCore's. Same shape as above, so a runtime over the cap fails with the message and not
     /// with a Panic(0x11).
@@ -173,6 +190,12 @@ contract Eip170Test is Test {
         assertLt(deployerInit, EIP3860_INITCODE_CAP, "VaultDeployer initcode over EIP-3860");
     }
 
+    /// AgentVaultDeployer carries AgentVaultCore's creation code the same way, so the same bound bites.
+    function test_agentVaultCoreCreationCodeFitsInsideTheAgentDeployersInitcode() public view {
+        uint256 deployerInit = vm.getCode("AgentVaultDeployer.sol:AgentVaultDeployer").length;
+        assertLt(deployerInit, EIP3860_INITCODE_CAP, "AgentVaultDeployer initcode over EIP-3860");
+    }
+
     // ── the pinned creation code ─────────────────────────────────────────────
 
     /// The load-bearing claim of the whole design: the bytes VaultDeployer will CREATE from are
@@ -192,6 +215,25 @@ contract Eip170Test is Test {
         assertEq(
             a.code.length - 1 + b.code.length - 1,
             vm.getCode("VaultCore.sol:VaultCore").length,
+            "chunks do not reassemble to the full creation code"
+        );
+    }
+
+    /// The agent deployer's pinned blob is the compiled AgentVaultCore, byte for byte.
+    function test_agentDeployerCreationCodeIsTheCompiledAgentVaultCore() public view {
+        assertEq(
+            agentDeployer.creationCode(), vm.getCode("AgentVaultCore.sol:AgentVaultCore"), "agent blob drift"
+        );
+    }
+
+    function test_agentCodeChunksAreInertData() public view {
+        address a = agentDeployer.codeChunkA();
+        address b = agentDeployer.codeChunkB();
+        assertEq(a.code[0], bytes1(0x00), "chunk A executable");
+        assertEq(b.code[0], bytes1(0x00), "chunk B executable");
+        assertEq(
+            a.code.length - 1 + b.code.length - 1,
+            vm.getCode("AgentVaultCore.sol:AgentVaultCore").length,
             "chunks do not reassemble to the full creation code"
         );
     }
@@ -219,10 +261,28 @@ contract Eip170Test is Test {
         assertEq(registry.operatorOf(bypass), 0, "deployer-created vault was attested");
     }
 
+    /// The same trust story for the agent path: an AgentVaultCore built by calling the agent deployer
+    /// directly is not attested, and its code equals the factory-created one byte for byte.
+    function test_deployingDirectlyThroughTheAgentDeployerIsNeverAttested() public {
+        vm.prank(stranger);
+        address attested = factory.createAgentVault(_params());
+
+        vm.prank(stranger);
+        address bypass = agentDeployer.deploy(_agentCtorArgs(stranger));
+
+        assertEq(bypass.code, attested.code, "bypass vault is not the same AgentVaultCore code");
+        assertEq(AgentVaultCore(bypass).creator(), stranger, "bypass creator");
+        assertGt(registry.operatorOf(attested), 0, "factory agent vault not attested");
+        assertEq(registry.operatorOf(bypass), 0, "agent-deployer-created vault was attested");
+    }
+
     /// The gate that makes the above true is on the registry, and the deployer never touches it.
     function test_attestationRemainsFactoryOnly() public {
         assertEq(registry.factory(), address(factory), "registry factory");
         vm.prank(address(vaultDeployer));
+        vm.expectRevert(OperatorRegistry.OnlyFactory.selector);
+        registry.attestVault(address(1), stranger);
+        vm.prank(address(agentDeployer));
         vm.expectRevert(OperatorRegistry.OnlyFactory.selector);
         registry.attestVault(address(1), stranger);
     }
@@ -230,6 +290,7 @@ contract Eip170Test is Test {
     /// The factory can only ever CREATE through the one deployer it was constructed with.
     function test_factoryPinsItsDeployerImmutably() public view {
         assertEq(address(factory.vaultDeployer()), address(vaultDeployer), "deployer pin");
+        assertEq(address(factory.agentVaultDeployer()), address(agentDeployer), "agent deployer pin");
     }
 
     // ── behaviour preserved across the extra hop ─────────────────────────────
@@ -306,6 +367,26 @@ contract Eip170Test is Test {
             uint256(30 days),
             _adapters(),
             address(subReg)
+        );
+    }
+
+    /// The tuple VaultFactory encodes for an agent vault: the regular tuple plus the identity registry.
+    function _agentCtorArgs(address creator) internal view returns (bytes memory) {
+        return abi.encode(
+            address(usdc),
+            _basket(),
+            creator,
+            address(registry),
+            address(gov),
+            address(fees),
+            address(oracle),
+            1_000_000 * USDC_1,
+            100 * USDC_1,
+            uint256(50),
+            uint256(30 days),
+            _adapters(),
+            address(subReg),
+            address(idRegistry)
         );
     }
 }

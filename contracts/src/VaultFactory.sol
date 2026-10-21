@@ -19,6 +19,12 @@ interface IVaultDeployer {
     function deploy(bytes calldata ctorArgs) external returns (address vault);
 }
 
+/// @dev The one read the creator gate makes: the ERC-721 balance of the creator on the pinned agent
+/// registry.
+interface IAgentIdentityBalance {
+    function balanceOf(address owner) external view returns (uint256);
+}
+
 interface IVaultBasket {
     function assetUnit(address a) external view returns (uint256);
     function usdc() external view returns (address);
@@ -37,6 +43,16 @@ interface IVaultBasket {
 /// CREATE2 address match across chains. The one per-chain input, the oracle allowlist, moved out of the
 /// constructor into a one-shot {initialize} gated on {PROTOCOL_INITIALIZER}; until that call lands
 /// `createVault` and `createChildVault` revert {NotInitialized}.
+///
+/// Agent vaults. {createAgentVault} is the second creation path: the creator must hold at least one
+/// agent ID in the registry pinned by {initializeAgentPath}, and the vault it builds is an
+/// {AgentVaultCore} (deposits require an agent ID on that same registry) built by a second pinned
+/// deployer. In every other respect it is `createVault`: the same curated-oracle gate, the same
+/// covers-basket probe, the same attestation of the creator in OperatorRegistry (so the creator earns
+/// the creator fee share exactly as a regular vault's creator does) and the same `allVaults` entry.
+/// The agent ID check is a provenance tag: the registry is permissive (an ID costs a fee and one
+/// address may hold many IDs), so holding an ID says that the creator registered one, and nothing
+/// about who or what the creator is.
 ///
 /// Two-step bring-up (documented UX, not a trust gap): after creation the creator registers
 /// the vault's GovConfig with Governance in a second transaction; until then no proposals can
@@ -110,10 +126,48 @@ contract VaultFactory {
     /// directly (for example through the permissionless VaultDeployer) is never attested.
     uint256 public constant MIN_DEPOSIT_FLOOR_USDC = 100_000_000;
 
+    /// @notice The agent ID registry every agent vault pins and the creator gate reads. Set once by
+    /// {initializeAgentPath}; zero before that.
+    /// @dev Storage rather than a constructor argument, on purpose. The registry is a vanity-salted
+    /// CREATE2 singleton whose salt is mined only once its bytecode is frozen, so its address is not
+    /// known when this factory's initcode is fixed, and this factory must have the same address on
+    /// every chain: an address in the constructor would move the factory's address with every change
+    /// to the registry. It is one-shot and {PROTOCOL_INITIALIZER}-gated like {initialize}, and it
+    /// requires code at the address so a typo cannot permanently strand the agent path.
+    address public agentRegistry;
+    /// @notice The deployer that builds every agent vault. Set once by {initializeAgentPath}.
+    /// @dev Storage, unlike the immutable `vaultDeployer`, to keep the constructor at six arguments
+    /// and both agent wirings in one place; its address is knowable at compile time, so this is not
+    /// about an unknown address. Same trust position as `vaultDeployer`: it holds no authority, and
+    /// the factory can only ever CREATE an agent vault through it.
+    IVaultDeployer public agentVaultDeployer;
+    /// @notice True once {initializeAgentPath} has run. {initialized} does NOT imply it: a factory can
+    /// be initialized for regular vaults and still have no agent path, and `createAgentVault` reverts
+    /// {AgentPathNotInitialized} until it is set.
+    bool public agentPathInitialized;
+
+    /// @notice The vault kind carried by {AgentVaultCreated}. A regular vault has no kind field: its
+    /// {VaultCreated} event is the kind.
+    uint8 public constant VAULT_KIND_AGENT = 1;
+
     address[] public allVaults;
 
     event VaultCreated(address indexed vault, address indexed creator, address usdc, uint256 capacityCapUsdc);
+    /// @notice Emitted INSTEAD of {VaultCreated} for a vault built by {createAgentVault}, never in
+    /// addition to it. {VaultCreated} is unchanged for regular vaults, so every existing consumer keeps
+    /// working and counts regular vaults only; a consumer that wants agent vaults reads this event too.
+    /// @param identityRegistry the agent registry the vault pinned (the factory's {agentRegistry})
+    /// @param kind {VAULT_KIND_AGENT}
+    event AgentVaultCreated(
+        address indexed vault,
+        address indexed creator,
+        address usdc,
+        uint256 capacityCapUsdc,
+        address identityRegistry,
+        uint8 kind
+    );
     event Initialized(address[] allowedOracles);
+    event AgentPathInitialized(address indexed agentRegistry, address indexed agentVaultDeployer);
 
     /// @param registry_ canonical OperatorRegistry (attestation target)
     /// @param governance_ governance module every deployed vault binds to
@@ -161,8 +215,38 @@ contract VaultFactory {
         emit Initialized(allowedOracles_);
     }
 
-    /// @dev {initialize} was called by something other than {PROTOCOL_INITIALIZER}.
+    /// @notice One-shot, {PROTOCOL_INITIALIZER}-only: pin the agent ID registry and the agent vault
+    /// deployer, which switches {createAgentVault} on. Both must already carry code, so the registry
+    /// is deployed before this call on every chain (a typo here is permanent, and the registry cannot
+    /// be changed afterwards). See {agentRegistry} for why this is a call and not a constructor
+    /// argument. It sits beside {initialize} rather than inside it so that `initialize`'s signature and
+    /// its `Initialized` event, which the deploy preflight and the indexers read, do not change.
+    /// @param agentRegistry_ the agent ID registry (RWAllyAgentRegistry) on this chain
+    /// @param agentVaultDeployer_ the AgentVaultDeployer holding AgentVaultCore's creation code
+    function initializeAgentPath(address agentRegistry_, IVaultDeployer agentVaultDeployer_) external {
+        require(msg.sender == PROTOCOL_INITIALIZER, OnlyInitializer());
+        require(!agentPathInitialized, AgentPathAlreadyInitialized());
+        require(agentRegistry_.code.length > 0, InvalidAgentRegistry());
+        require(address(agentVaultDeployer_).code.length > 0, InvalidAgentVaultDeployer());
+        agentPathInitialized = true;
+        agentRegistry = agentRegistry_;
+        agentVaultDeployer = agentVaultDeployer_;
+        emit AgentPathInitialized(agentRegistry_, address(agentVaultDeployer_));
+    }
+
+    /// @dev {initialize} or {initializeAgentPath} was called by something other than {PROTOCOL_INITIALIZER}.
     error OnlyInitializer();
+    /// @dev {initializeAgentPath} has already run on this factory.
+    error AgentPathAlreadyInitialized();
+    /// @dev {createAgentVault} was called before {initializeAgentPath}: there is no registry to gate on
+    /// and no deployer to build with.
+    error AgentPathNotInitialized();
+    /// @dev {initializeAgentPath} was given an address with no code as the agent registry.
+    error InvalidAgentRegistry();
+    /// @dev {initializeAgentPath} was given an address with no code as the agent vault deployer.
+    error InvalidAgentVaultDeployer();
+    /// @dev The caller of {createAgentVault} holds no agent ID in the pinned registry.
+    error NoAgentIdentity();
     /// @dev {initialize} has already run on this factory.
     error AlreadyInitialized();
     /// @dev A vault was requested before {initialize}: the oracle allowlist is not set, so the C-6
@@ -249,6 +333,50 @@ contract VaultFactory {
         IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
         allVaults.push(vault);
         emit VaultCreated(vault, msg.sender, p.usdc, p.capacityCapUsdc);
+    }
+
+    /// @notice Deploy and attest a root AGENT vault: `createVault` for a creator that holds an agent ID.
+    /// `msg.sender` becomes the vault's creator and its attested operator, and the deployed vault is an
+    /// {AgentVaultCore} pinned to {agentRegistry}, so its deposits require an agent ID there.
+    /// @dev The creator gate reads `balanceOf(msg.sender) > 0` on the pinned registry directly, and
+    /// not through the bounded call AgentVaultCore uses on deposits: creating a vault moves no
+    /// funds, the caller alone pays for a registry that burns gas, and a registry that reverts or
+    /// returns short data failing the creation is the right outcome. The registry address is the
+    /// factory's own storage and never a field of `p`; a creator-supplied registry would make the
+    /// deposit gate meaningless. The registry check is a provenance tag, see the contract notes.
+    /// Everything after the gate mirrors `createVault` step for step, including the order (the
+    /// covers-basket probe runs after the deploy so the vault constructor diagnoses a malformed basket
+    /// first).
+    /// @param p the creator's immutable vault configuration
+    /// @return vault the deployed AgentVaultCore address
+    function createAgentVault(VaultParams calldata p) external returns (address vault) {
+        require(initialized, NotInitialized());
+        require(agentPathInitialized, AgentPathNotInitialized());
+        address registry_ = agentRegistry;
+        require(IAgentIdentityBalance(registry_).balanceOf(msg.sender) > 0, NoAgentIdentity());
+        _requireAllowedOracle(address(p.oracle)); // C-6: the same curated oracle gate as createVault
+        vault = agentVaultDeployer.deploy(
+            abi.encode(
+                p.usdc,
+                p.basketAssets,
+                msg.sender, // creator: the 5% lock and gate bind to this identity
+                registry,
+                governance,
+                feeEngine,
+                p.oracle,
+                p.capacityCapUsdc,
+                p.minDepositUsdc,
+                p.exitFeeMaxBps,
+                p.exitFeeDecayPeriod,
+                p.allowedAdapters,
+                allowSubVaults ? subVaultRegistry : address(0),
+                registry_ // the pinned identity registry, from this contract's storage
+            )
+        );
+        _requireOracleCoversBasket(p.oracle, p.basketAssets);
+        IRegistryAttest(address(registry)).attestVault(vault, msg.sender);
+        allVaults.push(vault);
+        emit AgentVaultCreated(vault, msg.sender, p.usdc, p.capacityCapUsdc, registry_, VAULT_KIND_AGENT);
     }
 
     /// @notice Deploy a CHILD vault under `parent` (SV-1). The edge is creation-time only —
