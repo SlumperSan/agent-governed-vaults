@@ -241,6 +241,33 @@ test('discoverFromChain: include pins a vault outside the window, once', async (
   assert.equal(got.length, 4, 'two pinned + the window of three, with one overlap');
 });
 
+test('discoverFromChain: an include entry the registry never attested is skipped and named, not read as a factory vault', async () => {
+  const client = createFakeChainClient({ vaults: vaultsN(9), operators: { 1: {} } });
+  const gaps = [];
+  const { log } = quiet();
+  const stranger = addr(0x9999); // not in the factory: the registry has no operator for it
+  const cfg = chainConfig({ discovery: { maxVaults: 3, pageSize: 3, include: [addr(0x1000), stranger] } });
+  const { vaults } = await discoverFromChain({ chainReader: readerFor(client), config: cfg, log, gaps });
+  const got = vaults.map((v) => v.vault);
+  assert.ok(got.includes(addr(0x1000)), 'an attested pinned vault outside the window is still read');
+  assert.ok(!got.includes(stranger), 'an unattested pinned address is not a vault row');
+  assert.ok(gaps.some((g) => g.includes(stranger) && /not provably a factory vault/.test(g)), gaps.join('; '));
+});
+
+test('discoverFromChain: nothing in discovery is specific to the arc-mainnet preset (a second, preset-less chain)', async () => {
+  const client = createFakeChainClient({ vaults: vaultsN(5), operators: { 1: {} } });
+  const gaps = [];
+  const { log } = quiet();
+  // chainId 8453 and no preset: addresses, chain id and name all differ from arc-mainnet's.
+  const cfg = loadConfig({ chain: { chainId: 8453, chainName: 'second-chain', factory: FACTORY, operatorRegistry: REGISTRY, subvaultRegistry: SUBVAULT_REGISTRY, governance: GOVERNANCE }, api: { baseUrl: null } });
+  assert.equal(cfg.chain.preset, null);
+  const { vaults, leaderboard } = await discoverFromChain({ chainReader: readerFor(client), config: cfg, log, gaps });
+  assert.deepEqual(gaps, []);
+  assert.equal(vaults.length, 5);
+  assert.ok(vaults.every((v) => v.attested));
+  assert.deepEqual(leaderboard.map((r) => r.operatorId), [1]);
+});
+
 test('discoverFromChain: an unreadable vaultCount is a gap and no vaults, not an empty success', async () => {
   const client = createFakeChainClient({ vaults: vaultsN(3), failing: new Set(['vaultCount']) });
   const gaps = [];

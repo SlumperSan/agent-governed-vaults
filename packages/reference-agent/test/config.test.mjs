@@ -185,6 +185,24 @@ test('a chainId that disagrees with the preset is refused, an agreeing one is ac
   assert.equal(loadConfig({ chain: { preset: 'arc-mainnet', chainId: 5042 } }).chain.chainId, 5042);
 });
 
+test('a null or empty rpcUrl beside a preset is refused, an absent one takes the preset RPC', () => {
+  for (const bad of [null, ''])
+    assert.throws(() => loadConfig({ chain: { preset: 'arc-mainnet', rpcUrl: bad } }), (e) => e instanceof ConfigError && /rpcUrl is .* beside chain.preset/.test(e.message), String(bad));
+  assert.equal(loadConfig({ chain: { preset: 'arc-mainnet', } }).chain.rpcUrl, 'https://rpc.mainnet.arc.io');
+  assert.equal(loadConfig({ chain: { rpcUrl: null } }).chain.rpcUrl, null, 'no preset: null still means the stub');
+});
+
+test('a usdc override beside a preset needs its own EIP-712 name and version', () => {
+  const other = '0x' + 'ab'.repeat(20);
+  assert.throws(() => loadConfig({ chain: { preset: 'arc-mainnet', usdc: other } }), (e) => e instanceof ConfigError && /usdcName and chain.usdcVersion/.test(e.message));
+  assert.throws(() => loadConfig({ chain: { preset: 'arc-mainnet', usdc: other, usdcName: 'X' } }), ConfigError, 'name alone is not both');
+  const cfg = loadConfig({ chain: { preset: 'arc-mainnet', usdc: other, usdcName: 'X', usdcVersion: '1' } });
+  assert.equal(cfg.chain.usdcName, 'X');
+  assert.equal(cfg.chain.usdcVersion, '1');
+  // The preset's own token, in any casing, keeps the preset's domain.
+  assert.equal(loadConfig({ chain: { preset: 'arc-mainnet', usdc: '0x3600000000000000000000000000000000000000'.toUpperCase().replace('0X', '0x') } }).chain.usdcName, 'USDC');
+});
+
 test('an unknown preset name is refused, including a path-shaped one', () => {
   for (const name of ['mainnet', 'base-sepolia', '../config', 'arc-mainnet.json'])
     assert.throws(() => loadConfig({ chain: { preset: name } }), (e) => e instanceof ConfigError && /unknown chain preset/.test(e.message), name);

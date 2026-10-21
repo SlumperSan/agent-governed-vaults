@@ -147,6 +147,7 @@ export async function discoverFromChain({ chainReader, config, log, gaps }) {
 
   // Pinned vaults first, then the window, each address once.
   const addresses = [...new Set([...include.map((a) => a.toLowerCase()), ...listing.addresses])];
+  const listed = new Set(listing.addresses);
   const vaults = [];
   for (const vault of addresses) {
     const [identity, answered] = await Promise.all([
@@ -161,6 +162,13 @@ export async function discoverFromChain({ chainReader, config, log, gaps }) {
     // An unreadable answer is 0, not a guess: 0 is the unattested value the join gate refuses.
     const operatorId = sameRegistry ? answered ?? 0 : 0;
     if (sameRegistry && answered === null) gaps.push(`operator id unreadable for ${vault}`);
+    // The factory keeps no membership mapping, but only the factory can attest a vault at the
+    // registry (OperatorRegistry.attestVault is factory-only). A pinned vault outside the factory
+    // window that the configured registry has not attested is not provably a factory vault: drop it.
+    if (!listed.has(vault) && operatorId === 0) {
+      gaps.push(`discovery.include ${vault} is not attested by the configured registry, so it is not provably a factory vault; skipped`);
+      continue;
+    }
     vaults.push({
       vault,
       operatorId,
