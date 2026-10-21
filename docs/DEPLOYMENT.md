@@ -124,11 +124,14 @@ gets queried.
 The six protocol singletons deploy through the Arachnid CREATE2 proxy, then take their per-chain
 oracle allowlist and one-shot wiring, via
 [`contracts/script/Deploy.s.sol`](../contracts/script/Deploy.s.sol). The broadcast is pinned to
-`PROTOCOL_INITIALIZER` (§10), so `--account` must resolve to that address. Set `BLESSED_ORACLES` from §1:
+`PROTOCOL_INITIALIZER` (§10), so `--account` must resolve to that address. Set `BLESSED_ORACLES` from §1,
+and `FEE_TREASURY` to this chain's RWAlly treasury address (the v2 `FeeEngine` credits it a share of every
+performance fee; it is set once and cannot be changed):
 
 ```bash
 cd contracts
 BLESSED_ORACLES="$CHAINLINK_ORACLE_ADDR" \
+FEE_TREASURY="$FEE_TREASURY_ADDR" \
 forge script script/Deploy.s.sol:Deploy \
   --rpc-url "$BASE_SEPOLIA_RPC" \
   --account deployer \
@@ -137,9 +140,11 @@ forge script script/Deploy.s.sol:Deploy \
 
 This deploys `OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer`,
 `VaultFactory`, calls `factory.initialize(BLESSED_ORACLES)`, then performs the **irreversible** wiring:
-`registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`.
+`registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`, and
+finally `feeEngine.initialize(FEE_TREASURY)`, which sets the treasury once. The script refuses a
+real-chain run with `FEE_TREASURY` unset or zero, and the engine takes no fee until the treasury is set.
 `test/Deploy.t.sol` asserts each wire locks; re-running any wire reverts `AlreadyWired`, and a second
-`initialize` reverts `AlreadyInitialized`.
+`initialize` (the factory's or the fee engine's) reverts `AlreadyInitialized`.
 
 Ordering note (#10): `VaultDeployer` **must** be deployed before `VaultFactory`, which pins it
 immutably in its constructor (under CREATE2 its address is known in advance, so the order is bookkeeping,
@@ -635,10 +640,10 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
   `VaultFactory.initialize`.
 - **Who may initialise.** `PROTOCOL_INITIALIZER`
   (`0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, constant in `contracts/src/lib/ProtocolInitializer.sol`)
-  is the only address that can call `factory.initialize`, `registry.wire`, `subReg.wire` and
-  `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
-  been the proxy. Each call works once. That is four one-shot calls per chain, and `factory.initialize` is the
-  one that decides which oracles a vault may use: the oracle allowlist, where an empty list leaves the C-6 gate off for good. The three wires check only the caller and non-zero arguments, so they also choose which factory, fee engine and sub-registry the registries point at. The
+  is the only address that can call `factory.initialize`, `feeEngine.initialize`, `registry.wire`, `subReg.wire`
+  and `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
+  been the proxy. Each call works once. That is five one-shot calls per chain, and `factory.initialize` is the
+  one that decides which oracles a vault may use: the oracle allowlist, where an empty list leaves the C-6 gate off for good. `feeEngine.initialize` sets the treasury address the v2 fee engine credits a share of each performance fee (a zero address is refused, and until it runs the engine takes no fee). The three wires check only the caller and non-zero arguments, so they also choose which factory, fee engine and sub-registry the registries point at. The
   live Arc set (v1, plain CREATE) is different: its key made only the three wire calls, all three made, and
   its factory fixed the allowlist in its constructor and has no `initialize`.
 - **Order on each chain.** Gate on the proxy having 69 bytes and each predicted address being empty. `ProtocolCreate2.create`
@@ -646,7 +651,7 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
   the remaining creates by hand, after checking the runtime at each existing address against a local
   build. Deploy the six (any order). Deploy the per-chain oracle and adapter.
   Send `factory.initialize([oracle])`, then run the initialisation preflight (next bullet). Only when it
-  passes send the three wires. An uninitialised factory has its allowlist off; `createVault` and
+  passes send the three wires and `feeEngine.initialize(treasury)`. An uninitialised factory has its allowlist off; `createVault` and
   `createChildVault` revert `NotInitialized` until `initialize` lands.
 - **Initialisation preflight, per chain, before any wire, vault or announced address.**
   `node scripts/protocol-initialize-preflight.mjs --plan <plan.json>` (plan shape in the script header)

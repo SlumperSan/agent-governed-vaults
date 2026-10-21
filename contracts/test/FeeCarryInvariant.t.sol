@@ -69,6 +69,8 @@ contract FeeCarryInvariantTest is Test {
     function setUp() public {
         registry = new OperatorRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         // Wire a "factory" we control so we can attest a synthetic vault address.
         vm.prank(PROTOCOL_INITIALIZER);
         registry.wire(address(this), address(fees));

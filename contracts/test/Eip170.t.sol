@@ -62,6 +62,8 @@ contract Eip170Test is Test {
         registry = new OperatorRegistry();
         subReg = new SubVaultRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         gov = new Governance();
         vaultDeployer = new VaultDeployer();
         factory = new VaultFactory(
