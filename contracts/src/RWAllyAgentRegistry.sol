@@ -30,9 +30,9 @@ interface IERC20Decimals {
 ///
 /// @dev REGISTRATION IS OPEN AND PAID. `register` mints to `msg.sender` and checks nothing about the
 /// caller beyond the fee: it pulls a flat `fee` of the fee token from the caller straight to the
-/// treasury (`transferFrom(msg.sender, treasury, fee)`, return value checked), so the registry never
-/// holds funds. The fee is set by the owner and can never exceed `MAX_FEE` (100 USDC, 100_000_000
-/// raw units of a 6-decimal token), a constant in the bytecode. It is charged once, at registration;
+/// treasury (`transferFrom(msg.sender, treasury, fee)`, return value checked), so a registration leaves
+/// nothing behind in the registry. The fee is set by the owner and can never exceed `MAX_FEE` (100 USDC,
+/// 100_000_000 raw units of a 6-decimal token), a constant in the bytecode. It is charged once, at registration;
 /// a later fee change touches no existing identity. Holding an identity here is a registration, not
 /// evidence of who or what controls the address.
 ///
@@ -117,7 +117,7 @@ interface IERC20Decimals {
 /// edits any identity, URI, metadata or agent wallet, changes the name, symbol or version,
 /// upgrades or replaces code, or moves any asset (the contract has no payable function, and it pulls
 /// each fee straight to the treasury; a fee token sent to the registry directly has no way out, because
-/// no function transfers a token from the registry). Through power 5 the owner can cause fee-free
+/// no function transfers the fee token from the registry). Through power 5 the owner can cause fee-free
 /// identities to be minted, up to the daily cap, as described there. The owner's address is public in
 /// `owner()`; changing the multisig's signers
 /// or threshold happens inside the multisig and is invisible here.
@@ -255,7 +255,8 @@ contract RWAllyAgentRegistry {
     address public owner;
     /// @notice Address nominated by `transferOwnership`, not yet in office.
     address public pendingOwner;
-    /// @notice True once `initialize` has run. `register` and `importAgent` revert until then.
+    /// @notice True once `initialize` has run. `register`, `importAgent` and `mintMirrored` revert until
+    /// then.
     bool public initialized;
     /// @notice ERC-20 (6 decimals) the registration fee is paid in.
     address public feeToken;
@@ -440,7 +441,8 @@ contract RWAllyAgentRegistry {
         delete pendingOwner;
     }
 
-    /// @notice Owner power 4: give up the owner powers permanently, freezing fee and treasury.
+    /// @notice Owner power 4: give up the owner powers permanently, freezing the fee, the treasury and the
+    /// attestor.
     function renounceOwnership() external onlyOwner {
         emit OwnershipTransferred(owner, address(0));
         owner = address(0);
@@ -531,7 +533,8 @@ contract RWAllyAgentRegistry {
         return (o.chainId, o.registry, o.agentId);
     }
 
-    /// @notice The local identity that an origin was imported as, if any.
+    /// @notice The local identity that an origin was imported or mirrored as, if any (`importAgent` and
+    /// `mintMirrored` share one dedupe key).
     function localIdOfOrigin(uint256 originChainId, address originRegistry, uint256 originAgentId)
         external
         view
