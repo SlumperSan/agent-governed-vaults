@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Vm} from "forge-std/Vm.sol";
 import {Create2ProxyFixture} from "./helpers/Create2ProxyFixture.sol";
 import {ProtocolCreate2} from "../script/lib/ProtocolCreate2.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
@@ -350,5 +351,189 @@ contract Create2ProtocolTest is Create2ProxyFixture {
         ProtocolCreate2.create(
             ProtocolCreate2.SALT_OPERATOR_REGISTRY, ProtocolCreate2.initcodeOperatorRegistry()
         );
+    }
+
+    // ───────────────────────── guards the suite above did not reach ─────────────────────────
+
+    /// @dev Every log the factory emitted since `vm.recordLogs()` was last called.
+    function _factoryLogs() internal returns (Vm.Log[] memory out) {
+        Vm.Log[] memory all = vm.getRecordedLogs();
+        uint256 n;
+        for (uint256 i; i < all.length; ++i) {
+            if (all[i].emitter == address(factory)) ++n;
+        }
+        out = new Vm.Log[](n);
+        n = 0;
+        for (uint256 i; i < all.length; ++i) {
+            if (all[i].emitter == address(factory)) out[n++] = all[i];
+        }
+    }
+
+    function _threeOracles() internal returns (address[] memory a) {
+        a = new address[](3);
+        for (uint256 i; i < 3; ++i) {
+            a[i] = address(new MockOracle());
+        }
+    }
+
+    /// @notice `scripts/lib/protocol-initialize-preflight.mjs` reads `Initialized(address[])` as the only
+    /// on-chain record of what `initialize` was given, and refuses a chain on it. Nothing else ties that
+    /// reader to the contract, so the topic, the layout and the order are pinned here: exactly one
+    /// log from the factory, one topic (the array is not indexed), the data decoding to the input in order.
+    function test_initializeEmitsTheAllowlistInOrder() public {
+        _deploySet();
+        address[] memory list = _threeOracles();
+        vm.recordLogs();
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(list);
+        Vm.Log[] memory logs = _factoryLogs();
+        assertEq(logs.length, 1, "exactly one log from the factory");
+        assertEq(logs[0].topics.length, 1, "the array is not indexed");
+        assertEq(logs[0].topics[0], keccak256("Initialized(address[])"), "topic0");
+        address[] memory seen = abi.decode(logs[0].data, (address[]));
+        assertEq(seen.length, list.length, "all entries");
+        for (uint256 i; i < list.length; ++i) {
+            assertEq(seen[i], list[i], "entry in input order");
+            assertTrue(factory.isAllowedOracle(list[i]), "and each is marked allowed");
+        }
+    }
+
+    /// @notice An empty list is a real choice (enforcement off); the event must still record it, because
+    /// "no event" and "initialized with nothing" would otherwise read the same to the preflight.
+    function test_initializeWithAnEmptyListStillEmits() public {
+        _deploySet();
+        vm.recordLogs();
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(new address[](0));
+        Vm.Log[] memory logs = _factoryLogs();
+        assertEq(logs.length, 1, "exactly one log from the factory");
+        assertEq(logs[0].topics.length, 1);
+        assertEq(logs[0].topics[0], keccak256("Initialized(address[])"), "topic0");
+        assertEq(abi.decode(logs[0].data, (address[])).length, 0, "empty array recorded");
+    }
+
+    /// @notice The codeless check runs on every entry, not only the first. A bad entry at position 0, 1
+    /// or 2 of a list reverts the whole call, leaves the factory uninitialised, and marks nothing.
+    function test_initializeRejectsACodelessOracleAtAnyPosition() public {
+        _deploySet();
+        for (uint256 bad; bad < 3; ++bad) {
+            address[] memory list = _threeOracles();
+            list[bad] = address(0xDEAD);
+            vm.prank(PROTOCOL_INITIALIZER);
+            vm.expectRevert(VaultFactory.OracleNotAllowed.selector);
+            factory.initialize(list);
+            assertFalse(factory.initialized(), "a rejected call leaves the factory uninitialised");
+            assertFalse(factory.oracleAllowlistEnforced(), "and the flag unset");
+            for (uint256 i; i < 3; ++i) {
+                assertFalse(factory.isAllowedOracle(list[i]), "and marks nothing");
+            }
+        }
+        // a zero entry behind a good one is refused too
+        address[] memory withZero = new address[](2);
+        withZero[0] = address(blessed);
+        vm.prank(PROTOCOL_INITIALIZER);
+        vm.expectRevert(VaultFactory.OracleNotAllowed.selector);
+        factory.initialize(withZero);
+        assertFalse(factory.initialized(), "still uninitialised");
+    }
+
+    /// @notice The three one-shot wires refuse a zero argument, and a refused call changes nothing: the
+    /// registry stays unwired and the correct call still goes through afterwards. A registry left with
+    /// a nonzero factory and a zero fee engine could never be wired again (`AlreadyWired` reads the
+    /// factory), and would have no caller able to record fees.
+    function test_operatorRegistryWireRefusesAZeroAddressAndStaysCallable() public {
+        _deploySet();
+        vm.startPrank(PROTOCOL_INITIALIZER);
+        vm.expectRevert(OperatorRegistry.ZeroAddress.selector);
+        registry.wire(address(factory), address(0));
+        vm.expectRevert(OperatorRegistry.ZeroAddress.selector);
+        registry.wire(address(0), address(fees));
+        vm.expectRevert(OperatorRegistry.ZeroAddress.selector);
+        registry.wire(address(0), address(0));
+        assertFalse(registry.initialized(), "registry still unwired");
+        assertEq(registry.factory(), address(0), "factory slot untouched");
+        assertEq(registry.feeEngine(), address(0), "fee engine slot untouched");
+
+        registry.wire(address(factory), address(fees)); // the wire is still available, and good arguments take
+        vm.stopPrank();
+        assertTrue(registry.initialized(), "wired");
+        assertEq(registry.feeEngine(), address(fees), "fee engine set by the good call");
+    }
+
+    function test_subVaultRegistryWireRefusesAZeroAddressAndStaysCallable() public {
+        _deploySet();
+        vm.startPrank(PROTOCOL_INITIALIZER);
+        vm.expectRevert(SubVaultRegistry.ZeroAddress.selector);
+        subReg.wire(address(0));
+        assertFalse(subReg.initialized(), "sub-vault registry still unwired");
+        subReg.wire(address(factory));
+        vm.stopPrank();
+        assertTrue(subReg.initialized(), "wired by the good call");
+    }
+
+    function test_governanceWireRefusesAZeroAddressAndStaysCallable() public {
+        _deploySet();
+        vm.startPrank(PROTOCOL_INITIALIZER);
+        vm.expectRevert(Governance.ZeroSubRegistry.selector);
+        gov.wireSubVaultRegistry(address(0));
+        assertFalse(gov.initialized(), "governance still unwired");
+        gov.wireSubVaultRegistry(address(subReg));
+        vm.stopPrank();
+        assertTrue(gov.initialized(), "wired by the good call");
+    }
+
+    /// @notice Bring-up order in `Deploy.s.sol`: `initialize` runs before the registry is wired, so an
+    /// initialised factory with an unwired registry is a real state. `createVault` must revert there
+    /// (the registry's `attestVault` is factory-only and the factory is unset), not register an
+    /// unattested vault.
+    function test_initialisedFactoryWithAnUnwiredRegistryCreatesNothing() public {
+        _deploySet();
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(_oneOracle(address(blessed)));
+        assertTrue(factory.initialized() && !registry.initialized(), "initialised, registry not wired");
+        vm.prank(creator);
+        vm.expectRevert(OperatorRegistry.OnlyFactory.selector);
+        factory.createVault(_params(address(blessed)));
+        assertEq(factory.vaultCount(), 0, "no vault registered");
+        assertEq(registry.operatorCount(), 0, "no operator attested");
+    }
+
+    // ───────────────────────── VaultDeployer failure paths ─────────────────────────
+
+    /// @notice A VaultCore constructor that fails with NO revert data (truncated constructor arguments
+    /// make the ABI decoder revert empty) surfaces as the named `DeployFailed`, not as an opaque empty
+    /// revert that every factory caller would have to guess at.
+    function test_deployWithAnEmptyConstructorRevertIsDeployFailed() public {
+        _deploySet();
+        vm.expectRevert(abi.encodeWithSelector(VaultDeployer.DeployFailed.selector));
+        vaultDeployer.deploy("");
+        vm.expectRevert(abi.encodeWithSelector(VaultDeployer.DeployFailed.selector));
+        vaultDeployer.deploy(hex"00");
+    }
+
+    /// @notice The deployer's constructor writes two code chunks with CREATE. If either lands on an
+    /// address that already has code, CREATE returns zero and the constructor must revert
+    /// `ChunkWriteFailed`; without that check the deployer would be built with a zero chunk address and
+    /// every later `deploy` would read the creation code from nowhere. The collision is staged by
+    /// etching code at the address CREATE will pick (the deployer's nonce is 1 for the first chunk, 2
+    /// for the second). A collision burns all the gas the inner CREATE was given, so each chunk gets its
+    /// own test rather than sharing one gas budget.
+    function _expectChunkCollision(uint64 chunkNonce) internal {
+        // control: with no collision the same constructor succeeds
+        VaultDeployer ok = new VaultDeployer();
+        assertTrue(ok.codeChunkA() != address(0) && ok.codeChunkB() != address(0), "both chunks written");
+
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        vm.etch(vm.computeCreateAddress(predicted, chunkNonce), hex"00");
+        vm.expectRevert(abi.encodeWithSelector(VaultDeployer.ChunkWriteFailed.selector));
+        new VaultDeployer();
+    }
+
+    function test_deployerConstructorRefusesAFirstChunkCollision() public {
+        _expectChunkCollision(1);
+    }
+
+    function test_deployerConstructorRefusesASecondChunkCollision() public {
+        _expectChunkCollision(2);
     }
 }
