@@ -142,6 +142,20 @@ test('a 65-byte signature from a smart account (recovers to a stranger) is accep
   assert.deepEqual(await recoverPayer(asSmart, cfg(client)), { ok: true, payer: SMART, smart: true });
 });
 
+test('a 65-byte signature that is not ECDSA-recoverable (r=0, s=0, v=0x1b) is checked on chain and accepted when validated', async () => {
+  const probe = '0x' + '00'.repeat(64) + '1b';
+  const { client, calls } = stubClient(() => TRUE);
+  assert.deepEqual(await recoverPayer(env(probe), cfg(client)), { ok: true, payer: SMART, smart: true });
+  assert.ok(calls.some((c) => c.method === 'eth_call'), 'must fall through to the chain');
+  assert.equal((await recoverPayer(env(probe), cfg(undefined))).reason, 'smart-account-needs-rpc');
+});
+
+test('a publicClient whose verifyTypedData throws is a refusal, never an acceptance', async () => {
+  const publicClient = { verifyTypedData: async () => { throw new Error('boom'); } };
+  const r = await recoverPayer(env(SMART_SIG), cfg(publicClient));
+  assert.deepEqual(r, { ok: false, reason: 'smart-account-verify-failed: boom' });
+});
+
 // ── settlement ──
 
 function settler({ valid = true, code = '0x6000' } = {}) {

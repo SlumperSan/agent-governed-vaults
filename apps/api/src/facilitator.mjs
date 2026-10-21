@@ -149,10 +149,19 @@ export async function recoverPayer(envelope, cfg) {
 
   let mismatch;
   if (SIG_RE.test(envelope.signature)) {
-    const recovered = await recoverTypedDataAddress({ ...typed, signature: envelope.signature });
-    const payer = recovered.toLowerCase();
-    if (payer === from) return { ok: true, payer };
-    mismatch = { ok: false, reason: 'signer-mismatch', payer };
+    // A 65-byte account-defined signature may not be a valid (r,s,v); recovery then throws and the
+    // on-chain check below decides, with no mismatch recorded.
+    let recovered;
+    try {
+      recovered = await recoverTypedDataAddress({ ...typed, signature: envelope.signature });
+    } catch {
+      recovered = undefined;
+    }
+    if (recovered) {
+      const payer = recovered.toLowerCase();
+      if (payer === from) return { ok: true, payer };
+      mismatch = { ok: false, reason: 'signer-mismatch', payer };
+    }
   }
 
   if (typeof cfg.publicClient?.verifyTypedData !== 'function') return mismatch ?? { ok: false, reason: 'smart-account-needs-rpc' };
