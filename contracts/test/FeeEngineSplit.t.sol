@@ -132,6 +132,22 @@ contract FeeEngineSplitTest is Test {
         assertEq(fresh.onRealize(member, 1_000e6, 0), 0, "nothing withheld that could not be credited");
     }
 
+    // ── no path can credit before the treasury is set ────────────────────────
+
+    function test_creditBeforeInitializeReverts() public {
+        FeeEngine fresh = new FeeEngine(IRegistryView(address(registry)));
+        registry.attest(address(vault), 1);
+        vm.startPrank(address(vault));
+        vm.expectRevert(FeeEngine.TreasuryNotSet.selector);
+        fresh.onFeeCollected(member, 1_000_000);
+        vm.expectRevert(FeeEngine.TreasuryNotSet.selector);
+        fresh.onFeeCollectedAsset(member, address(basketAsset), 3e8);
+        vm.stopPrank();
+        usdc.mint(address(vault), 5_000_000);
+        vm.expectRevert(FeeEngine.TreasuryNotSet.selector);
+        fresh.pullEscrowed(address(vault), address(usdc));
+    }
+
     // ── the split on every crediting path ────────────────────────────────────
 
     function test_split_cashPath() public {
@@ -186,6 +202,25 @@ contract FeeEngineSplitTest is Test {
             uint256(amount) * 1_000 / 10_000,
             "treasury floored"
         );
+    }
+
+    // ── the vault calls the engine through a bounded call: the split must fit its gas budget ──
+
+    /// @dev VaultCore calls `onFeeCollected` and `onFeeCollectedAsset` with `MODULE_CALL_GAS` = 300_000. A
+    /// credit that ran out of gas would be dropped (event-logged) with the tokens already sent to the
+    /// engine, so the split's worst case (cold creator and treasury slots, the creator read from the
+    /// vault, the registry stat write) has to leave a wide margin. Half the budget is the bar.
+    function test_creditFitsHalfTheVaultModuleGasBudget() public {
+        vm.startPrank(address(vault));
+        uint256 g0 = gasleft();
+        engine.onFeeCollected(member, 1_000_000);
+        uint256 cashGas = g0 - gasleft();
+        g0 = gasleft();
+        engine.onFeeCollectedAsset(member, address(basketAsset), 3e8);
+        uint256 assetGas = g0 - gasleft();
+        vm.stopPrank();
+        assertLt(cashGas, 150_000, "cash path fits half of MODULE_CALL_GAS");
+        assertLt(assetGas, 150_000, "in-kind path fits half of MODULE_CALL_GAS");
     }
 
     // ── claims pay each recipient its own credit ─────────────────────────────

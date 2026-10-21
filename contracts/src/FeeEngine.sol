@@ -78,6 +78,7 @@ contract FeeEngine is IFeeEngine {
     error OnlyInitializer();
     error AlreadyInitialized();
     error ZeroTreasury();
+    error TreasuryNotSet();
 
     /// @dev Non-reentrant across the whole engine, not per-vault — the double-credit in M-3
     /// is precisely a cross-VAULT nesting, so a per-vault guard would not see it.
@@ -104,10 +105,12 @@ contract FeeEngine is IFeeEngine {
     }
 
     /// @dev Credit `amount` of `token` collected from `vault`: the treasury gets the floored share,
-    /// the vault creator the remainder, so the two parts always sum to `amount` exactly. Does not
-    /// revert on the collect paths: the vault has already moved the tokens here, so a revert would
-    /// strand them.
+    /// the vault creator the remainder, so the two parts always sum to `amount` exactly. Reverts
+    /// only if the treasury is unset, which no honest vault can reach: {onRealize} returns no fee
+    /// until {initialize}, so no tokens are sent here before it. Crediting the zero address instead
+    /// would lock the treasury's slice for good.
     function _credit(address vault, address token, uint256 amount) internal {
+        require(treasury != address(0), TreasuryNotSet());
         uint256 toTreasury = amount * TREASURY_SHARE_BPS / BPS;
         uint256 toCreator = amount - toTreasury;
         address creator = IVaultUsdc(vault).creator();
@@ -131,8 +134,9 @@ contract FeeEngine is IFeeEngine {
 
         // No treasury, no fee: nothing is withheld that could not be credited.
         if (gainUsdc > 0 && treasury != address(0)) {
-            // Loss carryforward, not a NAV high-water mark: net the gain against the cross-vault loss carryforward (§7). The registry
-            // consumes the carry right after this call in the same vault settlement.
+            // Loss carryforward, not a NAV high-water mark: net the gain against the cross-vault
+            // loss carryforward (§7). The registry consumes the carry right after this call in the
+            // same vault settlement.
             uint256 carry = registry.carryOf(member, opId);
             uint256 netGain = gainUsdc > carry ? gainUsdc - carry : 0;
             feeUsdc = netGain * PERF_FEE_BPS / BPS;

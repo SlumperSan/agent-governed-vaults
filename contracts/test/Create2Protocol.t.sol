@@ -342,6 +342,10 @@ contract Create2ProtocolTest is Create2ProxyFixture {
         vm.prank(squatter);
         vm.expectRevert(OperatorRegistry.OnlyDeployer.selector);
         OperatorRegistry(s.operatorRegistry).wire(squatter, squatter);
+        // Fee model A1: nobody but PROTOCOL_INITIALIZER can set the FeeEngine treasury.
+        vm.prank(squatter);
+        vm.expectRevert(FeeEngine.OnlyInitializer.selector);
+        FeeEngine(s.feeEngine).initialize(squatter);
         vm.expectRevert(bytes("ProtocolCreate2: CREATE2 through the proxy failed"));
         this.redeploy{gas: 5_000_000}();
     }
