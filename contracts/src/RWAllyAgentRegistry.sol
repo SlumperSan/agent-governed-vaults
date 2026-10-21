@@ -28,10 +28,13 @@ interface IERC20Decimals {
 /// issues are its own, and an identity registered on another registry is recognised here only
 /// through `importAgent`, during the import window.
 ///
-/// @dev REGISTRATION IS OPEN AND PAID. `register` mints to `msg.sender` and checks nothing about the
-/// caller beyond the fee: it pulls a flat `fee` of the fee token from the caller straight to the
-/// treasury (`transferFrom(msg.sender, treasury, fee)`, return value checked), so a registration leaves
-/// nothing behind in the registry. The fee is set by the owner and can never exceed `MAX_FEE` (100 USDC,
+/// @dev REGISTRATION IS OPEN AND PAID. `register` mints to `msg.sender`. It checks that the registry
+/// is initialized, that the metadata overload carries no reserved `agentWallet` key, that the fee is
+/// paid, and, as ERC-721 safe minting requires, that a caller with code accepts the mint by returning
+/// the `onERC721Received` magic value (otherwise it reverts `ERC721InvalidReceiver`); it does not
+/// screen who the caller is in any other way. The fee is a flat `fee` of the fee token pulled from the
+/// caller straight to the treasury (`transferFrom(msg.sender, treasury, fee)`, return value checked),
+/// so no part of the fee stays in the registry. The fee is set by the owner and can never exceed `MAX_FEE` (100 USDC,
 /// 100_000_000 raw units of a 6-decimal token), a constant in the bytecode. It is charged once, at registration;
 /// a later fee change touches no existing identity. Holding an identity here is a registration, not
 /// evidence of who or what controls the address.
@@ -46,11 +49,13 @@ interface IERC20Decimals {
 /// `ownerOf(externalAgentId)` static call that must return `msg.sender` exactly (never an agent
 /// wallet or an approved operator). After the window closes the outside registry is never called.
 /// Each import records its origin (chain id, outside registry, outside id), readable with
-/// `originOf(localId)`, and one origin can mint at most once.
+/// `originOf(localId)`, and one origin can mint at most once. `importAgent` and `mintMirrored`
+/// also end in the same receiver check, so a holder with code must accept those mints too.
 ///
 /// MIRRORED IDENTITIES (cross-chain, by signed attestation). An identity registered or imported on
 /// one chain can be carried to another chain without a second fee. The attestor (an address the owner
-/// sets with `setAttestor`) signs an EIP-712 `MirrorAttestation` naming the destination chain (through
+/// sets with `setAttestor`, or the initializer sets as the first attestor through the seven-argument
+/// `initialize`) signs an EIP-712 `MirrorAttestation` naming the destination chain (through
 /// the live `block.chainid` in the domain) and this registry's address (through `verifyingContract`
 /// and through `originRegistry`), the origin chain id and id, the recipient, a hash of the agent URI
 /// and an expiry. The recipient submits it themselves with `mintMirrored`: `msg.sender` must equal
@@ -277,7 +282,7 @@ contract RWAllyAgentRegistry {
         uint256 agentId;
     }
 
-    /// @dev local id => where an imported identity came from; all zero for a registered one.
+    /// @dev local id => where an imported or mirrored identity came from; all zero for a registered one.
     mapping(uint256 => Origin) private _origins;
     /// @dev keccak256(abi.encode(originChainId, originRegistry, originAgentId)) => local id + 1.
     mapping(bytes32 => uint256) private _importedAs;
@@ -522,8 +527,8 @@ contract RWAllyAgentRegistry {
         _checkReceiver(address(0), msg.sender, agentId, "");
     }
 
-    /// @notice Where local identity `localId` was imported from: (chain id, outside registry, outside
-    /// id). All zero for an identity that was registered here.
+    /// @notice Where local identity `localId` came from, whether it was imported or mirrored: (chain id,
+    /// origin registry, origin id). All zero for an identity that was registered here.
     function originOf(uint256 localId)
         external
         view

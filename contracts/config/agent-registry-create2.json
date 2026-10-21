@@ -2,7 +2,7 @@
   "contract": "RWAllyAgentRegistry",
   "factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
   "factoryName": "Arachnid deterministic deployment proxy",
-  "saltPreimage": "RWAllyAgentRegistry/1",
+  "saltMethod": "Mined, not derived from a preimage: cast create2 --starts-with 1337 --deployer <factory> --init-code-hash <initcodeHash>, run against the initcodeHash recorded here. Any change to the initcode needs a new salt mined the same way.",
   "salt": "0x0c87d128ba3ccf68e03090d17756d8c539cd212108a93f89f6be62c2f332684d",
   "initcodeHash": "0x45af2d1c7278a19c3ea32f0b32a8b356b258e8061713e7d2a19049cfeac38c61",
   "address": "0x1337f59A8c67471843496A4b0c3Ff64E557d3D2C",
