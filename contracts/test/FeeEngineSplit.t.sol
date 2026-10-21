@@ -143,9 +143,12 @@ contract FeeEngineSplitTest is Test {
         vm.expectRevert(FeeEngine.TreasuryNotSet.selector);
         fresh.onFeeCollectedAsset(member, address(basketAsset), 3e8);
         vm.stopPrank();
-        usdc.mint(address(vault), 5_000_000);
+        // the escrow holder must deliver to `fresh`, so the pull has something to credit
+        SplitVault escrowVault = new SplitVault(usdc, address(fresh), creator);
+        registry.attest(address(escrowVault), 2);
+        usdc.mint(address(escrowVault), 5_000_000);
         vm.expectRevert(FeeEngine.TreasuryNotSet.selector);
-        fresh.pullEscrowed(address(vault), address(usdc));
+        fresh.pullEscrowed(address(escrowVault), address(usdc));
     }
 
     // ── the split on every crediting path ────────────────────────────────────
