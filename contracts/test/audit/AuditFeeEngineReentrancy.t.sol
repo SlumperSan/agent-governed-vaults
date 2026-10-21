@@ -166,7 +166,11 @@ contract AuditFeeEngineReentrancyTest is Test {
         address treasury = engine.treasury();
         assertEq(engine.claimableFees(opA, address(token)), 54e18, "A's creator credited 90% of its own 60");
         assertEq(engine.claimableFees(opB, address(token)), 36e18, "B's creator credited 90% of its own 40");
-        assertEq(engine.claimableFees(treasury, address(token)), 10e18, "treasury credited 10% of the 100 delivered");
+        assertEq(
+            engine.claimableFees(treasury, address(token)),
+            10e18,
+            "treasury credited 10% of the 100 delivered"
+        );
         assertEq(
             token.balanceOf(address(engine)),
             engine.claimableFees(opA, address(token)) + engine.claimableFees(opB, address(token))
