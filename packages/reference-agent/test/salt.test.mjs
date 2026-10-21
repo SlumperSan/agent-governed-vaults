@@ -5,6 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { getAddress } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
   assertDeterministicSigner,
@@ -118,6 +119,66 @@ test('a deterministic signer passes the check', async () => {
   const account = privateKeyToAccount(generatePrivateKey());
   const { deterministic } = await assertDeterministicSigner({ account, chainId: CHAIN_ID, vault: VAULT, pid: 42 });
   assert.equal(deterministic, true);
+});
+
+// v2: voter-bound. One salt key serving several agent accounts (smart accounts whose address is
+// not the signer's) must not hand them identical salts, or the first reveal unmasks the rest.
+const VOTER_A = getAddress('0x' + 'ab'.repeat(20)); // checksummed, so mixed case
+const VOTER_B = getAddress('0x' + 'cd'.repeat(20));
+
+test('v2 salt message appends the lowercased voter and refuses a missing one', () => {
+  const m = saltMessage({ chainId: CHAIN_ID, vault: VAULT, pid: 42, voter: VOTER_A, version: 'v2' });
+  assert.equal(m, `x402-vaults:reveal-salt:v2:84532:0x${'3'.repeat(40)}:42:${VOTER_A.toLowerCase()}`);
+  assert.throws(() => saltMessage({ chainId: CHAIN_ID, vault: VAULT, pid: 42, version: 'v2' }), /voter/);
+  assert.throws(() => saltMessage({ chainId: CHAIN_ID, vault: VAULT, pid: 42, voter: VOTER_A, version: 'v3' }), /unknown version/);
+  // v1 ignores the voter entirely: byte-identical for every commit already on chain.
+  assert.equal(
+    saltMessage({ chainId: CHAIN_ID, vault: VAULT, pid: 42, voter: VOTER_A }),
+    saltMessage({ chainId: CHAIN_ID, vault: VAULT, pid: 42 }),
+  );
+});
+
+test('v2: one salt key, two voters, two different salts (v1 gave them the same one)', async () => {
+  const key = privateKeyToAccount(generatePrivateKey());
+  const as = (address, saltVersion) => ({ address, saltVersion, signMessage: key.signMessage });
+  const p = { chainId: CHAIN_ID, vault: VAULT, pid: 42 };
+  assert.equal(await deriveSalt({ account: as(VOTER_A, 'v1'), ...p }), await deriveSalt({ account: as(VOTER_B, 'v1'), ...p }));
+  assert.notEqual(await deriveSalt({ account: as(VOTER_A, 'v2'), ...p }), await deriveSalt({ account: as(VOTER_B, 'v2'), ...p }));
+  // Still a pure function of (salt key, voter, vote): a restarted process derives the same v2 salt.
+  assert.equal(await deriveSalt({ account: as(VOTER_A, 'v2'), ...p }), await deriveSalt({ account: as(VOTER_A, 'v2'), ...p }));
+});
+
+test('v2 REVEAL AFTER RESTART: a smart-account voter with a separate salt key recovers its vote', async () => {
+  const saltKey = generatePrivateKey();
+  const before = { address: VOTER_A, saltVersion: 'v2', signMessage: privateKeyToAccount(saltKey).signMessage };
+  const vote = await buildVote({ account: before, chainId: CHAIN_ID, vault: VAULT, pid: 42, support: false });
+  const after = { address: VOTER_A, saltVersion: 'v2', signMessage: privateKeyToAccount(saltKey).signMessage };
+  const recovered = await recoverVote({ account: after, chainId: CHAIN_ID, vault: VAULT, pid: 42, onChainCommitment: vote.commitment });
+  assert.deepEqual(recovered, { support: false, salt: vote.salt, version: 'v2' });
+});
+
+test('a v1 commit still reveals after the account switches to v2', async () => {
+  const key = privateKeyToAccount(generatePrivateKey());
+  const v1 = await buildVote({ account: key, chainId: CHAIN_ID, vault: VAULT, pid: 7, support: true });
+  const switched = { address: key.address, saltVersion: 'v2', signMessage: key.signMessage };
+  const recovered = await recoverVote({ account: switched, chainId: CHAIN_ID, vault: VAULT, pid: 7, onChainCommitment: v1.commitment });
+  assert.deepEqual(recovered, { support: true, salt: v1.salt, version: 'v1' });
+});
+
+test('a v2 commit still reveals after saltVersion is dropped', async () => {
+  const key = privateKeyToAccount(generatePrivateKey());
+  const v2Account = { address: key.address, saltVersion: 'v2', signMessage: key.signMessage };
+  const v2 = await buildVote({ account: v2Account, chainId: CHAIN_ID, vault: VAULT, pid: 9, support: false });
+  const restarted = { address: key.address, signMessage: key.signMessage };
+  const recovered = await recoverVote({ account: restarted, chainId: CHAIN_ID, vault: VAULT, pid: 9, onChainCommitment: v2.commitment });
+  assert.deepEqual(recovered, { support: false, salt: v2.salt, version: 'v2' });
+});
+
+test('an unknown saltVersion is refused, not guessed', async () => {
+  const key = privateKeyToAccount(generatePrivateKey());
+  const account = { address: key.address, saltVersion: 'V2', signMessage: key.signMessage };
+  await assert.rejects(() => deriveSalt({ account, chainId: CHAIN_ID, vault: VAULT, pid: 1 }), /unknown saltVersion/);
+  await assert.rejects(() => recoverVote({ account, chainId: CHAIN_ID, vault: VAULT, pid: 1, onChainCommitment: '0x' + '00'.repeat(32) }), /unknown saltVersion/);
 });
 
 test('commitmentFor rejects malformed input rather than producing a wrong hash', async () => {
