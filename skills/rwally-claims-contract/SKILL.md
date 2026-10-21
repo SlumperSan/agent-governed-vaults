@@ -26,9 +26,11 @@ read with `read_page`.
 
 1. Read `scripts/test/claims-lede-truth.test.mjs`: it documents each banned shape, why it is
    false, and the approved replacement wording.
-2. Read `apps/site/test/site.test.mjs`: it pins that the prerender ran, that every sentence of
-   `copy.ts` reaches a built page, the deployment status the deployment record gives, and the
-   product phrase unbroken in the rendered HTML.
+2. Read `apps/site/test/site.test.mjs`: it pins that the prerender ran, that every single-quoted
+   string literal of `copy.ts` of 25 or more characters (a URL excluded) appears in some built page,
+   the deployment status the deployment record gives, and the product phrase unbroken in the
+   rendered HTML. It does not check where a string lands, that a sentence is true, or any `.tsx`
+   text; shorter literals and double-quoted or template literals are not read at all.
 3. If a sentence is about what a contract does, open the contract and read the function. Cite
    `file:line` in a comment beside the copy. "The docs say so" is not a source.
 4. If a sentence is about a DEPLOYMENT (a date, an address, a parameter a vault was created with),
@@ -105,22 +107,23 @@ the comments, and the owner is who decides a claim.
   `claimableFees[operatorAddressOf(opId)]`), so any universal is falsifiable in one transaction.
   Write the enumeration: *operatorship confers no authority to
   vote, execute, pause, reprice, or move member funds.*
-- **A universal about `allowSubVaults`.** It is a constructor immutable. `Deploy.s.sol` passes
-  `false`; `DeployTestnet.s.sol` passes `true`; the live Base Sepolia factory reads `true`; what the
-  live Robinhood Chain factory reads is in `verifiedWiring["factory.allowSubVaults()"]` of its
-  address book. **"On the mainnet launch factory" is no longer an adequate scope**: it was the
-  approved wording while no mainnet factory existed, and now that one does it reads as a claim about
-  that factory rather than about the script. Write `Deploy.s.sol` by name, or "every vault *it* deploys", or "on that
-  factory"; best of all, write the instruction: read `VaultFactory.allowSubVaults()` on the factory
-  you integrate against.
-- **"Stake-weighted"** is true only at five or more members. Qualify it or do not use it. Both
-  vaults on Robinhood Chain read `holderCount()` 1 at block 61,646,791, so they sit squarely in the
-  sub-five regime the word misdescribes. This bullet used to assert the first vault did not exist
-  yet; it was created on 2026-09-10 and a second on 2026-09-12, and the false sentence survived four
-  review rounds. The reason is worth keeping, because it is the failure mode this whole file exists
-  to prevent: the guard over that claim tests for one exact sentence, and this bullet was a
-  paraphrase of it, so the sweep that enumerated files from the guard could not see it. Write a
-  claim so that a reader can check it, not so that a string match passes.
+- **A universal about `allowSubVaults`.** It is a constructor immutable. `DeployTestnet.s.sol`
+  constructs a `VaultFactory` with `true`; `Deploy.s.sol` takes its factory from
+  `ProtocolCreate2.createAll()`, which embeds `ALLOW_SUB_VAULTS = false` in the factory initcode
+  (`contracts/script/lib/ProtocolCreate2.sol`); the Base Sepolia
+  factory reads `true` and the Arc mainnet factory reads `false`
+  (`verifiedWiring["factory.allowSubVaults()"]` in `contracts/config/deployments/base-sepolia.json`
+  and `arc-mainnet.json`). Scope a sentence to one named factory or script, never to "the
+  mainnet factory" or "every factory"; best of all, write the instruction: read
+  `VaultFactory.allowSubVaults()` on the factory you integrate against.
+- **"Stake-weighted"** is true only at five or more members. Qualify it or do not use it. A vault
+  below five members sits in the regime the word misdescribes; read `holderCount()` on the vault you
+  mean rather than assume it. This bullet once asserted a first vault did not exist yet when it
+  already did, and the false sentence survived four review rounds. The reason is worth keeping,
+  because it is the failure mode this whole file exists to prevent: the guard over that claim tests
+  for one exact sentence, and this bullet was a paraphrase of it, so the sweep that enumerated files
+  from the guard could not see it. Write a claim so that a reader can check it, not so that a string
+  match passes.
 - **A bare answer to "is it deployed?"** Name the chain, and say what is deployed.
   **The protocol is deployed on Arc mainnet (5042) since 2026-09-24** (`contracts/config/deployments/arc-mainnet.json`)
   and is not a target on any other mainnet: the contracts left on Robinhood Chain (4663) are
@@ -155,8 +158,10 @@ the comments, and the owner is who decides a claim.
   exempt in substance for a different reason: Chainlink publishes no L2 Sequencer Uptime Feed for
   Arc at all, because Arc is an L1.** So on Arc the gate never runs at price time and only the
   heartbeat and the sane-price band carry that risk,
-  and `config-doc-truth`'s deploy-time exemption will wave it straight through: the leg that
-  catches it is in `scripts/test/claims-robinhood-deployment.test.mjs`.
+  and `config-doc-truth`'s deploy-time exemption will wave it straight through. That exemption
+  named `scripts/test/claims-robinhood-deployment.test.mjs` as the guard that closes it; the file
+  is not in the tree, so no test does, and a sentence crediting deploy-time enforcement needs a
+  human read for the exempt chains.
 - **Uniqueness → existence.** "The one thing that stays reclaimable during a freeze" is a
   contract property (`cancelPending` reads no oracle). Do not weaken it to "one thing".
 

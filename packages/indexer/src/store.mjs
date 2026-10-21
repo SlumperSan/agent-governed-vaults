@@ -129,9 +129,9 @@ export function deserializeState(obj) {
   // guard above rejects any snapshot whose version is not exactly VERSION (`!==`, not `<`), so
   // bumping it would make every existing snapshot UNLOADABLE — `loadSnapshot` catches only ENOENT
   // and rethrows this, so `buildIndexer` dies at startup; `verifySnapshot` stamps `version: VERSION`
-  // and would report every existing file UNUSABLE, which the docs/RUNTIME.md §8 troubleshooting
-  // table routes to "restore from .1 per §8.3" — a backup written by the same older build, so it
-  // would fail identically. That is an outage, not a migration. These
+  // and would report every existing file UNUSABLE; docs/RUNTIME.md §8.3 says a schema refusal
+  // like that hits every rung the same way, so restoring one fails identically and the only way out
+  // is a rebuild from the factory deploy block. That is an outage, not a migration. These
   // defaults ARE the migration; the added fields are all additive and zero-valued.
   for (const [k, stat] of obj.eventStats ?? []) s.eventStats.set(k, stat);
   for (const a of obj.adapters ?? []) s.adapters.add(a);
