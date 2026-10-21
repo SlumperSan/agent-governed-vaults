@@ -299,7 +299,7 @@ test("the operator's lack of power is enumerated, never claimed as a universal, 
     hits.map((h) => h.file),
     [],
     'A universal negative about operator power is falsifiable in one transaction — the operator\n' +
-      'IS the sole recipient of the 10% performance fee (see claims-lede-truth.test.mjs guard 6).\n' +
+      'receives 90% of the 10% performance fee, the treasury 10% (see claims-lede-truth.test.mjs guard 6).\n' +
       'ENUMERATE instead: "confers no authority to vote, execute, pause, reprice, or move member\n' +
       `funds".\nOffending text:\n${report(hits)}`,
   );

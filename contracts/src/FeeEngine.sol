@@ -63,7 +63,11 @@ contract FeeEngine is IFeeEngine {
     event FeeAssessed(address indexed vault, address indexed member, uint256 netGain, uint256 fee);
     event FeeCredited(uint256 indexed opId, address indexed token, uint256 amount);
     event FeeSplit(
-        address indexed vault, address indexed token, address creator, uint256 creatorAmount, uint256 treasuryAmount
+        address indexed vault,
+        address indexed token,
+        address creator,
+        uint256 creatorAmount,
+        uint256 treasuryAmount
     );
     event Initialized(address indexed treasury);
     event FeesClaimed(address indexed recipient, address indexed token, uint256 amount);

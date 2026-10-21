@@ -139,7 +139,9 @@ contract FeeEngineSplitTest is Test {
         engine.onFeeCollected(member, 1_000_000);
         assertEq(engine.claimableFees(creator, address(usdc)), 900_000, "creator 90%");
         assertEq(engine.claimableFees(treasury, address(usdc)), 100_000, "treasury 10%");
-        assertEq(engine.claimableFees(address(0xBAD), address(usdc)), 0, "registry operator address not credited");
+        assertEq(
+            engine.claimableFees(address(0xBAD), address(usdc)), 0, "registry operator address not credited"
+        );
         assertEq(registry.recorded(), 1_000_000, "registry stat records the full fee collected");
     }
 
@@ -179,7 +181,11 @@ contract FeeEngineSplitTest is Test {
         vm.prank(address(vault));
         engine.onFeeCollected(member, amount);
         assertEq(_total(address(usdc)), amount, "no dust lost or created");
-        assertEq(engine.claimableFees(treasury, address(usdc)), uint256(amount) * 1_000 / 10_000, "treasury floored");
+        assertEq(
+            engine.claimableFees(treasury, address(usdc)),
+            uint256(amount) * 1_000 / 10_000,
+            "treasury floored"
+        );
     }
 
     // ── claims pay each recipient its own credit ─────────────────────────────
