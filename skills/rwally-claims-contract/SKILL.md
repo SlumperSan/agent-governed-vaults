@@ -108,8 +108,9 @@ the comments, and the owner is who decides a claim.
   Write the enumeration: *operatorship confers no authority to
   vote, execute, pause, reprice, or move member funds.*
 - **A universal about `allowSubVaults`.** It is a constructor immutable. `DeployTestnet.s.sol`
-  passes `true` and is the only script in `contracts/script` that constructs a `VaultFactory`
-  (`Deploy.s.sol` attaches to a factory address from its config and sets nothing); the Base Sepolia
+  constructs a `VaultFactory` with `true`; `Deploy.s.sol` takes its factory from
+  `ProtocolCreate2.createAll()`, which embeds `ALLOW_SUB_VAULTS = false` in the factory initcode
+  (`contracts/script/lib/ProtocolCreate2.sol`); the Base Sepolia
   factory reads `true` and the Arc mainnet factory reads `false`
   (`verifiedWiring["factory.allowSubVaults()"]` in `contracts/config/deployments/base-sepolia.json`
   and `arc-mainnet.json`). Scope a sentence to one named factory or script, never to "the
