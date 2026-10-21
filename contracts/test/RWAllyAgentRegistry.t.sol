@@ -668,8 +668,10 @@ contract RWAllyAgentRegistryTest is Test {
         assertEq(f.calls(), 0, "factory untouched");
     }
 
-    /// The factory call is made by the registry, so it must not reach the fee token (the registry is
-    /// the spender of every registrant's allowance) or the registry itself.
+    /// The factory call is made by the registry, so it may not be the fee token or the registry itself.
+    /// This test does NOT tell the guard apart from its absence: `undeployed` has no code, so the code
+    /// check after the call would revert either way. The guard is exercised by
+    /// `RWAllyAgentRegistryHookFeeTokenTest`, whose fee token deploys the wallet from its transfer hook.
     function test_setAgentWallet_erc6492_factoryMayNotBeTheFeeTokenOrTheRegistry() public {
         uint256 id = _alice();
         usdc.mint(bob, 100e6);
@@ -1279,7 +1281,7 @@ contract RWAllyAgentRegistryFeeTest is RegistryTestBase {
         vm.stopPrank();
         assertEq(usdc.balanceOf(treasury), 3 * USDC_1);
         assertEq(usdc.balanceOf(alice), 97 * USDC_1);
-        assertEq(usdc.balanceOf(address(reg)), 0, "the registry never holds funds");
+        assertEq(usdc.balanceOf(address(reg)), 0, "no fee stays in the registry after paid registrations");
         assertEq(reg.balanceOf(alice), 3);
     }
 
@@ -2064,5 +2066,119 @@ contract RWAllyAgentRegistryCreate2Test is RegistryTestBase {
     function test_initializer_isTheProtocolDeployer() public view {
         string memory deployment = vm.readFile("config/deployments/arc-mainnet.json");
         assertEq(vm.parseJsonAddress(cfg, ".initializer"), vm.parseJsonAddress(deployment, ".deployer"));
+    }
+}
+
+/// A 6-decimal fee token with a transfer hook (the ERC-777 and ERC-1363 shape): after moving a balance
+/// it calls out. `initialize` accepts it, since it checks only that the address has code and that
+/// `decimals()` is 6. USDC has no hooks; this token exists to show what the factory-target guard is for.
+contract HookFeeToken {
+    uint8 public constant decimals = 6;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    Factory6492 public hookFactory;
+    bytes32 public hookSalt;
+    bytes32 public hookDigest;
+    bytes public hookSig;
+
+    function mint(address a, uint256 n) external {
+        balanceOf[a] += n;
+    }
+
+    function approve(address s, uint256 n) external returns (bool) {
+        allowance[msg.sender][s] = n;
+        return true;
+    }
+
+    function arm(Factory6492 f, bytes32 salt, bytes32 d, bytes calldata sig) external {
+        hookFactory = f;
+        hookSalt = salt;
+        hookDigest = d;
+        hookSig = sig;
+    }
+
+    function transferFrom(address from, address to, uint256 n) external returns (bool) {
+        allowance[from][msg.sender] -= n;
+        balanceOf[from] -= n;
+        balanceOf[to] += n;
+        // The hook: after the balance moves, deploy the wallet the holder is designating.
+        if (address(hookFactory) != address(0)) hookFactory.deploy(hookSalt, hookDigest, hookSig);
+        return true;
+    }
+}
+
+/// The ERC-6492 factory-target guard (`factory != address(this) && factory != feeToken`) against a fee
+/// token whose transfer hook deploys the wallet being designated.
+contract RWAllyAgentRegistryHookFeeTokenTest is Test {
+    RWAllyAgentRegistry reg;
+    HookFeeToken tok;
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+
+    function setUp() public {
+        vm.warp(1_800_000_000);
+        reg = new RWAllyAgentRegistry();
+        tok = new HookFeeToken();
+        vm.prank(reg.INITIALIZER());
+        reg.initialize(makeAddr("multisig"), address(tok), makeAddr("treasury"), 0, address(0), 0);
+    }
+
+    function _suffix6492() private pure returns (bytes32) {
+        return bytes32(
+            abi.encodePacked(
+                bytes8(0x6492649264926492),
+                bytes8(0x6492649264926492),
+                bytes8(0x6492649264926492),
+                bytes8(0x6492649264926492)
+            )
+        );
+    }
+
+    /// Without the guard, a holder could name the fee token as the factory with calldata
+    /// `transferFrom(victim, holder, amount)`: the registry, the spender of every registrant's
+    /// allowance, would make that call, and the token's hook would deploy `newWallet`, so the code
+    /// check afterwards would pass and the call would succeed having spent the allowance. With the
+    /// guard the call reverts before the token is touched.
+    function test_setAgentWallet_erc6492_hookFeeTokenAsFactory_cannotSpendARegistrantsAllowance() public {
+        vm.prank(alice);
+        uint256 id = reg.register("ipfs://a");
+        tok.mint(bob, 100e6);
+        vm.prank(bob);
+        tok.approve(address(reg), type(uint256).max);
+
+        Factory6492 f = new Factory6492();
+        bytes32 salt = keccak256("hook");
+        address target = f.predict(salt);
+        uint256 dl = block.timestamp + 10 minutes;
+        bytes32 d = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                reg.domainSeparator(),
+                keccak256(
+                    abi.encode(
+                        keccak256(
+                            "AgentWalletSet(uint256 agentId,address newWallet,address owner,uint256 deadline)"
+                        ),
+                        id,
+                        target,
+                        alice,
+                        dl
+                    )
+                )
+            )
+        );
+        bytes memory inner = hex"aabbcc";
+        tok.arm(f, salt, d, inner);
+        bytes memory steal =
+            abi.encodeWithSignature("transferFrom(address,address,uint256)", bob, alice, 100e6);
+        bytes memory sig = abi.encodePacked(abi.encode(address(tok), steal, inner), _suffix6492());
+
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+        reg.setAgentWallet(id, target, dl, sig);
+        assertEq(tok.balanceOf(bob), 100e6, "bob's allowance to the registry was not spent");
+        assertEq(tok.balanceOf(alice), 0, "the holder received nothing");
+        assertEq(target.code.length, 0, "the hook never ran");
+        assertEq(reg.getAgentWallet(id), alice);
     }
 }

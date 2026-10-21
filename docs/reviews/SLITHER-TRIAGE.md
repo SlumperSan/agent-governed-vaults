@@ -261,7 +261,7 @@ flagged so it is not lost.
 
 ## AgentVaultCore and RWAllyAgentRegistry (2026-10-18)
 
-Six baseline rows changed. None is a finding in `AgentVaultCore`'s own code: its gate is one bounded static call, and Slither raises nothing on it.
+Nine baseline rows changed (eight added, one count raised). None is a finding in `AgentVaultCore`'s own code: its gate is one bounded static call, and Slither raises nothing on it.
 
 | Detector | Disposition |
 | --- | --- |

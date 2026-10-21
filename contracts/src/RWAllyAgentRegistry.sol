@@ -81,8 +81,9 @@ interface IERC20Decimals {
 ///      at their current values for good.
 /// There is no function by which the owner removes, registers, transfers, approves, re-points or
 /// edits any identity, URI, metadata or agent wallet, changes the name, symbol or version,
-/// upgrades or replaces code, or receives or moves any asset (the contract holds none and has no
-/// payable function). The owner's address is public in `owner()`; changing the multisig's signers
+/// upgrades or replaces code, or moves any asset (the contract has no payable function, and it pulls
+/// each fee straight to the treasury; a fee token sent to the registry directly has no way out, because
+/// no function transfers a token from the registry). The owner's address is public in `owner()`; changing the multisig's signers
 /// or threshold happens inside the multisig and is invisible here.
 ///
 /// THE OWNER CANNOT PAUSE REGISTRATION DIRECTLY, BUT CAN HALT PAID REGISTRATION INDIRECTLY. There is
@@ -239,8 +240,11 @@ contract RWAllyAgentRegistry {
     /// reference registry: a smart account (ERC-4337) signs its consent when the user operation is built,
     /// and that operation may then wait in a bundler mempool for a low fee to clear, so five minutes
     /// expires it before it lands. The consent only designates a wallet for one agent id and one holder
-    /// (all three are in the signed digest) and is replayable only by that holder, so a longer window adds
-    /// no authority; an hour bounds how long a stale consent stays usable and still clears a congested mempool.
+    /// (all three are in the signed digest) and is replayable only by that holder, but it has no nonce and
+    /// no revocation, so it can be replayed by that holder until its deadline, and the hour lengthens that
+    /// window twelve times against five minutes. The authority it confers is unchanged (the same wallet
+    /// for the same id by the same holder); an hour bounds how long a stale consent stays usable and
+    /// still clears a congested mempool.
     uint256 private constant MAX_DEADLINE_DELAY = 1 hours;
     /// @dev secp256k1 group order / 2: signatures with a larger `s` are malleable twins and are refused.
     uint256 private constant HALF_N = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
@@ -487,11 +491,15 @@ contract RWAllyAgentRegistry {
     /// ERC-6492: when `newWallet` has no code, the wrapped factory call is made so the account exists,
     /// then the inner signature is checked by ERC-1271 as usual; when it already has code the factory is
     /// not called and only the inner signature is checked. The factory call is made by this contract
-    /// with caller-chosen calldata, so the factory may not be this contract or the fee token (this
-    /// contract is the spender of registrants' fee-token allowances and a call to the token could spend
-    /// one); it holds no other funds, allowances or powers. This is defence in depth: neither target can
-    /// create code at `newWallet`, so the code check after the call would revert the whole call anyway. The call result is ignored: success is
-    /// decided only by `newWallet` having code and accepting the inner signature afterwards.
+    /// with caller-chosen calldata, so the factory may not be this contract or the fee token. This
+    /// contract is the spender of registrants' fee-token allowances, so a call to the fee token could
+    /// spend one: a fee token with a transfer hook (`initialize` checks only that the token has code
+    /// and `decimals() == 6`) could deploy `newWallet` from inside `transferFrom(victim, holder, amount)`,
+    /// the code check after the call would then pass, and the holder would have spent a registrant's
+    /// allowance. The `feeToken` half of the guard is what stops that, and a test builds exactly that
+    /// token. USDC has no hooks. The `address(this)` half is belt and braces: no reachable effect is
+    /// known. The call result is ignored: success is decided only by `newWallet` having code and
+    /// accepting the inner signature afterwards.
     /// KNOWN LIMITATION: the ERC-1271 call to a contract `newWallet` has no gas allowance and no
     /// returndata bound. The caller (the holder) chooses
     /// `newWallet`, so a wallet that burns gas or returns a large payload costs only that caller;

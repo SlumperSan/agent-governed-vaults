@@ -19,11 +19,11 @@ import {IOracleAggregator} from "./interfaces/IOracleAggregator.sol";
 /// the registration, two transactions for an externally owned account.
 ///
 /// WHAT IT NEVER TOUCHES: `activate`, `skipWindow`, `cancelPending`, `requestExit`,
-/// `settleQueuedExit`, `claimEscrowed`, execution, governance hooks and every view. An identity cannot
-/// be transferred (it is soulbound), but a holder who later loses the wallet that holds it keeps their
-/// shares, their vote and their exit; only a new deposit (including a top-up) is refused. A registry
-/// that reverts, returns short data, returns zero or burns its gas allowance blocks deposits and
-/// nothing else.
+/// `settleQueuedExit`, `claimEscrowed`, execution, governance hooks and every view. An identity in
+/// `RWAllyAgentRegistry` cannot be transferred (it is soulbound), but a holder who later loses the
+/// wallet that holds it keeps their shares, their vote and their exit; only a new deposit (including a
+/// top-up) is refused. A registry that reverts, returns short data, returns zero or burns its gas
+/// allowance blocks deposits and nothing else.
 ///
 /// The vault has no setters, so the registry it trusts is the one it was deployed with.
 contract AgentVaultCore is VaultCore {

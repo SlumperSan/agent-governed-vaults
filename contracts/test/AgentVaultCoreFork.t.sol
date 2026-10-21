@@ -642,7 +642,7 @@ contract AgentVaultCoreForkTest is Test {
         // _register tops up one fee, then the registry pulls one fee: the balance is back where it was.
         assertEq(IErc20Like(usdc).balanceOf(agentA), 5 * REG_FEE);
         assertEq(IErc20Like(usdc).balanceOf(regTreasury), REG_FEE);
-        assertEq(IErc20Like(usdc).balanceOf(address(idReg)), 0, "the registry holds no USDC");
+        assertEq(IErc20Like(usdc).balanceOf(address(idReg)), 0, "no fee stays in the registry");
     }
 
     function testFork_import_aRealCanonicalHolderImportsFree_othersAndLaterAreRefused() public onFork {
