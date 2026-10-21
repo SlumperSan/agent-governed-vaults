@@ -27,7 +27,8 @@
  * exposes every sibling's direction (support is one bit). `signMessage` must be a dedicated salt
  * key, never a rotating session key: rotating it would make every outstanding commit unrevealable.
  * v1 stays byte-identical (the UI mirrors it in apps/web/src/vote-custody.mjs), and
- * `recoverVote` on a v2 account still tries v1, so a commit made before the switch still reveals.
+ * `recoverVote` tries both versions whatever the account says, so a commit still reveals after a
+ * switch or after `saltVersion` is dropped.
  *
  * **Reproducibility caveat (honest limitation).** This holds because viem's local accounts sign
  * with RFC-6979 deterministic ECDSA — same key, same message, same signature, always. It is NOT
@@ -183,8 +184,9 @@ export async function buildVote({ account, chainId, vault, pid, support }) {
  * on-chain commitment for one of the two possible support values. This is the operation that makes
  * a restarted agent able to reveal: it holds no state, it re-derives.
  *
- * A v2 account tries v2 first, then v1: a commit made before the account switched schemes must
- * still reveal, and the commitment hash itself says which scheme produced it.
+ * Recovery always tries both schemes, the configured one first: a commit made before the account
+ * switched schemes, or before `saltVersion` was dropped on a restart, must still reveal, and the
+ * commitment hash itself says which scheme produced it.
  *
  * @param {Object} p
  * @param {{address:string, saltVersion?:string, signMessage:(a:{message:string})=>Promise<string>}} p.account
@@ -195,8 +197,10 @@ export async function buildVote({ account, chainId, vault, pid, support }) {
  * @returns {Promise<{support:boolean, salt:string, version:'v1'|'v2'}|null>} null when the commitment is not ours
  */
 export async function recoverVote({ account, chainId, vault, pid, onChainCommitment }) {
-  const versions = saltVersionOf(account) === 'v2' ? ['v2', 'v1'] : ['v1'];
+  const versions = saltVersionOf(account) === 'v2' ? ['v2', 'v1'] : ['v1', 'v2'];
   for (const version of versions) {
+    // v2 needs a voter address; skip it rather than throw so v1 recovery still runs.
+    if (version === 'v2' && !ADDRESS.test(String(account.address))) continue;
     const salt = await deriveSalt({ account, chainId, vault, pid, version });
     for (const support of [true, false]) {
       const c = await commitmentFor({ pid, voter: account.address, support, salt });

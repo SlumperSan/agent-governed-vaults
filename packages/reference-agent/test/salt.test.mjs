@@ -165,6 +165,15 @@ test('a v1 commit still reveals after the account switches to v2', async () => {
   assert.deepEqual(recovered, { support: true, salt: v1.salt, version: 'v1' });
 });
 
+test('a v2 commit still reveals after saltVersion is dropped', async () => {
+  const key = privateKeyToAccount(generatePrivateKey());
+  const v2Account = { address: key.address, saltVersion: 'v2', signMessage: key.signMessage };
+  const v2 = await buildVote({ account: v2Account, chainId: CHAIN_ID, vault: VAULT, pid: 9, support: false });
+  const restarted = { address: key.address, signMessage: key.signMessage };
+  const recovered = await recoverVote({ account: restarted, chainId: CHAIN_ID, vault: VAULT, pid: 9, onChainCommitment: v2.commitment });
+  assert.deepEqual(recovered, { support: false, salt: v2.salt, version: 'v2' });
+});
+
 test('an unknown saltVersion is refused, not guessed', async () => {
   const key = privateKeyToAccount(generatePrivateKey());
   const account = { address: key.address, saltVersion: 'V2', signMessage: key.signMessage };
