@@ -28,9 +28,9 @@
     "FeeEngine": {
       "salt": "0xd8f1679f02d6606921c26b6b023169bd156839cb2c0f6bf534797a144277614c",
       "saltPreimage": "rwally.protocol.v2.FeeEngine",
-      "initcodeBytes": 3039,
-      "initcodeHash": "0xa6d5d30d324209084426271f792e31d52aad7da1281b71c46a56ab5f38e03cb0",
-      "address": "0x71b75692565B47B2fA803a38d0933b99FA6E6999"
+      "initcodeBytes": 3305,
+      "initcodeHash": "0x61368d02b2631dd90b0faac887d53d89cfa14b60d3ee6eeccad2da2caa25d514",
+      "address": "0x91082BA73Fea29b0C0971C5e139FAcb809bB8E12"
     },
     "Governance": {
       "salt": "0x63443617e577b0fe15d184bf775497e0df7226d6de04e69a3a0e8616861cd98e",
@@ -50,8 +50,8 @@
       "salt": "0xe1f58806a42a380b2f3c321f838c429518693322bf2171d5c223b66eb7f97058",
       "saltPreimage": "rwally.protocol.v2.VaultFactory",
       "initcodeBytes": 4473,
-      "initcodeHash": "0x56a0cb7290cc91b322545e55ec8646c4762b0a1b616648fda4e4c529848ce3e5",
-      "address": "0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d"
+      "initcodeHash": "0xcce83d7ba4d685c004fee026f74b3660a7d8265851f10b4a4e26a520c2083dbc",
+      "address": "0xC4a62CdaDDab141b4a69c00F447b00490c7aF81c"
     }
   }
 }
