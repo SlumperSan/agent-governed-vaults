@@ -39,7 +39,7 @@ import { createServer } from 'node:http';
 import { gate, HEADERS } from './x402.mjs';
 import { createMetrics } from './metrics.mjs';
 import { clientIp } from './ratelimit.mjs';
-import { leaderboard, vaultView, memberPosition, listVaults } from '../../../packages/indexer/src/projections.mjs';
+import { leaderboard, vaultView, memberPosition, listVaults, VAULT_KINDS } from '../../../packages/indexer/src/projections.mjs';
 
 /** Routes served without payment — and therefore the routes the rate limiter guards. */
 export const FREE_ROUTES = ['/health', '/.well-known/x402', '/metrics'];
@@ -154,6 +154,17 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
         llms: '/llms.txt',
       });
 
+    // `?kind=` on /vaults is checked BEFORE the gate: a malformed filter is the caller's mistake and
+    // must not cost them a settled payment. Absent = unfiltered.
+    let kind;
+    if (path === '/vaults') {
+      kind = new URLSearchParams(url.split('?')[1] ?? '').get('kind') ?? undefined;
+      if (kind !== undefined && !VAULT_KINDS.includes(kind)) {
+        metrics.inc('vault_api_rejected_total');
+        return json(400, {}, { error: 'unknown kind', allowed: VAULT_KINDS });
+      }
+    }
+
     // Everything else is metered — except on a chain whose config switches x402 off, where the
     // same reads are served straight through with no challenge and no payment headers.
     let paidHeaders = {};
@@ -177,7 +188,7 @@ export function createApi({ state, facilitator, price, now = () => Date.now(), c
       return { status: 200, headers: paidHeaders, body: jsonStringify({ leaderboard: leaderboard(state) }) };
 
     if (path === '/vaults')
-      return { status: 200, headers: paidHeaders, body: jsonStringify({ vaults: listVaults(state) }) };
+      return { status: 200, headers: paidHeaders, body: jsonStringify({ vaults: listVaults(state, { kind }) }) };
 
     const mp = path.match(/^\/vaults\/(0x[0-9a-fA-F]{40})\/members\/(0x[0-9a-fA-F]{40})$/);
     if (mp) {

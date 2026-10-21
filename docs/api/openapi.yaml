@@ -41,6 +41,12 @@ paths:
     get:
       summary: List all known vaults (metered) — the discovery surface for agents
       operationId: listVaults
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          description: "Only vaults of this kind. Omitted = all. Any other value is refused with 400 before payment."
+          schema: { type: string, enum: [regular, agent] }
       responses:
         '200':
           description: Vault list
@@ -58,12 +64,14 @@ paths:
                       type: object
                       properties:
                         vault: { type: string }
+                        kind: { type: string, description: "regular (VaultCreated) or agent (AgentVaultCreated); unknown for a kind number this indexer does not know" }
                         operatorId: { type: integer }
                         memberCount: { type: integer }
                         depth: { type: integer }
                         parent: { type: [string, 'null'] }
                         capacityCapUsdc: { type: string }
                         attested: { type: boolean, description: "false = unattested (operatorId 0), scam-quarantine signal" }
+        '400': { description: "Unknown kind filter value (not charged)" }
         '402': { $ref: '#/components/responses/PaymentRequired' }
   /health:
     get:
@@ -273,6 +281,7 @@ components:
         vault: { type: string }
         creator: { type: string }
         usdc: { type: string, description: the vault's USDC token address }
+        kind: { type: string, description: "regular (VaultCreated) or agent (AgentVaultCreated); unknown for a kind number this indexer does not know" }
         operatorId: { type: integer }
         totalShares: { type: string, description: "WAD, decimal string" }
         idleUsdc: { type: string }
