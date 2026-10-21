@@ -16,6 +16,7 @@ import {IOperatorRegistry} from "../src/interfaces/IOperatorRegistry.sol";
 import {IGovernance} from "../src/interfaces/IGovernance.sol";
 import {IFeeEngine} from "../src/interfaces/IFeeEngine.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
+import {TreasuryConfig} from "./lib/TreasuryConfig.sol";
 
 /// @title DeployTestnet — parameterized testnet bring-up (singletons + per-vault infra), PIVOTED to
 /// the C-6 launch oracle.
@@ -135,6 +136,9 @@ contract DeployTestnet is Script {
         // other sender, so a testnet run needs that key (`--account` must resolve to it). The testnet
         // singletons are plain CREATE, not the CREATE2 recipe of Deploy.s.sol: this script enables
         // sub-vaults, which changes the factory's initcode, and a testnet needs no cross-chain address.
+        // Read and refused BEFORE anything is sent: the treasury is set once and never changes.
+        address treasury = TreasuryConfig.read(vm);
+
         vm.startBroadcast(PROTOCOL_INITIALIZER);
 
         // ── The curated launch oracle FIRST, so it can seed the factory allowlist ──
@@ -167,6 +171,8 @@ contract DeployTestnet is Script {
         registry.wire(address(factory), address(feeEngine));
         subReg.wire(address(factory));
         governance.wireSubVaultRegistry(address(subReg));
+        // Fee model A1: the one-shot treasury, so the engine can credit its share.
+        feeEngine.initialize(treasury);
 
         // ── Execution adapter: aggregation router with only the configured selectors ──
         bytes4[] memory selectors = new bytes4[](routerSigs.length);
@@ -181,6 +187,7 @@ contract DeployTestnet is Script {
         require(registry.factory() == address(factory), "wire: registry.factory");
         require(registry.feeEngine() == address(feeEngine), "wire: registry.feeEngine");
         require(subReg.factory() == address(factory), "wire: subReg.factory");
+        require(feeEngine.treasury() == treasury, "wire: feeEngine.treasury");
         require(governance.subVaultRegistry() == address(subReg), "wire: gov.subReg");
         require(routerAdapter.router() == router, "adapter: router");
         require(factory.isAllowedOracle(address(oracle)), "allowlist: oracle blessed");

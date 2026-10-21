@@ -70,6 +70,8 @@ contract AuditOracleRotationTest is Test {
         registry = new OperatorRegistry();
         subReg = new SubVaultRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         gov = new Governance();
         deployerLib = new VaultDeployer();
     }
@@ -246,6 +248,8 @@ contract AuditOracleRotationTest is Test {
         OperatorRegistry registryB = new OperatorRegistry();
         SubVaultRegistry subRegB = new SubVaultRegistry();
         FeeEngine feesB = new FeeEngine(IRegistryView(address(registryB)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        feesB.initialize(address(0x7EA5));
         VaultFactory factoryC = new VaultFactory(
             IOperatorRegistry(address(registryB)),
             IGovernance(address(new Governance())),
