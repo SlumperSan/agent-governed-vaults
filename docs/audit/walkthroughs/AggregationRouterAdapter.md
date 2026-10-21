@@ -135,7 +135,7 @@ accounting.
      `minAmountOut` and force through a swap that should have reverted `SwapSlippage`. The real
      bound is **`MinOutTooLow`** in `VaultCore.executeRebalance`: oracle-priced, checked
      pre-execution against the proposal's `maxSlippageBps`, which cannot exceed
-   `MAX_REBALANCE_SLIPPAGE_BPS`, and no donation can move it.
+     `MAX_REBALANCE_SLIPPAGE_BPS`, and no donation can move it.
   2. The surplus is net-positive in **value**, not neutral in **effect**. It is the only
      unprivileged write into `navWad()`'s inputs, and `_deposit` gates `navWad()` against
      `capacityCapUsdc` — so a sufficiently large over-delivery can **close a capped vault to

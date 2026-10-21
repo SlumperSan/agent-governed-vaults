@@ -1,6 +1,6 @@
 # External Audit Package: Reviewer Entry Point
 
-*2026-10-21: present-tense claims in this package were corrected in place to match the current source.*
+*Note (2026-10-21): after audit A10, specific present-tense statements about current source in this README and the walkthroughs were corrected in place; finding records and remediation statuses in AI-AUDIT-REPORT.md were annotated with dated notes, not rewritten; the retired-oracle walkthroughs still describe retired code.*
 
 > ## ⚠ SCOPE HAS MOVED SINCE THIS PACKAGE WAS WRITTEN — read before you scope anything
 >
@@ -221,16 +221,16 @@ Key boundary facts a reviewer should hold onto:
 - Consequence for findings: "add an owner who can rescue X" is not an accepted remediation
   shape. Fixes must be constructor validation, code-path changes, or documented acceptance.
 
-## 5. Deploy & wiring order (the only valid sequence)
+## 5. Deploy & wiring order
 
-From `script/Deploy.s.sol` (proven by `test/Deploy.t.sol`):
+From `script/Deploy.s.sol` (proven by `test/Deploy.t.sol`). Steps 1 to 6 are CREATE2 deploys and can land in any order, because every address is a function of salt and initcode alone; this is the order the script uses:
 
 ```
 1. OperatorRegistry()                      — no deps
 2. SubVaultRegistry()                      — no deps
 3. FeeEngine(registry)                     — immutable registry ref
 4. Governance()                            — no ctor deps
-5. VaultDeployer()                         — no deps; MUST precede the factory (#10)
+5. VaultDeployer()                         — no deps; the factory pins its address (#10)
 6. VaultFactory(registry, governance, feeEngine, subVaultRegistry, vaultDeployer, allowSubVaults)
 7. factory.initialize(BLESSED_ORACLES)     — one-shot, sets the oracle allowlist; creation reverts
                                              NotInitialized until it runs
@@ -277,9 +277,9 @@ to that contract.
 
 | ID | What | Why accepted |
 | --- | --- | --- |
-| K-4/SF-2 | Stale-oracle breaker freezes exits; induced staleness traps capital | Any exit hatch during staleness IS the stale-price exit the breaker prevents. Mitigations: per-feed heartbeat of at most 25 hours (`MAX_HEARTBEAT = 90_000`), sane-price band, sequencer uptime gate. Pending (un-activated) deposits stay cancellable during a freeze |
+| K-4/SF-2 | Stale-oracle breaker freezes exits; induced staleness traps capital | Any exit hatch during staleness IS the stale-price exit the breaker prevents. Mitigations: per-feed heartbeat of at most 25 hours (`MAX_HEARTBEAT = 90_000`), sane-price band, sequencer uptime gate (at acceptance: ≥3 sources, strict-majority quorum, 1-day staleness ceiling under the retired `OracleAggregator`). Pending (un-activated) deposits stay cancellable during a freeze |
 | K-2 | One permanently-offline member freezes rule changes forever | Near-immutability is the intent |
-| E7/EE-5 | Latency-arb on repeat deposits against stale NAV; profitable-drift threshold is gas within the oracle drift band | Bounded by the per-feed heartbeat ceiling of 25 hours + non-zero exit fee; full closure needs oracle-enforced mint-time freshness (design option, not shipped) |
+| E7/EE-5 | Latency-arb on repeat deposits against stale NAV; profitable-drift threshold is gas within the oracle drift band | Bounded by the per-feed heartbeat ceiling of 25 hours (at acceptance: the retired `OracleAggregator`'s 1-day staleness ceiling) + non-zero exit fee; full closure needs oracle-enforced mint-time freshness (design option, not shipped) |
 | G3/CM-5 | Single-vault carry farming to shelter perf fees | 1% exit-fee cap forces ~100:1 transient capital fronting; leaderboard reputation drag. Economic deterrent, not a code fix |
 | PX-1 | USDC blacklist on a vault address freezes the USDC leg | Inherent to USDC settlement; in-kind escrow keeps non-USDC assets exitable |
 | E4 (S6) | Parent exit needing child unwind reverts `ExitNeedsChildSettlement` while the only covering child is mid-rebalance | Clean rollback + bounded retry (child timelock). Window narrowed vs. original deep-stack revert, not eliminated |

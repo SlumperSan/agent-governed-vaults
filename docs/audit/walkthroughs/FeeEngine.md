@@ -37,7 +37,7 @@ instead, and `claimFees` pays only the caller's own credit.
 | --- | --- | --- |
 | `onRealize(member, gain, loss)` | attested vault (bounded call) | Gain path: once the treasury is set by `initialize`, `netGain = gain − carry` (floored at 0) and it returns `10% × netGain`; before that it returns 0. Loss path: no-op — losses reach the carry via the vault's own `recordRealization` call |
 | `onFeeCollected(member, amountUsdc)` | attested vault, **after** the USDC fee transfer | Splits the amount **actually sent** into `claimableFees[creator][usdc]` (90%) and `claimableFees[treasury][usdc]` (10%) (the vault's clamp may have reduced it) and reports it to registry stats |
-| `onFeeCollectedAsset(member, asset, amount)` | attested vault, after an in-kind fee transfer | Credits the asset-leg fee at token amounts (USD-terms stats stay cash-leg-only; the indexer prices asset legs, S7) |
+| `onFeeCollectedAsset(member, asset, amount)` | attested vault, after an in-kind fee transfer | Splits the asset-leg fee into `claimableFees[creator][asset]` (90%) and `claimableFees[treasury][asset]` (10%) at token amounts (USD-terms stats stay cash-leg-only; the indexer prices asset legs, S7) |
 | `pullEscrowed(vault, asset)` | anyone (crank) | Claims a fee slice the vault EE-6-escrowed for the engine (failed transfer path) and credits it, measured by balance delta |
 | `claimFees(token)` | any recipient (vault creator or treasury) | Pull-payment of the caller's own accumulated fees |
 
