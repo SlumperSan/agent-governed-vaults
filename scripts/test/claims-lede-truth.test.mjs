@@ -59,7 +59,7 @@
  * they are the only reason the word survives in this file. On that date the owner removed the
  * review-marker workflow outright — "The audit counsel is now becoming an issue with
  * repetitiveness. Remove them entirely so that we can work faster." — so the eighty `apps/site`
- * markers are gone and `apps/site/test/site.test.mjs` reds if one returns. Neither line here was a
+ * markers are gone, and no test reds if one returns: that rule is held by review. Neither line here was a
  * rule: nothing in this file has ever exempted a marked block from a guard, and there is nothing
  * to delete. They were left standing deliberately, because renaming a document that exists and a
  * historical sweep that happened would make this comment point at nothing, which is a worse

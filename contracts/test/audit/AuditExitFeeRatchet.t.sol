@@ -48,7 +48,7 @@ contract RatchetPerfFeeEngine is IFeeEngine {
 /// assets only add dust). USDC has 6 decimals.
 ///
 /// All tests are green with the fix. Run against the unfixed contract (with `test_pinsMatchTheContract`,
-/// which names `VaultCore.PositionBelowFloor`, removed so the file compiles), seven of the other twelve
+/// which names `VaultCore.PositionBelowFloor`, removed so the file compiles), seven of the other twelve tests written before the generalised section
 /// are red: test_trimToOneWeiIsRefused, test_victimLossIsBoundedAgainstTheOriginalAttack,
 /// test_floorBoundaryIsExact, test_noMemberIsTrappedByAnotherMembersDust,
 /// test_creatorSoleHolderCannotTrimToDust, test_modeFQueuedTrimIsRefusedAtQueueTime and
@@ -58,6 +58,11 @@ contract RatchetPerfFeeEngine is IFeeEngine {
 /// pass either way: they pin behaviour that has to hold with the floor in place. `PositionBelowFloor`
 /// is matched by selector; `test_pinsMatchTheContract` pins that the local selector and floor are the
 /// contract's own.
+///
+/// The two `testFuzz_` tests at the end (added 2026-10-19) check the headline claim, a depositor's loss
+/// of at most one USDC unit, over a band of parameters around the Arc launch values, and the floor over
+/// random exit shapes across two holders in both settlement modes. Both are red when the immediate-path
+/// floor check is removed, and the exit-shape test is red when only the Mode F queue-time check is.
 contract AuditExitFeeRatchet is Test {
     uint256 constant U = 1e6; // 1 USDC in units
     uint256 constant FLOOR = 1e18; // VaultCore.MIN_POSITION_SHARES
@@ -143,7 +148,10 @@ contract AuditExitFeeRatchet is Test {
     /// Attacker step 2 (B): cycle deposit + full exit until one share-wei is worth more than half
     /// of `victim`, but never more than `victim` (above that the victim activation reverts and the
     /// attack degrades to a refundable DoS). Only meaningful while totalShares is 1.
-    function _ratchetToOneWei(uint256 victim, uint256 bCapital) internal returns (uint256 cycles) {
+    function _ratchetToOneWei(uint256 victim, uint256 bCapital, uint256 minDep)
+        internal
+        returns (uint256 cycles)
+    {
         vm.startPrank(B);
         vault.deposit(bCapital);
         vault.skipWindow();
@@ -158,7 +166,7 @@ contract AuditExitFeeRatchet is Test {
                 uint256 d = sizes[i];
                 uint256 bal = usdc.balanceOf(B);
                 if (d > bal) d = bal;
-                if (d < 100 * U || d * 1e12 < pOld) continue;
+                if (d < minDep || d * 1e12 < pOld) continue;
                 uint256 snap = vm.snapshotState();
                 _cycleB(d);
                 if (_p() <= vWad && _p() > pOld) {
@@ -214,7 +222,7 @@ contract AuditExitFeeRatchet is Test {
         } catch {}
 
         if (trimmed) {
-            _ratchetToOneWei(victim, 1000 * U);
+            _ratchetToOneWei(victim, 1000 * U, 100 * U);
         } else {
             for (uint256 i; i < 16; ++i) {
                 vm.startPrank(B);
@@ -491,5 +499,181 @@ contract AuditExitFeeRatchet is Test {
             assertTrue(left > 0 && left < FLOOR, "refused although the remainder was fine");
             assertEq(vault.sharesOf(A), held);
         }
+    }
+
+    // ───────────────── the headline claim, generalised ─────────────────
+    //
+    // The tests above pin the mechanism at one parameter set (190 USDC victim, 1000 USDC cycles, 16 or
+    // 100 rounds, minimum deposit 100 USDC). The two fuzz tests below check the claim itself over a band
+    // around the real Arc parameters (minimum deposit 100 USDC, exit fee 50 bps, window 4 hours):
+    //   minimum deposit 10 to 1000 USDC; victim from the minimum deposit to 20,000 USDC; A's seed from the
+    //   minimum deposit to 5,000 USDC; B's capital from the minimum deposit to 20,000 USDC; 1 to 40 ratchet
+    //   cycles. Victim loss is measured pro rata, before any exit, so the exit fee that A pays on the way
+    //   out cannot mask it. The bounds are a generous band, not a proof for every parameter; they are not
+    //   to be narrowed to make a failure pass.
+
+    /// A's best allowed trim, then B's ratchet, against a victim whose deposit is pending. A first tries
+    /// to trim to a fuzzed remainder (1 share-wei, one below the floor, the floor, or above it); a refused
+    /// trim falls back to exactly the floor, the strongest position the floor allows. Whatever lands, the
+    /// victim, activated afterwards, loses at most one USDC unit, and no trim below the floor lands.
+    function testFuzz_victimLossIsBoundedAcrossParameters(
+        uint256 minDepRaw,
+        uint256 victimRaw,
+        uint256 aSeedRaw,
+        uint256 bCapRaw,
+        uint256 cyclesRaw,
+        uint256 keepRaw
+    ) public {
+        uint256 minDep = bound(minDepRaw, 10 * U, 1000 * U);
+        uint256 victim = bound(victimRaw, minDep, 20_000 * U);
+        uint256 aSeed = bound(aSeedRaw, minDep, 5_000 * U);
+        uint256 bCap = bound(bCapRaw, minDep, 20_000 * U);
+        uint256 cycles = bound(cyclesRaw, 1, 40);
+        vault = _deployVault(minDep);
+        _approveAll(vault);
+        usdc.mint(B, bCap);
+        usdc.mint(V, victim);
+        vm.prank(V);
+        vault.deposit(victim); // first-time deposit: pending, no shares
+        assertEq(vault.totalShares(), 0, "vault empty while the victim pends");
+
+        _aOpens(aSeed);
+        uint256 ts = vault.totalShares();
+        uint256 kind = keepRaw % 4;
+        uint256 keep =
+            kind == 0 ? 1 : kind == 1 ? FLOOR - 1 : kind == 2 ? FLOOR : FLOOR + (keepRaw / 4) % (5 * FLOOR);
+        assertLt(keep, ts, "the seed is always larger than the trim target");
+        bool trimmedBelowFloor;
+        vm.prank(A);
+        try vault.requestExit(ts - keep) {
+            trimmedBelowFloor = keep < FLOOR;
+        } catch {
+            // refused: fall back to the strongest position the floor allows
+            vm.prank(A);
+            vault.requestExit(ts - FLOOR);
+        }
+
+        if (trimmedBelowFloor) {
+            _ratchetToOneWei(victim, bCap, minDep);
+        } else {
+            for (uint256 i; i < cycles; ++i) {
+                uint256 bal = usdc.balanceOf(B);
+                if (bal < minDep) break;
+                vm.startPrank(B);
+                if (i == 0) {
+                    vault.deposit(bCap);
+                    vault.skipWindow();
+                } else {
+                    vault.deposit(bal);
+                }
+                vault.requestExit(vault.sharesOf(B));
+                vm.stopPrank();
+            }
+        }
+        skip(4 hours);
+        vault.activate(V); // permissionless, no slippage argument
+
+        uint256 sharesV = vault.sharesOf(V);
+        uint256 worth = vault.navWad() * sharesV / vault.totalShares() / 1e12;
+        uint256 loss = victim > worth ? victim - worth : 0;
+        assertLe(loss, 1, "victim loses at most one USDC unit");
+        assertFalse(trimmedBelowFloor, "a trim below the floor must be refused");
+
+        // and the exits themselves: neither is blocked, and the victim, now the sole holder, is paid in full
+        _exitAll(A);
+        _exitAll(V);
+        uint256 vb = usdc.balanceOf(V);
+        assertLe(victim > vb ? victim - vb : 0, 1, "victim's realised loss is at most one USDC unit");
+    }
+
+    /// The exit shape, across two holders and both settlement modes: six exits by A or B, each in Mode I or
+    /// queued in Mode F, of fuzzed size (full, leaving the floor, one above it, one share-wei, or any
+    /// size). Every exit either lands leaving its exiter at zero or at least the floor, or reverts
+    /// `PositionBelowFloor` when it would have left a remainder in (0, floor). A queued exit settles
+    /// whatever else happened, and once every queue has settled each holder can still leave in full, so
+    /// neither is trapped by the other's position.
+    function testFuzz_noExitShapeLeavesADustPosition(
+        uint256 minDepRaw,
+        uint256 aRaw,
+        uint256 bRaw,
+        uint256[6] memory steps
+    ) public {
+        uint256 minDep = bound(minDepRaw, 10 * U, 1000 * U);
+        vault = _deployVault(minDep);
+        _approveAll(vault);
+        usdc.mint(A, bound(aRaw, minDep, 50_000 * U));
+        usdc.mint(B, bound(bRaw, minDep, 50_000 * U));
+        uint256 aAmt = usdc.balanceOf(A);
+        uint256 bAmt = usdc.balanceOf(B);
+        vm.startPrank(A);
+        vault.deposit(aAmt);
+        vault.skipWindow(); // a first-time deposit is pending until the member skips the window
+        vm.stopPrank();
+        vm.startPrank(B);
+        vault.deposit(bAmt);
+        vault.skipWindow();
+        vm.stopPrank();
+
+        for (uint256 i; i < steps.length; ++i) {
+            address who = steps[i] & 1 == 0 ? A : B;
+            bool queued = (steps[i] >> 1) & 1 == 1;
+            gov.setPendingExecution(queued);
+            uint256 held = vault.sharesOf(who);
+            if (held == 0 || vault.queuedExitShares(who) != 0) continue;
+            uint256 burn = _pickBurn(held, steps[i] >> 2);
+            uint256 left = held - burn;
+            vm.prank(who);
+            try vault.requestExit(burn) {
+                assertTrue(left == 0 || left >= FLOOR, "a dust position survived an exit");
+                if (queued) {
+                    assertEq(vault.queuedExitShares(who), burn, "queued in full");
+                    assertEq(vault.sharesOf(who), held, "queued shares stay outstanding");
+                } else {
+                    assertEq(vault.sharesOf(who), left, "burned in full");
+                }
+            } catch (bytes memory err) {
+                assertEq(bytes4(err), FLOOR_ERR, "the revert is the floor's");
+                assertTrue(left > 0 && left < FLOOR, "refused although the remainder was fine");
+                assertEq(vault.sharesOf(who), held, "nothing burned");
+                assertEq(vault.queuedExitShares(who), 0, "nothing queued");
+            }
+            _assertNoDustPositions();
+        }
+
+        // every queued exit settles, floor or not
+        gov.setPendingExecution(false);
+        address[2] memory holders = [A, B];
+        for (uint256 i; i < 2; ++i) {
+            if (vault.queuedExitShares(holders[i]) != 0) vault.settleQueuedExit(holders[i]);
+        }
+        _assertNoDustPositions();
+
+        // and nobody is trapped: each holder can leave in full, in either order
+        for (uint256 i; i < 2; ++i) {
+            uint256 left = vault.sharesOf(holders[i]);
+            if (left == 0) continue;
+            vm.prank(holders[i]);
+            vault.requestExit(left);
+        }
+        assertEq(vault.totalShares(), 0, "both left in full");
+    }
+
+    function _assertNoDustPositions() internal view {
+        address[2] memory holders = [A, B];
+        for (uint256 i; i < 2; ++i) {
+            // a queued exit's shares are still outstanding, and its remainder was floor-checked at queue time
+            uint256 effective = vault.sharesOf(holders[i]) - vault.queuedExitShares(holders[i]);
+            assertTrue(effective == 0 || effective >= FLOOR, "a dust position exists");
+        }
+    }
+
+    /// Burn sizes that sit on and around the boundary, plus a uniform draw.
+    function _pickBurn(uint256 held, uint256 seed) internal pure returns (uint256) {
+        uint256 kind = seed % 5;
+        if (kind == 0) return held;
+        if (kind == 1) return held > FLOOR ? held - FLOOR : held;
+        if (kind == 2) return held > FLOOR ? held - FLOOR + 1 : held;
+        if (kind == 3) return held > 1 ? held - 1 : held;
+        return 1 + (seed / 5) % held;
     }
 }
