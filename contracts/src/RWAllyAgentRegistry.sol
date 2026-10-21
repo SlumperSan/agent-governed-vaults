@@ -57,8 +57,10 @@ interface IERC20Decimals {
 /// the named owner, so no one can hand an identity to an address that did not act on this chain.
 /// `mintMirrored` has no fee path. The origin was either registered with the fee on its home chain
 /// or imported free inside that chain's import window; either way one origin yields at most one
-/// mirror per chain. A mirror is a separate ERC-721. No function burns it, its record in
-/// `originOf` never changes, and it does not follow later transfers of the origin identity.
+/// mirror per chain. A mirror is a separate ERC-721, soulbound like every identity (see SOULBOUND):
+/// `Locked` is emitted at its mint and it can be neither transferred nor approved. No function burns
+/// it, its record in `originOf` never changes, and it does not follow later transfers of the origin
+/// identity.
 /// "Registered on one chain, valid on another" holds only for a mirror minted with a valid
 /// attestation, per origin chain and origin id, and only while an attestor is set.
 /// What this contract enforces on-chain, in order: an attestor is set; the expiry has not passed and
@@ -588,6 +590,8 @@ contract RWAllyAgentRegistry {
     /// @param agentURI the agent URI to store; `keccak256(bytes(agentURI))` must equal `a.agentURIHash`.
     /// @param sig 65-byte ECDSA signature by an account attestor, or whatever blob a contract
     /// attestor's ERC-1271 `isValidSignature` expects (a bridge receiver can accept an empty blob).
+    /// The attestor is the address the owner set, not an agent's account, so an ERC-6492 wrapper is
+    /// not unwrapped here and no factory is called: a smart-account attestor must already be deployed.
     function mintMirrored(MirrorAttestation calldata a, string calldata agentURI, bytes calldata sig)
         external
         whenInitialized

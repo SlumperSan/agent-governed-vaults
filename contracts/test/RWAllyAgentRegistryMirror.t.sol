@@ -3,7 +3,13 @@ pragma solidity 0.8.26;
 
 import {RWAllyAgentRegistry, IERC721Receiver} from "../src/RWAllyAgentRegistry.sol";
 import {MockERC20} from "./mocks/Mocks.sol";
-import {RegistryTestBase, OutsideRegistryMock, Wallet1271} from "./RWAllyAgentRegistry.t.sol";
+import {Vm} from "forge-std/Vm.sol";
+import {
+    RegistryTestBase,
+    OutsideRegistryMock,
+    Wallet1271,
+    Factory6492
+} from "./RWAllyAgentRegistry.t.sol";
 
 /// An ERC-1271 attestor that burns every unit of gas it is given.
 contract BurnerAttestor {
@@ -71,6 +77,8 @@ contract RWAllyAgentRegistryMirrorTest is RegistryTestBase {
         uint256 indexed agentId, address indexed owner, uint256 indexed originChainId, uint256 originAgentId
     );
     event Registered(uint256 indexed agentId, string agentURI, address indexed owner);
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event Locked(uint256 tokenId);
 
     RWAllyAgentRegistry reg;
     MockERC20 usdc;
@@ -699,19 +707,97 @@ contract RWAllyAgentRegistryMirrorTest is RegistryTestBase {
 
     // ── a mirror behaves as an identity afterwards ───────────────────────────
 
-    function test_mirror_isAnOrdinaryTransferableIdentity_originalRecordStays() public {
-        _claim(alice, _att(7, alice, URI), URI);
-        vm.prank(alice);
-        reg.transferFrom(alice, bob, 0);
-        assertEq(reg.ownerOf(0), bob);
-        assertEq(reg.balanceOf(bob), 1);
-        // the dedupe record does not move with the token, so the origin still cannot mint again
-        RWAllyAgentRegistry.MirrorAttestation memory a = _att(7, bob, URI);
+    /// A mirrored id is soulbound exactly like a registered one: no transfer, no approval, from any
+    /// caller, and the dedupe record and the holder stay put.
+    function test_mirror_isSoulbound_everyTransferAndApprovalEntryPointReverts() public {
+        uint256 id = _claim(alice, _att(7, alice, URI), URI);
+        address[3] memory callers = [alice, bob, multisig];
+        for (uint256 c; c < callers.length; ++c) {
+            address who = callers[c];
+            _assertSoulbound(
+                who, abi.encodeWithSignature("transferFrom(address,address,uint256)", alice, bob, id)
+            );
+            _assertSoulbound(
+                who, abi.encodeWithSignature("safeTransferFrom(address,address,uint256)", alice, bob, id)
+            );
+            _assertSoulbound(
+                who,
+                abi.encodeWithSignature("safeTransferFrom(address,address,uint256,bytes)", alice, bob, id, "")
+            );
+            _assertSoulbound(who, abi.encodeWithSignature("approve(address,uint256)", bob, id));
+            _assertSoulbound(who, abi.encodeWithSignature("setApprovalForAll(address,bool)", bob, true));
+        }
+        assertEq(reg.ownerOf(id), alice);
+        assertEq(reg.balanceOf(alice), 1);
+        assertEq(reg.balanceOf(bob), 0);
+        assertEq(reg.getApproved(id), address(0));
+        assertFalse(reg.isApprovedForAll(alice, bob));
+        // the origin still cannot mint a second mirror, and the original record is unchanged
+        RWAllyAgentRegistry.MirrorAttestation memory a = _att(7, alice, URI);
         a.nonce = 5;
         bytes memory sig = _sign(ATT_PK, a);
-        vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.AlreadyMirrored.selector, uint256(0)));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RWAllyAgentRegistry.AlreadyMirrored.selector, id));
         reg.mintMirrored(a, URI, sig);
+        (uint256 oc, address orr, uint256 oid) = reg.originOf(id);
+        assertEq(oc, ORIGIN);
+        assertEq(orr, address(reg));
+        assertEq(oid, 7);
+    }
+
+    /// ERC-5192 on a mirror: `locked` is true, the interface is advertised, and `Locked(id)` is emitted
+    /// once, second in the log order (after Transfer), as for `register`.
+    function test_mirror_lockedTrue_andLockedEventEmittedAtMint() public {
+        RWAllyAgentRegistry.MirrorAttestation memory a = _att(7, alice, URI);
+        bytes memory sig = _sign(ATT_PK, a);
+        vm.recordLogs();
+        vm.prank(alice);
+        uint256 id = reg.mintMirrored(a, URI, sig);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 6, "Transfer, Locked, MetadataUpdate, Registered, MetadataSet, Mirrored");
+        assertEq(logs[0].topics[0], Transfer.selector);
+        assertEq(logs[1].topics[0], Locked.selector);
+        assertEq(abi.decode(logs[1].data, (uint256)), id);
+        assertEq(logs[1].emitter, address(reg));
+        assertTrue(reg.locked(id));
+        assertTrue(reg.supportsInterface(0xb45a3c0e));
+        vm.expectRevert();
+        reg.locked(id + 1);
+    }
+
+    /// The attestor is an owner-set address, not an agent's account: its signature is ECDSA or a call
+    /// to a contract that already exists. An ERC-6492 wrapper from a counterfactual (undeployed)
+    /// attestor is refused, and the factory in it is never called.
+    function test_attestor_counterfactualAccount_erc6492Wrapper_isRefused() public {
+        Factory6492 f = new Factory6492();
+        bytes32 salt = keccak256("cf-attestor");
+        address cf = f.predict(salt);
+        vm.prank(multisig);
+        reg.setAttestor(cf);
+        RWAllyAgentRegistry.MirrorAttestation memory a = _att(7, alice, URI);
+        bytes32 d = reg.mirrorAttestationDigest(a);
+        bytes memory inner = hex"aabbcc";
+        bytes4 q = 0x64926492;
+        bytes memory sig = abi.encodePacked(
+            abi.encode(address(f), abi.encodeCall(Factory6492.deploy, (salt, d, inner)), inner),
+            q, q, q, q, q, q, q, q
+        );
+        assertEq(cf.code.length, 0, "not deployed");
+        _expect(RWAllyAgentRegistry.InvalidAttestorSignature.selector);
+        vm.prank(alice);
+        reg.mintMirrored(a, URI, sig);
+        assertEq(f.calls(), 0, "the factory was not called");
+        assertEq(cf.code.length, 0, "nothing deployed");
+        (bool minted,) = reg.localIdOfOrigin(ORIGIN, address(reg), 7);
+        assertFalse(minted);
+    }
+
+    function _assertSoulbound(address caller, bytes memory data) internal {
+        vm.prank(caller);
+        (bool ok, bytes memory ret) = address(reg).call(data);
+        assertFalse(ok);
+        assertEq(ret.length, 4);
+        assertEq(bytes4(ret), RWAllyAgentRegistry.Soulbound.selector);
     }
 }
 
