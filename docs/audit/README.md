@@ -1,5 +1,7 @@
 # External Audit Package: Reviewer Entry Point
 
+*2026-10-21: present-tense claims in this package were corrected in place to match the current source.*
+
 > ## ⚠ SCOPE HAS MOVED SINCE THIS PACKAGE WAS WRITTEN — read before you scope anything
 >
 > This package was assembled at the **Sprint-10 audit freeze**, before Critical **C-6**. It is kept

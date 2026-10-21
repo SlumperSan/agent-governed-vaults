@@ -182,8 +182,8 @@ allowlist makes it non-selectable there anyway).
    `testnetCompromise` recorded in
    [`base-sepolia.json`](../contracts/config/base-sepolia.json), acceptable only because Base
    Sepolia has one feed per pair and no real capital. **A BASE mainnet stack is:** (Base-shaped, and
-   not the universal mainnet shape — Arc, an L1, has no sequencer leg at all and its feed
-   heartbeat is 90,000 s, which is the `MAX_HEARTBEAT` ceiling)
+   not the universal mainnet shape — Arc, an L1, has no sequencer leg at all; its feed publishes
+   every 86,400 s, and the 90,000 s staleness limit configured for it is the `MAX_HEARTBEAT` ceiling)
 
    | Class | Adapter | Fails when | `updatedAt` |
    | --- | --- | --- | --- |
