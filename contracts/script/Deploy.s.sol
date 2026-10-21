@@ -11,6 +11,7 @@ import {VaultFactory} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 import {ProtocolCreate2} from "./lib/ProtocolCreate2.sol";
+import {TreasuryConfig} from "./lib/TreasuryConfig.sol";
 
 /// @title Deploy — canonical protocol bring-up (same addresses on every chain)
 /// @notice Deploys the six singletons through the Arachnid CREATE2 proxy with fixed salts (see
@@ -33,6 +34,10 @@ import {ProtocolCreate2} from "./lib/ProtocolCreate2.sol";
 ///   6. `factory.initialize(BLESSED_ORACLES)`, THEN the wiring: registry.wire(factory, feeEngine);
 ///      subReg.wire(factory); gov.wireSubVaultRegistry(subReg). The factory is initialised before the
 ///      registry is pointed at it, so an uninitialised factory (oracle allowlist off) is never wired.
+///   7. `feeEngine.initialize(FEE_TREASURY)` (fee model A1): the per-chain treasury that receives 10% of
+///      every performance fee. Until it lands the engine takes no fee, so the order against steps 1 to 6
+///      does not matter; it is one-shot and refuses the zero address. FEE_TREASURY is required on any
+///      real chain (see `lib/TreasuryConfig.sol`).
 ///
 /// Oracles and execution adapters are NOT protocol singletons — each chain has its own (DeployChainlinkOracle
 /// deploys the oracle), and each vault creator supplies theirs at createVault time, so this script deploys
@@ -67,6 +72,9 @@ contract Deploy is Script {
             "C-6: a real-chain deploy requires a non-empty BLESSED_ORACLES allowlist (empty allowed only on local 31337)"
         );
 
+        // Read and refused BEFORE anything is sent: the treasury is set once and never changes.
+        address treasury = TreasuryConfig.read(vm);
+
         vm.startBroadcast(PROTOCOL_INITIALIZER);
 
         ProtocolCreate2.Set memory s = ProtocolCreate2.createAll();
@@ -86,12 +94,16 @@ contract Deploy is Script {
         subReg.wire(address(factory));
         governance.wireSubVaultRegistry(address(subReg));
 
+        // Fee model A1: the one-shot treasury, so the engine can credit its share.
+        feeEngine.initialize(treasury);
+
         vm.stopBroadcast();
 
         require(factory.initialized(), "Deploy: factory not initialised");
         require(
             registry.initialized() && subReg.initialized() && governance.initialized(), "Deploy: not wired"
         );
+        require(feeEngine.treasury() == treasury, "Deploy: fee treasury not set");
 
         console2.log("OperatorRegistry", address(registry));
         console2.log("SubVaultRegistry", address(subReg));
@@ -99,5 +111,6 @@ contract Deploy is Script {
         console2.log("Governance      ", address(governance));
         console2.log("VaultDeployer   ", address(vaultDeployer));
         console2.log("VaultFactory    ", address(factory));
+        console2.log("FeeTreasury     ", treasury);
     }
 }

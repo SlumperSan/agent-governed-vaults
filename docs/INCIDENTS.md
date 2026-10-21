@@ -16,9 +16,11 @@ from the current source adds a fourth, `VaultFactory.initialize(address[])`, gat
 leaves the allowlist off for good on that chain. That fourth call is the only one whose argument decides
 which price source a vault may use, so the factory creates nothing until it has run (`NotInitialized`), and a
 chain whose factory was initialised wrongly is recovered with a new salt, never a fix
-(DEPLOYMENT.md section 10). That was a deliberate trade (THREAT-MODEL, accepted risks): once a chain's
+(DEPLOYMENT.md section 10). The v2 fee engine in that source adds a fifth, `FeeEngine.initialize(address)`,
+gated on the same key (`OnlyInitializer`, then `AlreadyInitialized`, and a zero address is refused): it sets
+the treasury address credited a share of each performance fee, and until it runs the engine takes no fee. That was a deliberate trade (THREAT-MODEL, accepted risks): once a chain's
 calls have landed each of them reverts, and there is no key whose compromise can move members'
-funds; before bring-up, a compromised key can choose that chain's allowlist and registry pointers, which is why the
+funds; before bring-up, a compromised key can choose that chain's allowlist, registry pointers and fee treasury, which is why the
 initialisation is read back before any vault is created or address announced. The price is that
 **no incident below has a "fix the contract" step.** There is nothing to pause, nobody to call who can freeze an attacker, and
 no hotfix to ship.
