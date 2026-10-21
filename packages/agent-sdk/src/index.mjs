@@ -176,3 +176,6 @@ export { authorizeFromChallenge, buildTypedData, buildEnvelope } from './eip3009
 // dynamic import behind an async factory, which changes this package's shape for every caller —
 // a trade worth making deliberately if it is ever made, and not worth describing as already made.
 export { buildSvmEnvelope, createSvmPayer } from './svm-exact.mjs';
+// The smart-account writer: a `walletClient.writeContract` that sends UserOperations. Static too,
+// so this index loads viem's ABI encoder.
+export { createUserOpWalletClient, stripUrls } from './smart-account.mjs';
