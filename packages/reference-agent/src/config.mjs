@@ -318,6 +318,15 @@ export function loadConfig(overrides = {}) {
     // would pair them with a chain they are not on.
     if (chosen !== undefined && Number(chosen) !== fragment.chain.chainId)
       throw new ConfigError(`chain.preset ${presetName} is chain ${fragment.chain.chainId}, but chain.chainId is ${chosen}; drop one of them`);
+    const over = /** @type {any} */ (overrides).chain ?? {};
+    // A null or empty rpcUrl is not a setting that wins over the preset, it is the stub-fixture
+    // trigger in run.mjs; beside a preset it would silently serve fixture data as chain reads.
+    if (over.rpcUrl === null || over.rpcUrl === '')
+      throw new ConfigError(`chain.rpcUrl is ${JSON.stringify(over.rpcUrl)} beside chain.preset ${presetName}; drop it to use the preset's RPC, or give a URL`);
+    // The EIP-712 name and version belong to the token at the preset's USDC address. A different
+    // token keeps them only by accident, and a wrong pair signs over the wrong struct hash.
+    if (over.usdc !== undefined && String(over.usdc).toLowerCase() !== fragment.chain.usdc && (over.usdcName === undefined || over.usdcVersion === undefined))
+      throw new ConfigError(`chain.usdc differs from chain.preset ${presetName}'s USDC; set chain.usdcName and chain.usdcVersion beside it, read from that token`);
     base = merge(DEFAULT_CONFIG, fragment);
   }
   if (profileName !== undefined && profileName !== null) {
