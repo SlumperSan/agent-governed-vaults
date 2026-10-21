@@ -10,7 +10,9 @@
  * nobody chose, for example by a compromised initialiser key) can never be initialised again
  * (`AlreadyInitialized`), and a registry wired to it points there permanently. The contracts refuse
  * to create a vault until `initialize` has run, but they cannot judge what was passed to it. This
- * reads the chain and judges.
+ * reads the chain and judges. The agent path is the same shape: `VaultFactory.initializeAgentPath`
+ * pins the agent ID registry and the agent vault deployer once and for all, so a registry address
+ * that carries code but is not the planned one is permanent too (steps 6 and 7 below).
  *
  * WHAT IT CHECKS, per chain, on EVERY listed RPC endpoint (at least two, the project's own
  * two-provider rule for chain facts), each endpoint judged on its own so a disagreement reds:
@@ -21,6 +23,10 @@
  *   5. The factory's single `Initialized(address[])` event lists EXACTLY the plan's oracles. A
  *      `mapping` cannot be enumerated, so step 4 alone would pass a list that also blessed a fake
  *      oracle; the event is the only on-chain record of what was passed in.
+ *   6. `agentPathInitialized()` is true and `agentRegistry()` equals the plan's `agentRegistry`,
+ *      and that address carries code.
+ *   7. `agentVaultDeployer()` equals the manifest's AgentVaultDeployer address, and it carries code.
+ *      Both are plain getters, so a read of the value is the whole record; no event is needed.
  *
  * It signs nothing and sends nothing: every call is `eth_chainId`, `eth_getCode`, `eth_call` or
  * `eth_getLogs`. A read that fails, times out or returns something unparseable is a FAILURE, never
@@ -37,9 +43,12 @@ import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 export const SEL_INITIALIZED = toFunctionSelector('initialized()');
 export const SEL_ENFORCED = toFunctionSelector('oracleAllowlistEnforced()');
 export const SEL_IS_ALLOWED = toFunctionSelector('isAllowedOracle(address)');
+export const SEL_AGENT_PATH_INITIALIZED = toFunctionSelector('agentPathInitialized()');
+export const SEL_AGENT_REGISTRY = toFunctionSelector('agentRegistry()');
+export const SEL_AGENT_DEPLOYER = toFunctionSelector('agentVaultDeployer()');
 export const TOPIC_INITIALIZED = toEventSelector('Initialized(address[])');
 
-/** @typedef {{ chainId: number, rpcs: string[], oracles: string[], fromBlock?: string }} ChainPlan */
+/** @typedef {{ chainId: number, rpcs: string[], oracles: string[], agentRegistry: string, fromBlock?: string }} ChainPlan */
 
 /** @param {unknown} hex @returns {boolean | null} null when it is not a clean ABI bool */
 export function parseBool(hex) {
@@ -47,6 +56,12 @@ export function parseBool(hex) {
   if (/^0x0{64}$/.test(hex)) return false;
   if (/^0x0{63}1$/.test(hex)) return true;
   return null;
+}
+
+/** The address in a 32-byte ABI word, lower-cased, or null when it is not a clean address word. @param {unknown} hex */
+export function parseAddressWord(hex) {
+  if (typeof hex !== 'string' || !/^0x0{24}[0-9a-fA-F]{40}$/.test(hex)) return null;
+  return `0x${hex.slice(26).toLowerCase()}`;
 }
 
 /** @param {string} a */
@@ -76,15 +91,21 @@ export function planProblems(name, plan) {
       else norm.add(o.toLowerCase());
     }
   }
+  const ar = /** @type {unknown} */ (plan.agentRegistry);
+  if (typeof ar !== 'string' || !isAddress(ar, { strict: false })) {
+    p.push(`${name}: agentRegistry must be the agent ID registry address the factory is meant to pin`);
+  } else if (/^0x0{40}$/i.test(ar)) {
+    p.push(`${name}: the zero address is not an agent registry`);
+  }
   return p;
 }
 
 /**
  * One endpoint, one chain. Every read must succeed and say the right thing.
- * @param {{ fetchImpl: typeof fetch, rpcUrl: string, name: string, plan: ChainPlan, factory: string }} a
+ * @param {{ fetchImpl: typeof fetch, rpcUrl: string, name: string, plan: ChainPlan, factory: string, agentVaultDeployer: string }} a
  * @returns {Promise<string[]>}
  */
-export async function checkEndpoint({ fetchImpl, rpcUrl, name, plan, factory }) {
+export async function checkEndpoint({ fetchImpl, rpcUrl, name, plan, factory, agentVaultDeployer }) {
   /** @type {string[]} */
   const problems = [];
   const at = `${name} @ ${redactUrls(rpcUrl)}`;
@@ -129,6 +150,22 @@ export async function checkEndpoint({ fetchImpl, rpcUrl, name, plan, factory }) 
     await expectBool(`factory.isAllowedOracle(${o})`, SEL_IS_ALLOWED + pad32(o), true);
   }
 
+  await expectBool('factory.agentPathInitialized()', SEL_AGENT_PATH_INITIALIZED, true);
+
+  /** @param {string} label @param {string} selector @param {string} want */
+  const expectAddress = async (label, selector, want) => {
+    const r = await ethCall(fetchImpl, rpcUrl, factory, selector);
+    if (!r.ok) return fail(`${label}: call failed (${r.reason}); the read reached no verdict`);
+    const got = parseAddressWord(r.result);
+    if (got === null) return fail(`${label}: returned ${String(r.result)}, not an ABI address`);
+    if (got !== want.toLowerCase()) return fail(`${label} is ${got}, expected ${want.toLowerCase()}`);
+    const c = await ethGetCode(fetchImpl, rpcUrl, got);
+    if (!c.ok) fail(`${label}: could not read code at ${got} (${c.reason})`);
+    else if (typeof c.result !== 'string' || c.result === '0x') fail(`${label}: ${got} carries no code on this chain`);
+  };
+  await expectAddress('factory.agentRegistry()', SEL_AGENT_REGISTRY, plan.agentRegistry);
+  await expectAddress('factory.agentVaultDeployer()', SEL_AGENT_DEPLOYER, agentVaultDeployer);
+
   const logs = await rpcCall(fetchImpl, rpcUrl, 'eth_getLogs', [
     { address: factory, topics: [TOPIC_INITIALIZED], fromBlock: plan.fromBlock ?? '0x0', toBlock: 'latest' },
   ]);
@@ -158,15 +195,15 @@ export async function checkEndpoint({ fetchImpl, rpcUrl, name, plan, factory }) 
 
 /**
  * One chain on every endpoint.
- * @param {{ fetchImpl: typeof fetch, name: string, plan: ChainPlan, factory: string }} a
+ * @param {{ fetchImpl: typeof fetch, name: string, plan: ChainPlan, factory: string, agentVaultDeployer: string }} a
  * @returns {Promise<string[]>}
  */
-export async function checkChain({ fetchImpl, name, plan, factory }) {
+export async function checkChain({ fetchImpl, name, plan, factory, agentVaultDeployer }) {
   const shape = planProblems(name, plan);
   if (shape.length) return shape;
   /** @type {string[]} */
   const problems = [];
-  for (const rpcUrl of plan.rpcs) problems.push(...(await checkEndpoint({ fetchImpl, rpcUrl, name, plan, factory })));
+  for (const rpcUrl of plan.rpcs) problems.push(...(await checkEndpoint({ fetchImpl, rpcUrl, name, plan, factory, agentVaultDeployer })));
   return problems;
 }
 
@@ -180,6 +217,10 @@ export async function checkPlan({ fetchImpl, plan, manifest, only }) {
   if (typeof factory !== 'string' || !isAddress(factory)) {
     return { ok: false, problems: ['the manifest has no VaultFactory address'], checked: [], factory: '' };
   }
+  const agentVaultDeployer = manifest?.contracts?.AgentVaultDeployer?.address;
+  if (typeof agentVaultDeployer !== 'string' || !isAddress(agentVaultDeployer)) {
+    return { ok: false, problems: ['the manifest has no AgentVaultDeployer address'], checked: [], factory };
+  }
   const chains = plan?.chains;
   if (!chains || typeof chains !== 'object' || Object.keys(chains).length === 0) {
     return { ok: false, problems: ['the plan names no chain'], checked: [], factory };
@@ -188,7 +229,7 @@ export async function checkPlan({ fetchImpl, plan, manifest, only }) {
   /** @type {string[]} */
   const problems = [];
   for (const name of names) {
-    problems.push(...(await checkChain({ fetchImpl, name, plan: chains[name], factory })));
+    problems.push(...(await checkChain({ fetchImpl, name, plan: chains[name], factory, agentVaultDeployer })));
   }
   return { ok: problems.length === 0, problems, checked: names, factory };
 }
