@@ -193,9 +193,9 @@ redeemer carries their own execution cost.
 | Creator locks ≥5% stake | VaultCore: **withdrawal gate**, not top-up obligation. Creator redemptions revert if they would take creator share below 5% while ≥1 non-creator member remains. Passive dilution below 5% by others' deposits is allowed and simply freezes creator withdrawals until restored. |
 | Performance fee, 10% of realized profit | FeeEngine at redemption (crystallization on realization only). HWM per `(member, operator)`; see §7. |
 | Proposal rights scale with stake | Governance, against the same voting-eligible stake measure as quorum. |
-| Quorum: participating stake, 25% protocol floor | Governance. Denominator = voting-eligible stake at the proposal snapshot (excludes pending deposits §5 and locked Mode-F shares §4.4). Standing defaults never count in the quorum numerator (K-3 accepted). |
-| <5 members: signer count plus stake | Below the threshold `finalize` passes on either a majority of the members-at-creation revealing FOR while the FOR stake also clears the quorum, or an outright FOR stake majority; both branches weigh stake (H-8/CM-7 remediation). The 5-member boundary itself remains a manipulation surface; threat model CM-7. |
-| Rules immutable after funding except full consensus + timelock | VaultCore config setters gated on a Governance flag reachable only by 100% of voting-eligible stake + timelock. One permanently offline member ⇒ rules frozen forever (K-2, accepted as intended). |
+| Quorum: participating stake, 25% protocol floor | Governance. Denominator = voting-eligible stake at the proposal snapshot (excludes pending deposits §5 and locked Mode-F shares §4.4). At five or more members, standing defaults never count in the quorum numerator (K-3 accepted); below five members an applied standing default counts toward the FOR-stake-majority branch of `finalize`. |
+| <5 members: signer count plus stake | Below the threshold `finalize` passes a non-RuleChange proposal when more than half of the members at creation revealed (for or against) and the self-directed FOR stake also clears the quorum, or when self-directed FOR stake is more than half of eligible stake; both branches weigh stake (H-8/CM-7 remediation). The 5-member boundary itself remains a manipulation surface; threat model CM-7. |
+| Rules immutable after funding except full consensus + timelock | VaultCore configuration is immutable from construction and has no setters; the only thing a full-consensus RuleChange (100% of voting-eligible stake revealed FOR) can change, after the timelock, is the vault's Governance parameters (durations, quorum, proposal threshold, concentration cap, cooldown). One permanently offline member ⇒ those parameters frozen forever (K-2, accepted as intended). |
 | Per-vault capacity cap | VaultCore: deposits revert above cap. **Optional**; `capacityCapUsdc == 0` opts out (uncapped); `isCapped()` reports which. |
 
 ## 7. Fees and the operator registry (C-3)
@@ -246,18 +246,22 @@ special-case them.
 ## 10. Sub-vaults (Sprint 5; constraints recorded now)
 
 - Parent allocates capital to child; child governs its own mandate. Depth hard-capped at 3.
-- **Recursive deposits blocked at contract level:** a vault cannot deposit into any vault whose
-  parent chain includes itself (registry walk at deposit time; depth ≤ 3 keeps the walk O(3)).
-- Cumulative effective fee across the chain is computed on-chain and capped; frontend displays it.
+- **Recursive deposits blocked at contract level:** a vault can allocate capital only to a child
+  whose registry edge names it as parent (`VaultCore.allocateToChild`); edges are written once at
+  child creation, so cycles cannot be formed.
+- At child creation the registry requires the summed exit-fee ceilings along the ancestor chain to
+  be at most 250 bps; the stacked performance fee is exposed as a read-only view and is not capped.
+  The frontend displays both.
 - Parent redemptions draw idle stables before touching child positions.
 - Child quorum floors inherit `max(childFloor, parentFloor)`.
 
 ## 11. Safety systems
 
 - **`ChainlinkOracle`:** exactly one genuine Chainlink Data Feed per asset; WETH via ETH/USD,
-  cbBTC via BTC/USD, USDC pinned to $1.00, and no cbETH because Base has no cbETH/USD feed. Three
-  guards, all fail-closed: an **L2 sequencer uptime gate** with a grace period after recovery, a
-  per-feed **heartbeat**, and a **sane-price band**. On any of them `priceWad` reverts, and the
+  cbBTC via BTC/USD, USDC pinned to $1.00, and no cbETH because Base has no cbETH/USD feed. Up to
+  three guards, all fail-closed: an **L2 sequencer uptime gate** with a grace period after recovery,
+  where the deployment wires an uptime feed; a per-feed **heartbeat**; and a **sane-price band**,
+  where one is configured. On any of them `priceWad` reverts, and the
   breaker **freezes every call that reads NAV, including exits** (K-4; accepted: an attacker who can induce
   staleness can trap capital, and no escape hatch will be added, since any escape hatch is exactly
   the stale-price exit the breaker exists to prevent).
@@ -274,8 +278,9 @@ special-case them.
 
 ## 12. Upgrade posture
 
-**None.** No proxies, no upgradeable contracts. Implementations are immutable; the only
-mutable surface is vault config behind full-consensus + timelock (§6). Protocol iteration
+**None.** No proxies, no upgradeable contracts. Implementations are immutable and VaultCore
+configuration has no setters; the only mutable per-vault surface is the vault's Governance
+parameters, behind full-consensus + timelock (§6). Protocol iteration
 happens by deploying new versions via the factory; migration is voluntary per vault.
 
 ## 13. Precision and rounding

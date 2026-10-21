@@ -20,6 +20,10 @@ Measured, not asserted:
 | Did `VaultCore.sol` change in the EIP-170 fix? | `git diff protocol/main...sprint-7/eip170-fix -- contracts/src/VaultCore.sol` | **No**: empty, byte-identical |
 | Do the canary / reference-agent branches touch contracts? | same, for `sprint-5/canary` and `sprint-6/reference-agent` | **No**: both empty |
 
+> Note (2026-10-21): these answers were measured at the Sprint-10 freeze. Run against today's
+> `protocol/main` the first command is no longer empty: `VaultCore`, `Governance`, `FeeEngine` and
+> other contracts have changed since, and `IdentityGate.sol` and `UniswapV3Adapter.sol` were added.
+
 So the entire contract-level delta since the Sprint-6 reviews is **PR #17, the EIP-170
 deployment fix**:
 
@@ -132,6 +136,10 @@ Read this section as the provenance record for the least-reviewed part of the su
 | --- | --- | --- |
 | Did any frozen contract change? | `git diff v0.2.0-audit..protocol/main -- contracts/src/OracleAggregator.sol contracts/src/VaultCore.sol contracts/src/VaultFactory.sol contracts/src/VaultDeployer.sol contracts/src/Governance.sol contracts/src/FeeEngine.sol contracts/src/OperatorRegistry.sol contracts/src/SubVaultRegistry.sol contracts/src/AggregationRouterAdapter.sol contracts/src/DirectPoolAdapter.sol contracts/src/lib contracts/src/interfaces` | **No**: empty |
 | What is new under `contracts/src/`? | `git diff --stat v0.2.0-audit..protocol/main -- contracts/src/` | only `src/oracle/**`, all new files |
+
+> Note (2026-10-21): measured at Sprint 11. Against today's `protocol/main` both commands return
+> changes to frozen contracts, and `OracleAggregator.sol`, `oracle/UniswapV3TwapSource.sol` and
+> `oracle/PythSource.sol` are no longer in `contracts/src`; `oracle/ChainlinkOracle.sol` replaced them.
 
 ### What was added
 

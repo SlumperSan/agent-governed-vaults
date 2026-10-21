@@ -157,11 +157,11 @@ to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling **70.96
 `minAmountOut`**, which is NOT the same as the H-4 floor and an earlier draft conflated the two:
 `minAmountOut` was 1966530337330907 and the bare oracle floor 1947059739931591, so the fill sits
 171.66 bps above the floor. The H-4 bound is a minimum on received oracle VALUE
-(`executeRebalance`, `VaultCore.sol:943-947`), not the measured delta. Proposal 1 executed carrying no orders.
+(`executeRebalance`, `VaultCore.sol:957-961`), not the measured delta. Proposal 1 executed carrying no orders.
 Proposal 2 reads `status` 2 (Passed) with `expiresAt` 1789340584, so its governance window is open,
 **but it can never execute**, and an earlier draft of this line said "still executable" and
 contradicted this repository's own address book six files away. `Governance.execute` requires
-`keccak256(payload) == p.actionHash` (`Governance.sol:599`) and the committed payload carries a
+`keccak256(payload) == p.actionHash` (`Governance.sol:694`) and the committed payload carries a
 `SwapOrder.deadline` that `AggregationRouterAdapter` compares against `block.timestamp`. That
 deadline has passed and the payload cannot be re-dated without changing its hash, so the proposal is
 permanently unexecutable and simply waits out its window. That is precisely why vault two exists
@@ -288,8 +288,8 @@ position is `scripts/smoke-test.mjs`, a Base Sepolia runner that defaults to `ba
 and mainnet vault creation is the hand-written `factory.createVault(...)` step in DEPLOYMENT §4.
 So this is the value the operator must type, held to the reference config by
 `scripts/test/config-doc-truth.test.mjs`. The protocol cap is 100 bps; 50 is the value exercised
-end-to-end in the soak, and it leaves headroom for a child vault (stacked cap 50+25=75 ≤ 100 was
-proven live, SOAK-REPORT §2). **Decay-period flag (2026-09-01):** this paragraph previously said
+end-to-end in the soak, and it leaves headroom for a child vault (a stacked exit-fee ceiling of
+50+25=75, under the 250 bps registry cap, was proven live, SOAK-REPORT §2). **Decay-period flag (2026-09-01):** this paragraph previously said
 302,400 s (3.5 days). That figure was never what the 50 bps vault ran: the Sepolia smoke vault
 deployed from `base-sepolia.json` at 604,800 s, and only the 25 bps soak drill vaults
 (`scripts/soak/soak-vaults.json`) used 302,400 s. Finance flagged the contradiction (Member Cost
