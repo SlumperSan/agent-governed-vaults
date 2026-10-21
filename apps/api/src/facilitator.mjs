@@ -474,8 +474,9 @@ export async function assertUsdcDomain(cfg) {
  * @param {string} [cfg.usdcName]   USDC EIP-712 domain name (default 'USD Coin')
  * @param {string} [cfg.usdcVersion]
  * @param {() => number} [cfg.now]
+ * @param {number} [cfg.receiptTimeoutMs] bound on the wait for the settlement receipt (default 30s)
  */
-export function createSettlingFacilitator({ publicClient, walletClient, usdcAddress, chainId, usdcName, usdcVersion, now = () => Date.now() }) {
+export function createSettlingFacilitator({ publicClient, walletClient, usdcAddress, chainId, usdcName, usdcVersion, now = () => Date.now(), receiptTimeoutMs = 30_000 }) {
   if (!ADDR_RE.test(usdcAddress ?? '')) throw new Error('settling facilitator: usdcAddress required');
   const domainCfg = { chainId, usdcName, usdcVersion, usdcAddress, publicClient };
 
@@ -521,6 +522,18 @@ export function createSettlingFacilitator({ publicClient, walletClient, usdcAddr
           account: walletClient.account,
         });
         const hash = await walletClient.writeContract(request);
+        // A hash proves a broadcast, not a settlement: the payer can still make the transfer revert
+        // between simulate and inclusion (cancelAuthorization, moving the balance, rotating a 1271
+        // signer). Only a mined `success` receipt is a settlement. No receipt in time is a
+        // transport-shaped "could not tell" (same `settle-unreachable` prefix as the standard
+        // path), never success and never a revert verdict: the tx may still land.
+        let receipt;
+        try {
+          receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: receiptTimeoutMs });
+        } catch (err) {
+          return { ok: false, reason: `settle-unreachable: no receipt for ${hash}: ${err?.shortMessage ?? err?.message ?? err}` };
+        }
+        if (receipt?.status !== 'success') return { ok: false, reason: `settle-reverted: ${hash}` };
         return { ok: true, receiptId: hash };
       } catch (err) {
         return { ok: false, reason: `settle-failed: ${err?.shortMessage ?? err?.message ?? err}` };

@@ -158,13 +158,14 @@ test('a publicClient whose verifyTypedData throws is a refusal, never an accepta
 
 // ── settlement ──
 
-function settler({ valid = true, code = '0x6000' } = {}) {
-  const seen = { simulate: [], verify: 0 };
+function settler({ valid = true, code = '0x6000', receipt = async () => ({ status: 'success' }) } = {}) {
+  const seen = { simulate: [], verify: 0, receipt: [] };
   const publicClient = {
     verifyTypedData: async () => { seen.verify++; return valid; },
     getCode: async () => code,
     readContract: async () => false,
     simulateContract: async (req) => { seen.simulate.push(req); return { request: req }; },
+    waitForTransactionReceipt: async (args) => { seen.receipt.push(args); return receipt(args); },
   };
   const walletClient = { account: { address: '0x' + '9'.repeat(40) }, writeContract: async () => '0xhash' };
   return { seen, facilitator: createSettlingFacilitator({ publicClient, walletClient, usdcAddress: USDC, chainId: CHAIN }) };
@@ -208,4 +209,30 @@ test('settle: ECDSA still uses the (v,r,s) overload and never asks the chain to 
   assert.equal(r.ok, true);
   assert.equal(seen.verify, 0);
   assert.equal(seen.simulate[0].args.length, 9);
+});
+
+// ── settlement receipt (A16 H2): a broadcast hash is not a settlement ──
+
+test('settle: success is reported only after a mined success receipt for the broadcast hash', async () => {
+  const { seen, facilitator } = settler();
+  const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.deepEqual(r, { ok: true, receiptId: '0xhash' });
+  assert.equal(seen.receipt.length, 1);
+  assert.equal(seen.receipt[0].hash, '0xhash');
+  assert.ok(Number.isFinite(seen.receipt[0].timeout) && seen.receipt[0].timeout > 0, 'the receipt wait must be bounded');
+});
+
+test('settle: a reverted receipt is a settlement failure, never ok', async () => {
+  const { facilitator } = settler({ receipt: async () => ({ status: 'reverted' }) });
+  const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.deepEqual(r, { ok: false, reason: 'settle-reverted: 0xhash' });
+});
+
+test('settle: no receipt in time is the transport-shaped could-not-tell, never ok and never a revert', async () => {
+  const { facilitator } = settler({
+    receipt: async () => { throw Object.assign(new Error('Timed out while waiting for transaction'), { shortMessage: 'Timed out while waiting for transaction with hash "0xhash" to be confirmed.' }); },
+  });
+  const r = await facilitator.verifyAndSettle({}, env(SMART_SIG));
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /^settle-unreachable: no receipt for 0xhash: Timed out/);
 });
