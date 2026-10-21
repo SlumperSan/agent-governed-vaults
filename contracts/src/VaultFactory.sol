@@ -97,6 +97,19 @@ contract VaultFactory {
     bool public initialized;
     mapping(address => bool) public isAllowedOracle;
 
+    /// @notice The smallest `minDepositUsdc` any vault this factory creates may carry: 100 USDC, in
+    /// the 6-decimal base units of the chain's canonical USDC. Owner decision 2026-10-21.
+    /// @dev Why a floor at all (A4 freeze review, finding 3): VaultCore only requires
+    /// `minDepositUsdc > 0`, so before this the factory would deploy a vault whose first mint could be
+    /// 1e12 share-wei (a 1-unit minimum, a millionth of one share), and against so small a supply a
+    /// second member's fee-bearing entries and exits ratchet NAV per share-wei upward. At 100 USDC the
+    /// first mint is at least 100e18 share-wei, the launch value in contracts/config/arc-mainnet.json.
+    /// It also prices each H-8 regime-flip seat at no less than 100 USDC; a creator may still choose
+    /// more, and should relative to capacity. `p.usdc` is creator-supplied, so the floor ASSUMES 6 decimals rather than reading
+    /// them. It binds vaults built here, which are the only attested ones; a VaultCore deployed
+    /// directly (for example through the permissionless VaultDeployer) is never attested.
+    uint256 public constant MIN_DEPOSIT_FLOOR_USDC = 100_000_000;
+
     address[] public allVaults;
 
     event VaultCreated(address indexed vault, address indexed creator, address usdc, uint256 capacityCapUsdc);
@@ -164,6 +177,14 @@ contract VaultFactory {
     error OracleNotAllowed();
     /// @dev The vault's oracle cannot price one of its basket assets — the vault would be a brick.
     error OracleMissingAsset(address asset);
+    /// @dev The requested `minDepositUsdc` is below {MIN_DEPOSIT_FLOOR_USDC}.
+    error MinDepositBelowFloor();
+
+    /// @dev Every vault creation path calls this before it deploys anything. See
+    /// {MIN_DEPOSIT_FLOOR_USDC}.
+    function _requireMinDepositFloor(uint256 minDepositUsdc) internal pure {
+        require(minDepositUsdc >= MIN_DEPOSIT_FLOOR_USDC, MinDepositBelowFloor());
+    }
 
     /// @dev C-6 gate: when the allowlist is enforced, a vault's oracle must be blessed. Verifying a
     /// genuine oracle on-chain is impossible (a fake AggregatorV3 or a weak custom aggregator both
@@ -217,6 +238,7 @@ contract VaultFactory {
     /// @return vault the deployed VaultCore address
     function createVault(VaultParams calldata p) external returns (address vault) {
         require(initialized, NotInitialized());
+        _requireMinDepositFloor(p.minDepositUsdc);
         _requireAllowedOracle(address(p.oracle)); // C-6: only a curated (blessed) oracle at launch
         vault = _deploy(p);
         // AFTER _deploy on purpose: VaultCore's constructor owns basket validity (cap, duplicates,
@@ -243,6 +265,7 @@ contract VaultFactory {
         // as a child, and the empty-electorate capture is unreachable. See `allowSubVaults`.
         require(initialized, NotInitialized());
         require(allowSubVaults, SubVaultsDisabled());
+        _requireMinDepositFloor(p.minDepositUsdc);
         _requireAllowedOracle(address(p.oracle)); // C-6: only a curated (blessed) oracle
         // L-1: this performed NO authorization on `parent`. Anyone could permanently attach an
         // arbitrary child under any vault — `registerChild` is creation-time-only with no

@@ -79,7 +79,7 @@ contract Create2ProtocolTest is Create2ProxyFixture {
             basketAssets: basket,
             oracle: IOracleAggregator(oracle),
             capacityCapUsdc: 0,
-            minDepositUsdc: 10e6,
+            minDepositUsdc: 100e6,
             exitFeeMaxBps: 50,
             exitFeeDecayPeriod: 30 days,
             allowedAdapters: new address[](0)
