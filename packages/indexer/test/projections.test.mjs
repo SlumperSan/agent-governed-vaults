@@ -504,3 +504,19 @@ test('pendingCount: a PendingCancelled for a member with no open row leaves the 
   apply(s, ev('PendingCancelled', 2, 0, V, { member: A }));
   assert.equal(vaultView(s, V).pendingCount, 1, 'C is still pending');
 });
+
+test('pendingCount: a duplicate DepositPending for a member with an open row changes nothing', () => {
+  const s = emptyState();
+  apply(s, ev('DepositPending', 1, 0, V, { member: A }));
+  apply(s, ev('DepositPending', 1, 1, V, { member: C }));
+  const open = [...s.pendingMembers.get(V)];
+  // A second delivery of A's pending log (a replayed log) must not count A twice.
+  apply(s, ev('DepositPending', 1, 0, V, { member: A }));
+  assert.equal(vaultView(s, V).pendingCount, 2);
+  assert.deepEqual([...s.pendingMembers.get(V)], open, 'open-row set is unchanged');
+  // One activation clears A's single row; a double-counted A would leave the count at 2.
+  apply(s, ev('DepositActivated', 2, 0, V, { member: A, sharesMinted: 100n }));
+  assert.equal(vaultView(s, V).pendingCount, 1, 'only C is still pending');
+  apply(s, ev('PendingCancelled', 3, 0, V, { member: C }));
+  assert.equal(vaultView(s, V).pendingCount, 0);
+});
