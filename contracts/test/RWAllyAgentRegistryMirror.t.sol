@@ -4,12 +4,7 @@ pragma solidity 0.8.26;
 import {RWAllyAgentRegistry, IERC721Receiver} from "../src/RWAllyAgentRegistry.sol";
 import {MockERC20} from "./mocks/Mocks.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {
-    RegistryTestBase,
-    OutsideRegistryMock,
-    Wallet1271,
-    Factory6492
-} from "./RWAllyAgentRegistry.t.sol";
+import {RegistryTestBase, OutsideRegistryMock, Wallet1271, Factory6492} from "./RWAllyAgentRegistry.t.sol";
 
 /// An ERC-1271 attestor that burns every unit of gas it is given.
 contract BurnerAttestor {
@@ -780,7 +775,14 @@ contract RWAllyAgentRegistryMirrorTest is RegistryTestBase {
         bytes4 q = 0x64926492;
         bytes memory sig = abi.encodePacked(
             abi.encode(address(f), abi.encodeCall(Factory6492.deploy, (salt, d, inner)), inner),
-            q, q, q, q, q, q, q, q
+            q,
+            q,
+            q,
+            q,
+            q,
+            q,
+            q,
+            q
         );
         assertEq(cf.code.length, 0, "not deployed");
         _expect(RWAllyAgentRegistry.InvalidAttestorSignature.selector);
