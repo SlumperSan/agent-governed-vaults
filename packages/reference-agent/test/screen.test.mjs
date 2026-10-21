@@ -51,6 +51,19 @@ test('screenWalletClient: a stale list refuses deposit and approve but lets a cl
   assert.throws(() => s.writeContract(req(LISTED, 'requestExit')), { name: 'SanctionsRefusalError' });
 });
 
+test('screenWalletClient: on a stale list the agent may settle its own queued exit, not anyone else\'s, and never when listed', async () => {
+  const w = recorder();
+  const s = screenWalletClient(w, STALE);
+  const settle = (/** @type {string} */ from, /** @type {string} */ member) => ({ ...req(from, 'settleQueuedExit'), args: [member] });
+  await s.writeContract(settle(CLEAN, CLEAN.toUpperCase().replace('0X', '0x')));
+  assert.equal(w.sent.length, 1);
+  const OTHER = '0x' + '2'.repeat(40);
+  assert.throws(() => s.writeContract(settle(CLEAN, OTHER)), { name: 'SanctionsListStaleError' });
+  assert.throws(() => s.writeContract(settle(LISTED, LISTED)), { name: 'SanctionsRefusalError' });
+  assert.throws(() => screenWalletClient(w, FRESH).writeContract(settle(LISTED, LISTED)), { name: 'SanctionsRefusalError' });
+  assert.equal(w.sent.length, 1);
+});
+
 test('screenWalletClient: a request with no account address fails closed', () => {
   const w = recorder();
   assert.throws(() => screenWalletClient(w, FRESH).writeContract({ functionName: 'deposit' }), /no account address/);

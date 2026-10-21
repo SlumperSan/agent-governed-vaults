@@ -5,8 +5,9 @@
  *
  * The check is the UI's `assertNotSanctioned`, imported unchanged, so the list, the 30-day
  * freshness ceiling and the exit exemption are one implementation. It fails closed exactly as it
- * does there: a stale list refuses every write except `requestExit` and `claimEscrowed`, and a
- * listed address is refused even on those. A payment gets no exemption (it brings value in).
+ * does there: a stale list refuses every write except `requestExit` and `claimEscrowed` (plus, on
+ * the agent only, `settleQueuedExit` for its own exit), and a listed address is refused even on
+ * those. A payment gets no exemption (it brings value in).
  *
  * This screens what this software submits. It cannot stop a call made directly against the
  * Protocol's permissionless contracts, and nothing here may claim otherwise.
@@ -31,7 +32,14 @@ export function screenWalletClient(walletClient, now) {
     writeContract(/** @type {any} */ req) {
       const from = req?.account?.address;
       if (!from) throw new Error('sanctions screen: writeContract has no account address to screen');
-      assertNotSanctioned(from, now?.(), req.functionName);
+      // The agent finishing its OWN queued Mode F exit is the second half of a requestExit, so it
+      // gets requestExit's stale-list exemption (exits are never trapped by a slipped refresh).
+      // Settling anyone else's exit gets none, and a listed address is refused either way.
+      const settlesOwnExit =
+        req.functionName === 'settleQueuedExit' &&
+        typeof req.args?.[0] === 'string' &&
+        req.args[0].toLowerCase() === String(from).toLowerCase();
+      assertNotSanctioned(from, now?.(), settlesOwnExit ? 'requestExit' : req.functionName);
       return walletClient.writeContract(req);
     },
   };
