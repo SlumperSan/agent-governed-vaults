@@ -92,6 +92,7 @@ import {
   EXACT_INPUT_SINGLE,
   EXACT_INPUT_SINGLE_SIG,
 } from '../packages/chain-config/src/rebalance-order.mjs';
+import { redactUrls } from '../packages/reference-agent/src/config.mjs';
 
 // The pure half moved to packages/chain-config/src/rebalance-order.mjs so the reference agent can
 // import it (the Dockerfile does not copy scripts/). Re-exported unchanged: every importer of this
@@ -190,7 +191,7 @@ async function main() {
 
   if (amountIn <= 0n) fail('--amount-in must be positive');
 
-  console.log(`RPC       ${RPC}`);
+  console.log(`RPC       ${redactUrls(RPC)}`);
   console.log(`chainId   ${cast('chain-id')}`);
   console.log(`block     ${big(cast('block-number'))}`);
   console.log(`vault     ${vault}\n`);

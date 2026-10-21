@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyCallError } from '../../packages/canary/src/call-error.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 // fileURLToPath, not `new URL(...).pathname`: a checkout path containing a space arrives here
 // percent-encoded, so the raw pathname yields a directory that does not exist and every drill
@@ -379,7 +380,7 @@ export function send(label, to, sig, ...args) {
   } catch (e) {
     // Not fatal on its own: the transaction is mined either way, and the per-assertion polls
     // remain as the backstop. Say so rather than failing a good run on a slow endpoint.
-    log(`   WARNING: RPC did not visibly reach block ${mined} (${e.message}); subsequent reads may lag`);
+    log(`   WARNING: RPC did not visibly reach block ${mined} (${redactUrls(e.message)}); subsequent reads may lag`);
   }
   return receipt;
 }
@@ -993,7 +994,7 @@ export function assertLogsServed(factory, fromBlock, { chunk = 10_000, maxChunks
       topic, '--address', factory,
     ]);
     if (out.toLowerCase().includes(needle)) {
-      log(`assertLogsServed: ${RPC} serves historical logs (positive control ${first} found in `
+      log(`assertLogsServed: ${redactUrls(RPC)} serves historical logs (positive control ${first} found in `
         + `blocks ${from}-${to})`);
       return;
     }

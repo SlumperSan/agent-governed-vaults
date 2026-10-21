@@ -61,6 +61,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 // Same default as `lib.mjs`: publicnode prunes logs, and a sampler on a different endpoint
@@ -522,7 +523,7 @@ if (invokedDirectly) {
   };
 
   fs.mkdirSync(path.dirname(SERIES), { recursive: true });
-  console.log(`[oracle-sampler] rpc=${RPC} every ${SAMPLE_MS}ms -> ${SERIES}`);
+  console.log(`[oracle-sampler] rpc=${redactUrls(RPC)} every ${SAMPLE_MS}ms -> ${SERIES}`);
   console.log(`[oracle-sampler] ChainlinkOracle ${dep.aggregator}, sequencerUptimeFeed=${sequencerFeed}, GRACE_PERIOD=${env.grace}s, assets=${dep.assets.map((a) => a.symbol).join(',')}`);
   for (;;) {
     const s = sample(env);

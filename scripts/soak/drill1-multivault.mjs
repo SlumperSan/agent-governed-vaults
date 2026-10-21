@@ -33,6 +33,7 @@ import {
 import { assertLiveChainId, deploymentPath, loadDeployment, wiringExpectations } from './deployment.mjs';
 import { apiGet } from './api-client.mjs';
 import { vaultsIn, headBlockOf } from './snapshot.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 const dep = loadDeployment(deploymentPath(ROOT));
 const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
@@ -57,7 +58,7 @@ const TOKENS_B = tokensFor(B.basket);
 // ────────────────────────────────── phases ──────────────────────────────────
 
 function preflight() {
-  log(`rpc=${RPC}  factory=${dep.factory}`);
+  log(`rpc=${redactUrls(RPC)}  factory=${dep.factory}`);
   assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
   // The chain-id check proves WHICH chain answers. This proves the answers are COMPLETE:
   // a pruning endpoint reports the right chain and then hides its history.

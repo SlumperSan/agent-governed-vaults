@@ -41,6 +41,7 @@ import { createMint, getAccount, getOrCreateAssociatedTokenAccount, mintTo } fro
 import { resolveApiConfig, buildApiServer } from '../apps/api/src/serve.mjs';
 import { createProtocolClient, createSvmPayer } from '../packages/agent-sdk/src/index.mjs';
 import { decodeHeaderJson } from '../packages/agent-sdk/src/header-codec.mjs';
+import { redactUrls } from '../packages/reference-agent/src/config.mjs';
 
 const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const RPC = process.env.SVM_RPC_URL || 'https://api.devnet.solana.com';
@@ -60,7 +61,7 @@ const facilitator = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(secret)));
 const conn = new Connection(RPC, 'confirmed');
 const genesis = await conn.getGenesisHash();
 if (genesis !== DEVNET_GENESIS) {
-  console.error(`refusing to run: ${RPC} has genesis ${genesis}, which is not devnet (${DEVNET_GENESIS}).`);
+  console.error(`refusing to run: ${redactUrls(RPC)} has genesis ${genesis}, which is not devnet (${DEVNET_GENESIS}).`);
   process.exit(2);
 }
 console.log(`devnet confirmed (genesis ${genesis})`);

@@ -53,6 +53,7 @@ import {
   readSafeState, buildPlan, safeTransactionHash, signAsOwner, packSignatures, execTransactionArgs,
   SAFE_EXEC_TRANSACTION_SIG,
 } from './lib/safe-exec.mjs';
+import { redactUrls } from '../packages/reference-agent/src/config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // NOT publicnode: it prunes logs and receipts, and this script decodes phase results FROM
@@ -264,7 +265,7 @@ const T_EXEC_FAILURE = keccakOf('ExecutionFailure(bytes32,uint256)');
 // ────────────────────────────────── phases ──────────────────────────────────
 
 function preflight() {
-  log(`rpc=${RPC}`);
+  log(`rpc=${redactUrls(RPC)}`);
   assert(SIGNER_ARGS.length > 0, 'SMOKE_SIGNER_ARGS is required (e.g. "--account deployer --password-file .pw"); this script never handles the key itself');
   const chainId = Number(cast(['chain-id', '--rpc-url', RPC]));
   assert(chainId === cfg.chainId, `RPC chain id ${chainId} != config chainId ${cfg.chainId}`);

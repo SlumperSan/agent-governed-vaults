@@ -46,6 +46,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyCallError } from '../packages/canary/src/call-error.mjs';
 import { chainBindingVerdict } from './lib/chain-binding.mjs';
+import { redactUrls } from '../packages/reference-agent/src/config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RPC = process.env.BASE_MAINNET_RPC ?? 'https://mainnet.base.org';
@@ -164,7 +165,7 @@ const eq = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 const unquote = (s) => String(s).replace(/^"|"$/g, '');
 
 if (!JSON_OUT) {
-  console.log(`Verifying contracts/config/base-mainnet.json against ${RPC}`);
+  console.log(`Verifying contracts/config/base-mainnet.json against ${redactUrls(RPC)}`);
   console.log(`current status: ${cfg.status}\n`);
 }
 

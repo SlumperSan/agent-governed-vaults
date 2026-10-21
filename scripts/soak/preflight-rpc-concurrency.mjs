@@ -67,6 +67,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { ROOT, RPC, log, cast } from './lib.mjs';
 import { deploymentPath, loadDeployment } from './deployment.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 const execFileAsync = promisify(execFile);
 const CAST_BIN = process.env.CAST ?? 'cast';
@@ -146,7 +147,7 @@ function main() {
     process.exit(0);
   }
 
-  log(`RPC concurrency preflight: ${SOAK_RPC_CONCURRENCY} concurrent eth_getLogs against ${RPC}`);
+  log(`RPC concurrency preflight: ${SOAK_RPC_CONCURRENCY} concurrent eth_getLogs against ${redactUrls(RPC)}`);
 
   // The deployment's own factory — a real, always-deployed contract on the configured chain, so
   // the call shape is identical to what the indexer's own poller actually sends. No dependency on
@@ -169,10 +170,10 @@ function main() {
       }
       console.error('\n[soak] RPC CONCURRENCY PREFLIGHT REFUSED\n');
       if (result.reason === 'rate-limited') {
-        console.error(`${RPC} rate-limited ${result.rateLimited.length}/${result.concurrency} concurrent `
+        console.error(`${redactUrls(RPC)} rate-limited ${result.rateLimited.length}/${result.concurrency} concurrent `
           + `eth_getLogs calls — this is the SAME symptom the indexer and canary hit mid-soak `
           + `(poll.failed / DETECTOR BROKEN), not a fluke of this one check.`);
-        console.error(`\nExample: ${result.rateLimited[0]}\n`);
+        console.error(`\nExample: ${redactUrls(result.rateLimited[0])}\n`);
         console.error('This is NOT the pruning failure (that returns [] with no error, always, '
           + 'load or no load) — this endpoint serves history fine alone and throttles under this '
           + 'launcher\'s own concurrency (indexer + canary + sampler + 2 drill tracks). Switching '
@@ -184,13 +185,13 @@ function main() {
         console.error(`could not complete the measurement — every concurrent call failed, but not in a `
           + `rate-limit shape (so this is not necessarily throttling, but an unmeasured RPC is not `
           + `evidence it will hold up either):\n`);
-        for (const f of result.otherFailures.slice(0, 3)) console.error(`  ${f}`);
+        for (const f of result.otherFailures.slice(0, 3)) console.error(`  ${redactUrls(f)}`);
         console.error('\nCheck SOAK_RPC / network connectivity, then re-run.\n');
       }
       process.exit(1);
     })
     .catch((e) => {
-      console.error(`\n[soak] RPC CONCURRENCY PREFLIGHT COULD NOT RUN: ${e.message}\n`);
+      console.error(`\n[soak] RPC CONCURRENCY PREFLIGHT COULD NOT RUN: ${redactUrls(e.message)}\n`);
       process.exit(1);
     });
 }
