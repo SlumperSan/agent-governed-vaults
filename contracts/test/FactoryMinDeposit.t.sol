@@ -16,7 +16,7 @@ import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "./mocks/Mocks.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
-/// @notice The factory's floor on `minDepositUsdc` (owner decision 2026-10-21, A4 freeze review
+/// @notice The factory's floor on `minDepositUsdc` (A4 freeze review
 /// finding 3): every creation path refuses a minimum below 100 USDC and accepts exactly 100 USDC.
 /// One revert test and one pass test per path, so removing the check from either path turns that
 /// path's revert test red while the other path's tests stay green.

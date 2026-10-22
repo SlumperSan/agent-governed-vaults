@@ -12,7 +12,7 @@ pragma solidity 0.8.26;
 //
 // There is no purely-internal fix: any voting denominator that excludes the parent lets a dust
 // depositor govern the parent's allocation, and including the parent makes the child ungovernable
-// (the parent is a contract with no vote path). The owner's decision is to ship launch with
+// (the parent is a contract with no vote path). The decision is to ship launch with
 // sub-vaults DISABLED at the contract level (VaultFactory.allowSubVaults == false) and defer the
 // mechanism to a post-launch, post-audit release.
 //
