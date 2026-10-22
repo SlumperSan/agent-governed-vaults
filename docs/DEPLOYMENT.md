@@ -140,10 +140,15 @@ forge script script/Deploy.s.sol:Deploy \
 
 This deploys `OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer`,
 `AgentVaultDeployer`, `VaultFactory`, calls `factory.initialize(BLESSED_ORACLES)` and
-`factory.initializeAgentPath(agentRegistry, agentVaultDeployer)`, then performs the **irreversible**
-wiring: `registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`,
-and finally `feeEngine.initialize(FEE_TREASURY)`, which sets the treasury once. The script refuses a
-real-chain run with `FEE_TREASURY` unset or zero, and the engine takes no fee until the treasury is set.
+`factory.initializeAgentPath(agentRegistry, agentVaultDeployer)`, then `feeEngine.initialize(FEE_TREASURY)`,
+which sets the treasury once, and finally performs the **irreversible** wiring:
+`registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`. All
+thirteen transactions go out in one broadcast. The script refuses a real-chain run with `FEE_TREASURY`
+unset or zero. The engine takes no fee until the treasury is set, which is why it is set before
+`registry.wire`: no vault can be created before that wire lands, so none is ever created fee-free. After
+the broadcast the script reads back each wired value (the registry's factory and fee engine, the
+sub-vault registry's factory, governance's sub-vault registry, the factory's agent registry and agent
+vault deployer, each blessed oracle), not only the `initialized()` flags, and reverts on a mismatch.
 `test/Deploy.t.sol` asserts each wire locks; re-running `registry.wire` or `subReg.wire` reverts
 `AlreadyWired`, re-running `gov.wireSubVaultRegistry` reverts `AlreadyWiredSubRegistry`, a second
 `initialize` (the factory's or the fee engine's) reverts `AlreadyInitialized`, and a second
@@ -667,11 +672,19 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
 - **Order on each chain.** Gate on the proxy having 69 bytes and each predicted address being empty. `ProtocolCreate2.create`
   reverts on an address that already has code, so a half-run or a squatted address is finished by sending
   the remaining creates by hand, after checking the runtime at each existing address against a local
-  build. Deploy the seven (any order), with the agent registry already deployed. Deploy the per-chain oracle and
-  adapter. Send `factory.initialize([oracle])` and `factory.initializeAgentPath(agentRegistry, agentVaultDeployer)`, then run the initialisation preflight (next bullet). Only when it
-  passes send the three wires and `feeEngine.initialize(treasury)`. An uninitialised factory has its allowlist off; `createVault` and
-  `createChildVault` revert `NotInitialized` until `initialize` lands.
-- **Initialisation preflight, per chain, before any wire, vault or announced address.**
+  build. Deploy the agent registry first, then the per-chain oracle and adapter. Then `Deploy.s.sol` sends, in one
+  broadcast: the seven creates, `factory.initialize([oracle])`, `factory.initializeAgentPath(agentRegistry, agentVaultDeployer)`,
+  `feeEngine.initialize(treasury)`, then the three wires. Then run the initialisation preflight (next
+  bullet). An uninitialised factory has its allowlist off; `createVault` and `createChildVault` revert
+  `NotInitialized` until `initialize` lands, and the script initialises the factory before any wire.
+  Why the preflight runs after the wires and not between: the script cannot pause inside a broadcast,
+  and a pause would not make a wrong `initialize` recoverable. `initialize` is one-shot, so a wrong
+  allowlist is permanent the moment it lands, and the recovery is a new salt for the whole set either
+  way (the recovery bullet below). The pause would only save the gas of the remaining one-shot calls.
+  What the preflight still gates is everything after the broadcast: no vault, no announced address.
+  Sending the calls by hand (to finish a half-run or a squatted address) keeps the same order:
+  `feeEngine.initialize` before `registry.wire`, so no vault exists while the engine takes no fee.
+- **Initialisation preflight, per chain, before any vault or announced address.**
   `node scripts/protocol-initialize-preflight.mjs --plan <plan.json>` (plan shape in the script header)
   reads, on at least two RPC endpoints per chain: the chain id, code at the manifest's `VaultFactory`,
   `initialized()` and `oracleAllowlistEnforced()` true, `isAllowedOracle(o)` true for every oracle in the
@@ -679,7 +692,8 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
   cannot be enumerated, so the event is what catches an extra blessed oracle). It also reads
   `agentPathInitialized()` true, `agentRegistry()` equal to the plan's `agentRegistry` and
   `agentVaultDeployer()` equal to the manifest's `AgentVaultDeployer`, each with code. A read that fails is a
-  failure, not a skip. Exit 1 means do not wire, do not create a vault, do not announce the address.
+  failure, not a skip. Exit 1 means do not create a vault and do not announce the address; if a value
+  read back is wrong (not merely unreadable), recovery is the new salt below.
   `scripts/test/protocol-initialize-preflight.test.mjs` runs it against a fake chain.
 - **Recovery on a wrongly initialised chain is a new salt.** `initialize` works once, so a factory that
   was initialised with an empty list, a list that blesses an oracle nobody chose, or by a compromised

@@ -36,13 +36,21 @@ import {TreasuryConfig} from "./lib/TreasuryConfig.sol";
 ///   6. VaultFactory — its initcode embeds registry + governance + feeEngine + subRegistry +
 ///      vaultDeployer. It creates nothing until step 7.
 ///   7. `factory.initialize(BLESSED_ORACLES)`, `factory.initializeAgentPath(agentRegistry,
-///      agentVaultDeployer)`, THEN the wiring: registry.wire(factory, feeEngine); subReg.wire(factory);
-///      gov.wireSubVaultRegistry(subReg). The factory is initialised before the registry is pointed at
-///      it, so an uninitialised factory (oracle allowlist off) is never wired.
+///      agentVaultDeployer)`. The factory is initialised before the registry is pointed at it, so an
+///      uninitialised factory (oracle allowlist off) is never wired.
 ///   8. `feeEngine.initialize(FEE_TREASURY)` (fee model A1): the per-chain treasury that receives 10% of
-///      every performance fee. Until it lands the engine takes no fee, so the order against steps 1 to 7
-///      does not matter; it is one-shot and refuses the zero address. FEE_TREASURY is required on any
-///      real chain (see `lib/TreasuryConfig.sol`).
+///      every performance fee. Until it lands the engine takes no fee, so it goes BEFORE the wiring: no
+///      vault can be created (and realise a fee-free gain) before `registry.wire` lands. It is safe to
+///      send first because neither call reads the other: `initialize` checks only the sender, an unset
+///      treasury and a non-zero argument, and `wire` checks only the sender, unset slots and non-zero
+///      arguments. One-shot, refuses the zero address; FEE_TREASURY is required on any real chain (see
+///      `lib/TreasuryConfig.sol`).
+///   9. THEN the wiring: registry.wire(factory, feeEngine); subReg.wire(factory);
+///      gov.wireSubVaultRegistry(subReg).
+/// All thirteen transactions go out in ONE broadcast. The initialisation preflight
+/// (`scripts/protocol-initialize-preflight.mjs`, `docs/DEPLOYMENT.md` section 10) runs after it, before
+/// any vault is created or the address is announced. After the broadcast the script reads back every
+/// wired value (each wire's target, the agent deployer, each blessed oracle), not only `initialized()`.
 ///
 /// The agent ID registry is NOT deployed here. Its address is the `address` field of
 /// `contracts/config/agent-registry-create2.json` (the registry has its own vanity salt, mined at code
@@ -112,23 +120,41 @@ contract Deploy is Script {
         factory.initialize(blessedOracles);
         factory.initializeAgentPath(agentRegistry, IVaultDeployer(address(agentVaultDeployer)));
 
+        // Fee model A1: the one-shot treasury, BEFORE the wiring, so no vault exists while the engine
+        // takes no fee. Neither this nor `registry.wire` reads the other (see the header, step 8).
+        feeEngine.initialize(treasury);
+
         // One-shot wiring — irreversible after this transaction.
         registry.wire(address(factory), address(feeEngine));
         subReg.wire(address(factory));
         governance.wireSubVaultRegistry(address(subReg));
 
-        // Fee model A1: the one-shot treasury, so the engine can credit its share.
-        feeEngine.initialize(treasury);
-
         vm.stopBroadcast();
 
+        // Read back the wired VALUES, not only the one-shot flags: a hand-sent or resumed call that
+        // pointed a wire at the wrong address would still read `initialized() == true`.
         require(factory.initialized(), "Deploy: factory not initialised");
+        for (uint256 i; i < blessedOracles.length; ++i) {
+            require(factory.isAllowedOracle(blessedOracles[i]), "Deploy: a blessed oracle is not allowed");
+        }
         require(
             factory.agentPathInitialized() && factory.agentRegistry() == agentRegistry,
             "Deploy: agent path not initialised"
         );
+        // The factory hands the agent deployer a 14-field tuple; any other deployer would build a vault
+        // without the agent gate, for good (the call is one-shot). Pin it to the predicted address.
         require(
-            registry.initialized() && subReg.initialized() && governance.initialized(), "Deploy: not wired"
+            address(factory.agentVaultDeployer()) == s.agentVaultDeployer,
+            "Deploy: agent vault deployer is not the predicted AgentVaultDeployer"
+        );
+        require(
+            registry.factory() == address(factory) && registry.feeEngine() == address(feeEngine),
+            "Deploy: registry wired to the wrong factory or fee engine"
+        );
+        require(subReg.factory() == address(factory), "Deploy: sub-vault registry wired to the wrong factory");
+        require(
+            governance.subVaultRegistry() == address(subReg),
+            "Deploy: governance wired to the wrong sub-vault registry"
         );
         require(feeEngine.treasury() == treasury, "Deploy: fee treasury not set");
 
