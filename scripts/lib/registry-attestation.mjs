@@ -69,14 +69,20 @@ export const MIRROR_DAILY_CAP = 100;
  *   an honest `mintMirrored` that lands after the 100th reverts `MirrorCapReached` and can retry the
  *   next UTC day.
  * - The 1 hour expiry stops attestations being hoarded for days and spent in the first block of a day.
+ * - An attestation counts against every UTC day its validity window (signing time to expiry, inclusive)
+ *   touches: one issued at 23:30 with a 00:30 expiry counts on both days. The contract accepts a mint
+ *   only at or before the expiry, and a mint cannot precede its signature, so every mint lands on a
+ *   day its attestation was counted against.
  * - An origin mints at most once per destination (`AlreadyMirrored`), so filling a destination's day
  *   consumes 100 distinct origins on that destination.
- * - Origins younger than 7 days share at most 50 attestations per destination per day, so at least 50
- *   of those 100 origins must be 7 days old or more. Each holder gets at most 10 per destination per
- *   day, so at least 10 holder addresses; holders are free addresses, so that is friction only.
+ * - Origins younger than 7 days at signing share at most 50 attestations per destination per day, so at
+ *   least 50 of a day's 100 mints come from origins 7 days old or more. Each holder gets at most 10 per
+ *   destination per day, so at least 10 holder addresses; holders are free addresses, so that is
+ *   friction only. Both hold only while every signing process reads one shared counter store.
  * - What a full-day halt of one destination costs, per destination per day: 100 origins never usable
  *   on that destination again, at least 50 of them aged 7 days, each costing whatever registering it
- *   cost on its home chain (the owner-set fee, at most 100 USDC and possibly zero), minted before the
+ *   cost on its home chain (the owner-set fee, at most 100 USDC and possibly zero: an origin imported
+ *   from the outside registry during the import window pays no registry fee), minted before the
  *   honest traffic that day. The same origins can fill every other destination's day once as well.
  * - None of this prevents that halt. An attacker holding that stock of origins halts mirroring on a
  *   destination for the day, and every honest mint after the 100th that day reverts.
@@ -102,9 +108,35 @@ const LIMIT_ENV = {
 };
 
 /**
+ * Throws unless `limits` is well formed: every field a positive safe integer, the young-origin budget
+ * below the on-chain cap (young origins alone could otherwise take a destination's whole day), and the
+ * age floor below the young threshold (otherwise no signed origin is young and the budget never
+ * applies). Called by both `signerLimits` and `signerRefusal`, so a hand-built limits object cannot
+ * skip the floor or the budget.
+ * @param {unknown} limits
+ * @returns {asserts limits is ReturnType<typeof signerLimits>}
+ */
+export function assertSignerLimits(limits) {
+  const l = /** @type {Record<string, unknown>} */ (limits);
+  for (const [key, [name]] of Object.entries(LIMIT_ENV)) {
+    const v = l?.[key];
+    if (typeof v !== 'number' || !Number.isSafeInteger(v) || v <= 0) {
+      throw new Error(`${key} (${name}) must be a positive integer, got ${String(v)}`);
+    }
+  }
+  if (/** @type {number} */ (l.youngOriginDailyBudget) >= MIRROR_DAILY_CAP) {
+    throw new Error(`youngOriginDailyBudget (REGISTRY_ATTEST_YOUNG_ORIGIN_DAILY_BUDGET) must be below MIRROR_DAILY_CAP (${MIRROR_DAILY_CAP})`);
+  }
+  if (/** @type {number} */ (l.minOriginAgeSeconds) >= /** @type {number} */ (l.youngOriginAgeSeconds)) {
+    throw new Error(
+      'minOriginAgeSeconds (REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS) must be below youngOriginAgeSeconds (REGISTRY_ATTEST_YOUNG_ORIGIN_AGE_SECONDS): otherwise no signed origin is young and the young-origin budget never applies',
+    );
+  }
+}
+
+/**
  * The issuance limits with env overrides applied. A malformed override throws rather than falling back
- * to the default, and a young-origin budget at or above the on-chain cap throws: young origins alone
- * could then take a destination's whole day.
+ * to the default; the result is checked by `assertSignerLimits`.
  * @param {Record<string, string | undefined>} [env]
  * @returns {{maxExpirySeconds: number, perHolderDaily: number, minOriginAgeSeconds: number, youngOriginAgeSeconds: number, youngOriginDailyBudget: number}}
  */
@@ -120,15 +152,8 @@ export function signerLimits(env = process.env) {
     if (!/^\d+$/.test(raw) || Number(raw) <= 0) throw new Error(`${name} must be a positive integer, got ${raw}`);
     out[key] = Number(raw);
   }
-  if (out.youngOriginDailyBudget >= MIRROR_DAILY_CAP) {
-    throw new Error(`REGISTRY_ATTEST_YOUNG_ORIGIN_DAILY_BUDGET must be below MIRROR_DAILY_CAP (${MIRROR_DAILY_CAP})`);
-  }
-  if (out.minOriginAgeSeconds >= out.youngOriginAgeSeconds) {
-    throw new Error(
-      'REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS must be below REGISTRY_ATTEST_YOUNG_ORIGIN_AGE_SECONDS: otherwise no signed origin is young and the young-origin budget never applies',
-    );
-  }
-  return /** @type {any} */ (out);
+  assertSignerLimits(out);
+  return out;
 }
 
 const sameAddress = (/** @type {string} */ a, /** @type {string} */ b) => a.toLowerCase() === b.toLowerCase();
@@ -146,6 +171,26 @@ function readPositive(/** @type {unknown} */ v) {
   return n != null && n > 0n ? n : null;
 }
 
+const isCodeHash = (/** @type {unknown} */ v) => typeof v === 'string' && /^0x[0-9a-fA-F]{64}$/.test(v);
+
+/**
+ * The UTC day numbers (`seconds / 86400`, the contract's `block.timestamp / 1 days`) that an attestation
+ * signed at `nowSeconds` with `expiry` can be minted on: every day from signing to expiry, inclusive.
+ * These are the keys `signerRefusal` reads in `issuance`, and the days a signer must record a signed
+ * attestation against. Throws unless both are positive integers and `expiry` is not before `nowSeconds`.
+ * @param {number|bigint|string} nowSeconds
+ * @param {number|bigint|string} expiry
+ * @returns {number[]}
+ */
+export function attestationDays(nowSeconds, expiry) {
+  const now = readPositive(nowSeconds);
+  const exp = readPositive(expiry);
+  if (now == null || exp == null || exp < now) throw new Error('attestationDays: nowSeconds and expiry must be positive integers, expiry not before now');
+  const days = [];
+  for (let d = now / 86400n; d <= exp / 86400n; d++) days.push(Number(d));
+  return days;
+}
+
 /**
  * The signer's refusal rules. Returns a reason string to refuse, or null to sign.
  *
@@ -156,18 +201,28 @@ function readPositive(/** @type {unknown} */ v) {
  * be `0x` plus 40 hex digits (the zero address is valid for `originOfRegistry`: a native origin reads
  * zero); `registeredAtSeconds` must be a non-negative integer (number or bigint) that is neither 0 nor
  * after `nowSeconds`. Nothing is signed on a value the caller supplied but the origin chain did not
- * confirm (A13 finding A4). `destinationChainId` and `nowSeconds` must be positive integers in the same
- * forms as `chainId`, or the request is refused.
+ * confirm (A13 finding A4). `destinationChainId`, `nowSeconds`, `attestation.originChainId` and
+ * `attestation.expiry` must be positive integers in the same forms as `chainId`, or the request is
+ * refused. `ourRegistry` must be `0x` plus 40 hex digits, or this function throws (a misconfigured
+ * signer, not a bad request).
  *
  * `ownerCodeHashOrigin` is required: `null` means the owner has no code on the origin chain (an EOA),
- * and `undefined` (absent) means the code could not be read, which refuses.
+ * `undefined` (absent) means the code could not be read, and anything else must be `0x` plus 64 hex
+ * digits, or it refuses as unreadable. When it is a hash, `ownerCodeHashDestination` must be the same
+ * hash (case-insensitive): `null` (no code on the destination) refuses as differing, and anything that
+ * is not `0x` plus 64 hex digits refuses as unreadable.
  *
- * `issuance` counts are this signer's own records for the destination in the current UTC day.
- * `issuedTodayToYoungOrigins` counts only
- * attestations whose origin was younger than `youngOriginAgeSeconds` when signed. Every count must be
- * a non-negative integer (number or bigint); a missing, null, NaN or fractional count refuses, so a
- * counter store that cannot be read never signs. The counts only bound anything if every signing
- * process reads them from one shared store.
+ * `issuance` is this signer's own records for the destination and this holder, keyed by UTC day number
+ * (`attestationDays`): `issuance[day] = {issuedToHolder, issuedToYoungOrigins}`, counting every
+ * attestation already signed whose validity window touches that day (one signed at 23:30 with a 00:30
+ * expiry is counted on both days). Every day the new attestation touches must be present.
+ * `issuedToYoungOrigins` counts only attestations whose origin was younger than `youngOriginAgeSeconds`
+ * when signed. Every count must be a non-negative integer (number or bigint); a missing day, or a
+ * missing, null, NaN or fractional count, refuses, so a counter store that cannot be read never signs.
+ * After signing, the caller records the attestation against every day `attestationDays` returns. The
+ * counts only bound anything if every signing process reads them from one shared store.
+ *
+ * `limits` is checked by `assertSignerLimits` and a malformed one throws.
  *
  * A throw is a refusal. Any field may be a getter and any value may be malformed; when evaluating one
  * throws (a getter doing an RPC read that times out, a chain id that is not a number), this function
@@ -176,7 +231,7 @@ function readPositive(/** @type {unknown} */ v) {
  *   destinationChainId: number|bigint|string,
  *   ourRegistry: string,
  *   nowSeconds: number|bigint|string,
- *   attestation: {originChainId: number|bigint, originRegistry: string, owner: string, expiry: number|bigint},
+ *   attestation: {originChainId: number|bigint|string, originRegistry: string, owner: string, expiry: number|bigint|string},
  *   readback: {
  *     chainId: number|bigint|string|null, // eth_chainId answered by the origin RPC
  *     ownerOf: string|null,            // ownerOf(originAgentId) on the origin registry
@@ -185,19 +240,22 @@ function readPositive(/** @type {unknown} */ v) {
  *   } | null,
  *   ownerCodeHashOrigin: string | null | undefined, // keccak of the owner's code on the origin chain ('0x' + 64 hex); null = no code; undefined = unreadable
  *   ownerCodeHashDestination?: string | null,
- *   issuance: {issuedTodayToHolder: number|bigint, issuedTodayToYoungOrigins: number|bigint},
+ *   issuance: Record<string, {issuedToHolder: number|bigint, issuedToYoungOrigins: number|bigint}>,
  * }} p
  * @param {ReturnType<typeof signerLimits>} [limits]
  * @returns {string | null}
  */
 export function signerRefusal(p, limits = signerLimits()) {
+  assertSignerLimits(limits);
+  if (!isAddress(p.ourRegistry)) throw new Error(`ourRegistry is not an address: ${String(p.ourRegistry)}`);
   const destinationChainId = readPositive(p.destinationChainId);
   if (destinationChainId == null) return 'destination chain id is not a positive integer';
   const now = readPositive(p.nowSeconds);
   if (now == null) return 'nowSeconds is not a positive integer';
 
   const a = p.attestation;
-  const originChainId = BigInt(a.originChainId);
+  const originChainId = readPositive(a.originChainId);
+  if (originChainId == null) return 'attestation origin chain id is not a positive integer';
   if (originChainId === BigInt(POLYGON_CHAIN_ID)) {
     return 'Polygon (137) is a destination only: no finality-depth rule is documented, so it is never an origin';
   }
@@ -224,12 +282,20 @@ export function signerRefusal(p, limits = signerLimits()) {
   if (sameAddress(r.originOfRegistry, p.ourRegistry)) {
     return 'origin identity is itself a mirror (originOf.registry is our registry): a mirror of a mirror would mint a second identity from one fee';
   }
-  if (p.ownerCodeHashOrigin === undefined) return "owner's code on the origin chain could not be read back";
-  if (p.ownerCodeHashOrigin !== null && p.ownerCodeHashOrigin !== p.ownerCodeHashDestination) {
-    return 'owner has code on the origin chain and the destination code hash differs or is absent: one party may not control the address on both chains';
+  const codeOrigin = p.ownerCodeHashOrigin;
+  if (codeOrigin !== null && !isCodeHash(codeOrigin)) return "owner's code on the origin chain could not be read back";
+  if (codeOrigin !== null) {
+    const codeDestination = p.ownerCodeHashDestination;
+    if (codeDestination !== null && !isCodeHash(codeDestination)) {
+      return "owner's code on the destination chain could not be read back";
+    }
+    if (codeDestination === null || codeOrigin.toLowerCase() !== codeDestination.toLowerCase()) {
+      return 'owner has code on the origin chain and the destination code hash differs or is absent: one party may not control the address on both chains';
+    }
   }
 
-  const expiry = BigInt(a.expiry);
+  const expiry = readPositive(a.expiry);
+  if (expiry == null) return 'attestation expiry is not a positive integer';
   if (expiry <= now) return 'expiry is not in the future';
   if (expiry > now + BigInt(limits.maxExpirySeconds)) {
     return `expiry is more than ${limits.maxExpirySeconds}s out: long-lived attestations can be hoarded and dumped at the start of a day`;
@@ -239,17 +305,21 @@ export function signerRefusal(p, limits = signerLimits()) {
     return `origin identity is younger than ${limits.minOriginAgeSeconds}s (finality buffer)`;
   }
 
-  const s = p.issuance;
-  const toHolder = readCount(s?.issuedTodayToHolder);
-  const toYoung = readCount(s?.issuedTodayToYoungOrigins);
-  if (toHolder == null || toYoung == null) {
-    return 'an issuance count is missing or not a non-negative integer: a counter that cannot be read never signs';
-  }
-  if (toHolder >= BigInt(limits.perHolderDaily)) {
-    return `per-holder daily limit for this destination (${limits.perHolderDaily}) is spent`;
-  }
-  if (originAge < BigInt(limits.youngOriginAgeSeconds) && toYoung >= BigInt(limits.youngOriginDailyBudget)) {
-    return `young-origin daily budget for this destination (${limits.youngOriginDailyBudget}) is spent: origins younger than ${limits.youngOriginAgeSeconds}s wait`;
+  // Every UTC day the validity window touches: a mint can land on any of them, so each must have room.
+  const young = originAge < BigInt(limits.youngOriginAgeSeconds);
+  for (const day of attestationDays(now, expiry)) {
+    const s = p.issuance?.[day];
+    const toHolder = readCount(s?.issuedToHolder);
+    const toYoung = readCount(s?.issuedToYoungOrigins);
+    if (toHolder == null || toYoung == null) {
+      return `an issuance count for UTC day ${day} is missing or not a non-negative integer: a counter that cannot be read never signs`;
+    }
+    if (toHolder >= BigInt(limits.perHolderDaily)) {
+      return `per-holder daily limit for this destination (${limits.perHolderDaily}) is spent on UTC day ${day}`;
+    }
+    if (young && toYoung >= BigInt(limits.youngOriginDailyBudget)) {
+      return `young-origin daily budget for this destination (${limits.youngOriginDailyBudget}) is spent on UTC day ${day}: origins younger than ${limits.youngOriginAgeSeconds}s wait`;
+    }
   }
   return null;
 }

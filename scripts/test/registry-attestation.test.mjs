@@ -27,6 +27,8 @@ import {
   POLYGON_CHAIN_ID,
   YOUNG_ORIGIN_AGE_SECONDS,
   YOUNG_ORIGIN_DAILY_BUDGET,
+  assertSignerLimits,
+  attestationDays,
   mirrorAttestationTypeString,
   mirrorAttestationTypedData,
   signerLimits,
@@ -87,9 +89,14 @@ const NOW = 1_800_000_000;
 const OWNER = '0x2222222222222222222222222222222222222222';
 const OUTSIDE_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
 const LIMITS = signerLimits({});
+/** The one UTC day the baseline window (NOW to NOW + 3600) touches. */
+const DAY = Math.floor(NOW / 86400);
 
-/** A request every rule accepts (a young origin, one below every limit); each test changes one field. */
-function request({ attestation = {}, readback = {}, issuance = {}, ...rest } = {}) {
+/**
+ * A request every rule accepts (a young origin, one below every limit); each test changes one field.
+ * `counts` overrides the baseline's counts for DAY; pass `issuance` to replace the whole record.
+ */
+function request({ attestation = {}, readback = {}, counts = {}, ...rest } = {}) {
   return {
     destinationChainId: 8453,
     ourRegistry: REGISTRY,
@@ -104,9 +111,7 @@ function request({ attestation = {}, readback = {}, issuance = {}, ...rest } = {
     },
     ownerCodeHashOrigin: null,
     issuance: {
-      issuedTodayToHolder: 9,
-      issuedTodayToYoungOrigins: 49,
-      ...issuance,
+      [DAY]: { issuedToHolder: 9, issuedToYoungOrigins: 49, ...counts },
     },
     ...rest,
   };
@@ -234,37 +239,133 @@ test('signer policy (A1): young origins share a 50 a day budget per destination;
   const young = NOW - (YOUNG_ORIGIN_AGE_SECONDS - 1);
   const aged = NOW - YOUNG_ORIGIN_AGE_SECONDS;
   assert.match(
-    refusal(request({ readback: { registeredAtSeconds: young }, issuance: { issuedTodayToYoungOrigins: 50 } })) ?? '',
+    refusal(request({ readback: { registeredAtSeconds: young }, counts: { issuedToYoungOrigins: 50 } })) ?? '',
     /young-origin daily budget for this destination \(50\)/,
   );
-  assert.equal(refusal(request({ readback: { registeredAtSeconds: young }, issuance: { issuedTodayToYoungOrigins: 49 } })), null);
-  assert.equal(refusal(request({ readback: { registeredAtSeconds: aged }, issuance: { issuedTodayToYoungOrigins: 50 } })), null);
+  assert.equal(refusal(request({ readback: { registeredAtSeconds: young }, counts: { issuedToYoungOrigins: 49 } })), null);
+  assert.equal(refusal(request({ readback: { registeredAtSeconds: aged }, counts: { issuedToYoungOrigins: 50 } })), null);
 });
 
 test('signer policy (A1): a holder past the per-holder daily limit is refused', () => {
-  assert.match(refusal(request({ issuance: { issuedTodayToHolder: 10 } })) ?? '', /per-holder daily limit/);
+  assert.match(refusal(request({ counts: { issuedToHolder: 10 } })) ?? '', /per-holder daily limit/);
 });
 
-for (const counter of ['issuedTodayToHolder', 'issuedTodayToYoungOrigins']) {
+for (const counter of ['issuedToHolder', 'issuedToYoungOrigins']) {
   test(`signer policy (S1): a missing or malformed ${counter} refuses, never signs`, () => {
     for (const bad of [undefined, null, NaN, -1, -1n, 1.5, '3', '', true]) {
       assert.match(
-        refusal(request({ issuance: { [counter]: bad } })) ?? '',
-        /issuance count is missing/,
+        refusal(request({ counts: { [counter]: bad } })) ?? '',
+        /issuance count for UTC day \d+ is missing/,
         `${counter} = ${String(bad)}`,
       );
     }
-    const { [counter]: _, ...absent } = request().issuance;
-    assert.match(refusal({ ...request(), issuance: absent }) ?? '', /issuance count is missing/);
+    const { [counter]: _, ...absent } = request().issuance[DAY];
+    assert.match(refusal({ ...request(), issuance: { [DAY]: absent } }) ?? '', /issuance count for UTC day \d+ is missing/);
   });
 }
 
-test('signer policy (S1): a missing issuance object refuses; bigint counts are accepted', () => {
-  assert.match(refusal({ ...request(), issuance: null }) ?? '', /issuance count is missing/);
-  assert.equal(
-    refusal(request({ issuance: { issuedTodayToHolder: 9n, issuedTodayToYoungOrigins: 49n } })),
-    null,
+test('signer policy (S1): a missing issuance object or day refuses; bigint counts are accepted', () => {
+  assert.match(refusal({ ...request(), issuance: null }) ?? '', /issuance count for UTC day \d+ is missing/);
+  assert.match(refusal({ ...request(), issuance: { [DAY - 1]: request().issuance[DAY] } }) ?? '', /issuance count for UTC day \d+ is missing/);
+  assert.equal(refusal(request({ counts: { issuedToHolder: 9n, issuedToYoungOrigins: 49n } })), null);
+});
+
+test('signer policy (R515c P1): an attestation counts against every UTC day its window touches', () => {
+  const M = (DAY + 1) * 86400; // the midnight ending DAY
+  const youngAt = (/** @type {number} */ now) => now - 7200;
+  const at = (/** @type {number} */ now, /** @type {Record<number, any>} */ issuance) => ({
+    ...request(),
+    nowSeconds: now,
+    attestation: { ...request().attestation, expiry: now + 3600 },
+    readback: { ...request().readback, registeredAtSeconds: youngAt(now) },
+    issuance,
+  });
+  const room = { issuedToHolder: 0, issuedToYoungOrigins: 0 };
+  assert.deepEqual(attestationDays(M - 1800, M + 1800), [DAY, DAY + 1]);
+  assert.deepEqual(attestationDays(M - 3600, M), [DAY, DAY + 1]); // the contract accepts a mint at block.timestamp == expiry
+  assert.deepEqual(attestationDays(M - 3601, M - 1), [DAY]);
+  // 23:30 with a 00:30 expiry needs both days, and reads both
+  assert.match(refusal(at(M - 1800, { [DAY]: room })) ?? '', /UTC day \d+ is missing/);
+  assert.equal(refusal(at(M - 1800, { [DAY]: room, [DAY + 1]: room })), null);
+  // R515c probe2: 50 young attestations signed in DAY's last hour count on DAY + 1, so after midnight
+  // DAY + 1's young budget is spent (the probe's second case), and before midnight a young origin
+  // with DAY at 49 refuses when DAY + 1 is spent (the first case)
+  const spent = { issuedToHolder: 0, issuedToYoungOrigins: 50 };
+  const fortyNine = { issuedToHolder: 0, issuedToYoungOrigins: 49 };
+  assert.match(refusal(at(M + 60, { [DAY + 1]: spent })) ?? '', /young-origin daily budget .* spent on UTC day \d+/);
+  assert.match(refusal(at(M - 1800, { [DAY]: fortyNine, [DAY + 1]: spent })) ?? '', /young-origin daily budget .* spent on UTC day \d+/);
+  assert.match(refusal(at(M - 1800, { [DAY]: spent, [DAY + 1]: fortyNine })) ?? '', /young-origin daily budget .* spent on UTC day \d+/);
+  // the per-holder limit the same way
+  const holderSpent = { issuedToHolder: 10, issuedToYoungOrigins: 0 };
+  assert.match(refusal(at(M - 1800, { [DAY]: room, [DAY + 1]: holderSpent })) ?? '', /per-holder daily limit .* spent on UTC day \d+/);
+  assert.match(refusal(at(M - 1800, { [DAY]: holderSpent, [DAY + 1]: room })) ?? '', /per-holder daily limit .* spent on UTC day \d+/);
+  assert.throws(() => attestationDays(M, M - 1), /expiry not before now/);
+  assert.throws(() => attestationDays(true, M), /positive integers/);
+});
+
+test('signer policy (R515c S1): malformed owner code hashes refuse as unreadable, even when equal', () => {
+  const h1 = `0x${'ab'.repeat(32)}`;
+  for (const bad of ['', ' ', false, true, 0, -1, 1.5, '0x0', '0x', `0x${'ab'.repeat(31)}`, `0x${'gg'.repeat(32)}`]) {
+    assert.match(
+      refusal(request({ ownerCodeHashOrigin: bad, ownerCodeHashDestination: bad })) ?? '',
+      /code on the origin chain could not be read back/,
+      `both ${JSON.stringify(bad)}`,
+    );
+    assert.match(
+      refusal(request({ ownerCodeHashOrigin: h1, ownerCodeHashDestination: bad })) ?? '',
+      /code on the destination chain could not be read back/,
+      `destination ${JSON.stringify(bad)}`,
+    );
+  }
+  assert.match(refusal(request({ ownerCodeHashOrigin: h1 })) ?? '', /code on the destination chain could not be read back/);
+  // hex case is formatting, not a different hash
+  assert.equal(refusal(request({ ownerCodeHashOrigin: h1, ownerCodeHashDestination: h1.toUpperCase().replace('0X', '0x') })), null);
+});
+
+test('signer policy (R515c): originChainId and expiry go through the strict integer reader', () => {
+  for (const bad of ['', ' ', true, false, 0, -1, 1.5, NaN, '0x0', '5042', [5042], undefined]) {
+    assert.match(
+      refusal(request({ attestation: { originChainId: bad } })) ?? '',
+      /attestation origin chain id is not a positive integer/,
+      `originChainId ${String(bad)}`,
+    );
+    assert.match(
+      refusal(request({ attestation: { expiry: bad } })) ?? '',
+      /attestation expiry is not a positive integer/,
+      `expiry ${String(bad)}`,
+    );
+  }
+  // chain 1 read back and attested as `true` used to sign as chain 1
+  assert.match(
+    refusal(request({ attestation: { originChainId: true }, readback: { chainId: 1 } })) ?? '',
+    /attestation origin chain id is not a positive integer/,
   );
+  assert.equal(refusal(request({ attestation: { originChainId: '0x13b2', expiry: BigInt(NOW + 3600) } })), null);
+});
+
+test('signer policy (R515c): ourRegistry that is not an address throws', () => {
+  for (const bad of ['', ' ', '0x0', 'garbage', `0x${'1'.repeat(39)}`, undefined, null, 0]) {
+    assert.throws(
+      () => refusal(request({ ourRegistry: bad, attestation: { originRegistry: bad } })),
+      /ourRegistry is not an address/,
+      `ourRegistry ${String(bad)}`,
+    );
+  }
+});
+
+test('signer policy (R515c): a hand-built limits object is validated like signerLimits', () => {
+  const thirtyMinutes = request({ readback: { registeredAtSeconds: NOW - 1800 } });
+  for (const bad of ['', false, 0, -1, '0x0', [], 1.5, NaN, undefined, '3600']) {
+    for (const key of Object.keys(LIMITS)) {
+      assert.throws(() => signerRefusal(thirtyMinutes, /** @type {any} */ ({ ...LIMITS, [key]: bad })), /must be a positive integer/, `${key} ${String(bad)}`);
+    }
+  }
+  assert.throws(() => signerRefusal(request(), { ...LIMITS, youngOriginDailyBudget: 1e9 }), /below MIRROR_DAILY_CAP/);
+  assert.throws(() => signerRefusal(request(), { ...LIMITS, youngOriginDailyBudget: MIRROR_DAILY_CAP }), /below MIRROR_DAILY_CAP/);
+  assert.throws(() => signerRefusal(request(), { ...LIMITS, minOriginAgeSeconds: YOUNG_ORIGIN_AGE_SECONDS }), /must be below youngOriginAgeSeconds/);
+  assert.throws(() => signerRefusal(request(), /** @type {any} */ (null)), /must be a positive integer/);
+  assert.throws(() => assertSignerLimits({}), /must be a positive integer/);
+  assert.doesNotThrow(() => assertSignerLimits(LIMITS));
 });
 
 /** What a signer built on `signerRefusal` must do: sign only on a null return, refuse on a reason or a throw. */
@@ -283,7 +384,7 @@ test('signer policy: a throwing getter makes signerRefusal throw, and the caller
   const throwingReadback = { ...request(), readback: Object.defineProperty({ ...request().readback }, 'chainId', { get: boom }) };
   const throwingCounter = {
     ...request(),
-    issuance: Object.defineProperty({ ...request().issuance }, 'issuedTodayToYoungOrigins', { get: boom }),
+    issuance: { [DAY]: Object.defineProperty({ ...request().issuance[DAY] }, 'issuedToYoungOrigins', { get: boom }) },
   };
   const throwingCode = Object.defineProperty(request(), 'ownerCodeHashOrigin', { get: boom });
   for (const p of [throwingReadback, throwingCounter, throwingCode]) {
@@ -327,14 +428,16 @@ test('signer limits: named defaults, env overrides, malformed or headroom-free o
   );
   const youngAt = {
     attestation: { expiry: NOW + 600 },
-    readback: { registeredAtSeconds: NOW - 86399 }, issuance: { issuedTodayToHolder: 0, issuedTodayToYoungOrigins: 20 } };
+    readback: { registeredAtSeconds: NOW - 86399 },
+    counts: { issuedToHolder: 0, issuedToYoungOrigins: 20 },
+  };
   assert.match(signerRefusal(request(youngAt), signerLimits(env)) ?? '', /young-origin daily budget for this destination \(20\)/);
   assert.equal(signerRefusal(request({ ...youngAt, readback: { registeredAtSeconds: NOW - 86400 } }), signerLimits(env)), null);
   assert.throws(() => signerLimits({ REGISTRY_ATTEST_YOUNG_ORIGIN_DAILY_BUDGET: '100' }), /below MIRROR_DAILY_CAP/);
   assert.equal(signerLimits({ REGISTRY_ATTEST_YOUNG_ORIGIN_DAILY_BUDGET: '99' }).youngOriginDailyBudget, 99);
   // an age floor at or above the young threshold would leave no young origin to budget
   for (const floor of ['604800', '604801']) {
-    assert.throws(() => signerLimits({ REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS: floor }), /must be below REGISTRY_ATTEST_YOUNG_ORIGIN_AGE_SECONDS/);
+    assert.throws(() => signerLimits({ REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS: floor }), /must be below youngOriginAgeSeconds \(REGISTRY_ATTEST_YOUNG_ORIGIN_AGE_SECONDS\)/);
   }
   assert.equal(signerLimits({ REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS: '604799' }).minOriginAgeSeconds, 604799);
   for (const bad of ['0', '-1', '1.5', 'ten']) {
