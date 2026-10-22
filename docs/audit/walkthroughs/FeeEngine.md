@@ -11,7 +11,7 @@ Crystallization happens **only at member redemption** (CM-3) — never on rebala
 operator cannot churn to crystallize early. Collected fees accumulate per (recipient, token) for
 pull-based claims (fee model A1): the RWAlly treasury is credited 10% of each collected fee
 (`TREASURY_SHARE_BPS`, rounded down; 1% of the net gain) and the vault creator the remainder, 90%
-(9% of the net gain). The operator is credited nothing unless it is also the creator.
+(9% of the net gain). The operator is credited nothing unless it is also the creator (v2 source; the deployed Arc v1 FeeEngine credits the operator).
 
 ## Trust position
 
@@ -38,7 +38,7 @@ instead, and `claimFees` pays only the caller's own credit.
 | Function | Caller | What it does |
 | --- | --- | --- |
 | `onRealize(member, gain, loss)` | attested vault (bounded call) | Gain path: once the treasury is set by `initialize`, `netGain = gain − carry` (floored at 0) and it returns `10% × netGain`; before that it returns 0. Loss path: no-op — losses reach the carry via the vault's own `recordRealization` call |
-| `onFeeCollected(member, amountUsdc)` | attested vault, **after** the USDC fee transfer | Splits the amount **actually sent** (the vault's clamp may have reduced it) in `_credit`: the treasury gets the floored 10% into `claimableFees[treasury][usdc]`, the vault creator the remainder (90%) into `claimableFees[creator][usdc]`, so the two always sum to the amount and reports it to registry stats |
+| `onFeeCollected(member, amountUsdc)` | attested vault, **after** the USDC fee transfer | Splits the amount **actually sent** (the vault's clamp may have reduced it) in `_credit`: the treasury gets the floored 10% into `claimableFees[treasury][usdc]`, the vault creator the remainder (90%) into `claimableFees[creator][usdc]`, so the two always sum to the amount; it also reports the amount to registry stats |
 | `onFeeCollectedAsset(member, asset, amount)` | attested vault, after an in-kind fee transfer | Splits the asset-leg fee through the same `_credit` (treasury floored 10%, creator the remainder) into `claimableFees[treasury][asset]` and `claimableFees[creator][asset]` at token amounts (USD-terms stats stay cash-leg-only; the indexer prices asset legs, S7) |
 | `pullEscrowed(vault, asset)` | anyone (crank) | Claims a fee slice the vault EE-6-escrowed for the engine (failed transfer path) and splits it through `_credit`, measured by balance delta; `nonReentrant` across the whole engine (M-3) |
 | `claimFees(token)` | any recipient (vault creator or treasury) | Pull-payment of the caller's own accumulated fees |

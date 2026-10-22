@@ -35,7 +35,7 @@ leaderboard, signal feeds) is paid via x402; **x402 never appears in the contrac
 ┌───────────────┐   ┌────────────────┐  ┌──────────────────┐
 │ SubVaultReg.  │   │ IExecutionAdapter│ │ OperatorRegistry │
 │ depth ≤ 3     │   │ venue-agnostic  │  │ (member,operator)│
-│ recursion blk │   │ Base agg. first │  │ HWM, leaderboard │
+│ recursion blk │   │ Base agg. first │  │ loss carry, rank │
 └───────────────┘   └────────────────┘  └──────────────────┘
 ```
 
@@ -209,9 +209,12 @@ defeating "no cherry-picking").
 **USDC-denominated loss carryforward** per `(member, operator)`:
 
 ```
-onRealize(member, op, gain):   fee = 10% × max(0, gain − carry[member][op])
+FeeEngine.onRealize(member, op, gain):            reads carry, never writes it
+                               fee = 10% × max(0, gain − carry[member][op])
+OperatorRegistry.recordRealization(member, op, gain):   (called from VaultCore _recordRealization)
                                carry[member][op] = max(0, carry[member][op] − gain)
-onRealize(member, op, loss):   carry[member][op] += loss
+OperatorRegistry.recordRealization(member, op, loss):
+                               carry[member][op] += loss
 ```
 
 A member who realized a loss under an operator in vault A pays no performance fee in vault B
@@ -309,7 +312,7 @@ accrues to the vault, preserving the §4.6 invariant.
    - **§9 confirmed**: x402 V2 (June 2026) uses dedicated PAYMENT-* headers and settles USDC via
      EIP-3009 `transferWithAuthorization` executed by the facilitator; no contract-layer
      coupling, as designed.
-   - **§7 is novel**: no prior art for per-(member, operator) HWM; Enzyme/dHEDGE use global
+   - **§7 is novel**: no prior art for per-(member, operator) loss carryforward; Enzyme/dHEDGE use global
      per-vault marks. Treated as an unvalidated mechanism: extra invariant weight in Sprint 3.
    - **§8 sizing input**: Kleros abandoned commit-reveal (2026) because voters *forget* to
      reveal, not only grief. Sprint 2 must size reveal windows and forfeiture accordingly.

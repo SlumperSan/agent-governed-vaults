@@ -4,9 +4,10 @@
  * FeeEngine claim flow."
  *
  * The invariant (EE-9 / MO-4): performance fees leave the vault ONLY to the FeeEngine — the vault
- * transfers to the engine, the engine splits it in `_credit` into `claimableFees[creator][token]`
- * (90%) and `claimableFees[treasury][token]` (10%, rounded down), and each recipient calls
- * `claimFees`. The operator is not a fee recipient unless it is also the vault creator. Exit fees
+ * transfers to the engine, the engine credits it in `claimableFees` (on the v2 FeeEngine in the
+ * source, `_credit` splits it 10% to the treasury, rounded down, and the remainder to the vault
+ * creator; on the deployed Arc v1 FeeEngine, which this signal watches, it goes to the operator),
+ * and each recipient calls `claimFees`. Exit fees
  * never route to the operator at all; they accrue to remaining members through the share price. So
  * a USDC transfer straight from a vault to a registered operator address is the shape of a fee leak.
  *
@@ -118,7 +119,7 @@ export async function checkFeeRouting({ reader, vault, usdc, operatorRegistry, e
   const first = leaks[0];
   return [alert({
     signal: SIGNAL, vault,
-    message: `FEE ROUTING VIOLATION on vault ${shortAddr(vault)}: ${leaks.length} USDC transfer(s) totalling ${total} base units went directly to operator address ${shortAddr(first.args?.to)} with no ExitSettled/PendingCancelled behind them (first at block ${Number(first.blockNumber)}, tx ${first.transactionHash ?? 'unknown'}) — fees must leave the vault only to the FeeEngine and reach recipients only via FeeEngine.claimFees`,
+    message: `FEE ROUTING VIOLATION on vault ${shortAddr(vault)}: ${leaks.length} USDC transfer(s) totalling ${total} base units went directly to operator address ${shortAddr(first.args?.to)} with no ExitSettled/PendingCancelled behind them (first at block ${Number(first.blockNumber)}, tx ${first.transactionHash ?? 'unknown'}) — fees must leave the vault only to the FeeEngine and reach their recipients (on the deployed Arc v1 FeeEngine, the operator) only via FeeEngine.claimFees`,
     measured: `${leaks.length} transfer(s), ${total} USDC base units`, threshold: '0 direct operator transfers',
     detail: {
       ...window,
