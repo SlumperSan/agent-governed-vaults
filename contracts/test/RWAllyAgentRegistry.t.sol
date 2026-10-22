@@ -33,6 +33,42 @@ contract GoodReceiver is IERC721Receiver {
     }
 }
 
+/// Re-enters `importAgent` from the receiver callback, once, and records what the inner call did.
+contract ReentrantImporter is IERC721Receiver {
+    RWAllyAgentRegistry public reg;
+    uint256 public armedId;
+    bool public armed;
+    bool public innerOk;
+    uint256 public innerId;
+    bytes public innerRevert;
+
+    constructor(RWAllyAgentRegistry reg_) {
+        reg = reg_;
+    }
+
+    function arm(uint256 id) external {
+        armedId = id;
+        armed = true;
+    }
+
+    function doImport(uint256 id) external returns (uint256) {
+        return reg.importAgent(id, "");
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4) {
+        if (armed) {
+            armed = false;
+            try reg.importAgent(armedId, "") returns (uint256 i) {
+                innerOk = true;
+                innerId = i;
+            } catch (bytes memory e) {
+                innerRevert = e;
+            }
+        }
+        return IERC721Receiver.onERC721Received.selector;
+    }
+}
+
 contract BadMagicReceiver is IERC721Receiver {
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return 0xdeadbeef;
@@ -61,6 +97,36 @@ contract Wallet1271 {
 
     function isValidSignature(bytes32 d, bytes calldata s) external view returns (bytes4) {
         return (d == okDigest && keccak256(s) == keccak256(okSig)) ? bytes4(0x1626ba7e) : bytes4(0xffffffff);
+    }
+}
+
+/// Reverts with revert data that is exactly the ERC-1271 magic value: only the `ok` flag tells it from success.
+contract RevertingMagicWallet {
+    fallback() external {
+        assembly {
+            mstore(0, shl(224, 0x1626ba7e))
+            revert(0, 32)
+        }
+    }
+}
+
+/// Succeeds with a 1-byte return.
+contract ShortWallet {
+    fallback() external {
+        assembly {
+            mstore(0, shl(248, 0x16))
+            return(0, 1)
+        }
+    }
+}
+
+/// Succeeds with 32 bytes: the magic value in the top four bytes and a dirty final byte.
+contract DirtyMagicWallet {
+    fallback() external {
+        assembly {
+            mstore(0, or(shl(224, 0x1626ba7e), 1))
+            return(0, 32)
+        }
     }
 }
 
@@ -593,6 +659,38 @@ contract RWAllyAgentRegistryTest is Test {
         vm.prank(alice);
         vm.expectRevert(RWAllyAgentRegistry.DeadlineTooFar.selector);
         reg.setAgentWallet(id, w, far, abi.encodePacked(r, s, v));
+    }
+
+    /// The deadline may equal the current block timestamp; one second earlier is `Expired`.
+    function test_setAgentWallet_deadlineEqualToNow_isAccepted_oneSecondPast_isExpired() public {
+        uint256 id = _alice();
+        (address w, uint256 wk) = makeAddrAndKey("wallet");
+        uint256 dl = vm.getBlockTimestamp(); // via-ir caches block.timestamp across vm.warp
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(wk, _digest(id, w, alice, dl));
+        vm.prank(alice);
+        reg.setAgentWallet(id, w, dl, abi.encodePacked(r, s, v));
+        assertEq(reg.getAgentWallet(id), w);
+
+        uint256 dl2 = vm.getBlockTimestamp() - 1;
+        (v, r, s) = vm.sign(wk, _digest(id, w, alice, dl2));
+        vm.prank(alice);
+        vm.expectRevert(RWAllyAgentRegistry.Expired.selector);
+        reg.setAgentWallet(id, w, dl2, abi.encodePacked(r, s, v));
+    }
+
+    /// A contract wallet that reverts with the magic value as revert data, returns one byte, or returns
+    /// the magic value with a dirty low byte is refused with the named error, and the wallet is unchanged.
+    function test_setAgentWallet_erc1271_hostileWallets_revertNamed() public {
+        uint256 id = _alice();
+        address[3] memory hostile =
+            [address(new RevertingMagicWallet()), address(new ShortWallet()), address(new DirtyMagicWallet())];
+        uint256 dl = vm.getBlockTimestamp() + 1 minutes;
+        for (uint256 i = 0; i < hostile.length; i++) {
+            vm.prank(alice);
+            vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+            reg.setAgentWallet(id, hostile[i], dl, hex"aabbcc");
+            assertEq(reg.getAgentWallet(id), alice);
+        }
     }
 
     // ── agent wallet: ERC-6492 (counterfactual smart account) ────────────────
@@ -1656,6 +1754,43 @@ contract RWAllyAgentRegistryImportTest is RegistryTestBase {
         assertEq(local, id);
         assertEq(usdc.balanceOf(treasury), 0, "no fee");
         assertEq(usdc.balanceOf(alice), 0);
+    }
+
+    /// The dedupe key is written before the receiver callback, so a re-entrant import of the same origin
+    /// finds it taken.
+    function test_import_reentrantImportOfTheSameOrigin_isRefused() public {
+        ReentrantImporter c = new ReentrantImporter(reg);
+        outside.set(9, address(c), address(c), address(0));
+        c.arm(9);
+        uint256 id = c.doImport(9);
+
+        assertFalse(c.innerOk());
+        assertEq(
+            keccak256(c.innerRevert()),
+            keccak256(abi.encodeWithSelector(RWAllyAgentRegistry.AlreadyImported.selector, 9))
+        );
+        assertEq(reg.balanceOf(address(c)), 1);
+        (bool imported, uint256 local) = reg.localIdOfOrigin(block.chainid, address(outside), 9);
+        assertTrue(imported);
+        assertEq(local, id);
+    }
+
+    /// Dedupe is per origin, not a lock: re-entering for a different origin the caller owns is allowed.
+    function test_import_reentrantImportOfAnotherOrigin_isAllowed() public {
+        ReentrantImporter c = new ReentrantImporter(reg);
+        outside.set(9, address(c), address(c), address(0));
+        outside.set(8, address(c), address(c), address(0));
+        c.arm(8);
+        uint256 outer = c.doImport(9);
+
+        assertTrue(c.innerOk());
+        assertEq(reg.balanceOf(address(c)), 2);
+        (bool a, uint256 idA) = reg.localIdOfOrigin(block.chainid, address(outside), 9);
+        (bool b, uint256 idB) = reg.localIdOfOrigin(block.chainid, address(outside), 8);
+        assertTrue(a && b);
+        assertEq(idA, outer);
+        assertEq(idB, c.innerId());
+        assertTrue(idA != idB);
     }
 
     function test_import_doesNotConsumeOrDisturbPaidRegistrations() public {
