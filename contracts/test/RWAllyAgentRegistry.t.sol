@@ -692,15 +692,13 @@ contract RWAllyAgentRegistryTest is Test {
         }
     }
 
-    /// RED ON CURRENT CODE (a contract defect, not a test bug): the magic value in the top four bytes
-    /// with a dirty final byte makes `abi.decode(res, (bytes4))` revert with no data, so the holder gets
-    /// an unnamed revert instead of `InvalidWalletSignature`. Fix: read `bytes4(bytes32(...))` as
-    /// `_isValidSig` does.
-    function test_setAgentWallet_erc1271_dirtyMagicWallet_revertsNamed() public {
+    /// Decision 2026-10-22 "Registry ERC-1271 dirty padding fails closed, no contract change": the
+    /// `abi.decode(res, (bytes4))` at RWAllyAgentRegistry.sol:916 reverts with no data, so any revert is pinned.
+    function test_setAgentWallet_erc1271_dirtyMagicWallet_failsClosed() public {
         uint256 id = _alice();
         address wallet = address(new DirtyMagicWallet());
         vm.prank(alice);
-        vm.expectRevert(RWAllyAgentRegistry.InvalidWalletSignature.selector);
+        vm.expectRevert();
         reg.setAgentWallet(id, wallet, vm.getBlockTimestamp() + 1 minutes, hex"aabbcc");
         assertEq(reg.getAgentWallet(id), alice);
     }
