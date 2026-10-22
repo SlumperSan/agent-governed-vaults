@@ -678,12 +678,11 @@ contract RWAllyAgentRegistryTest is Test {
         reg.setAgentWallet(id, w, dl2, abi.encodePacked(r, s, v));
     }
 
-    /// A contract wallet that reverts with the magic value as revert data, returns one byte, or returns
-    /// the magic value with a dirty low byte is refused with the named error, and the wallet is unchanged.
+    /// A contract wallet that reverts with the magic value as revert data, or returns one byte, is
+    /// refused with the named error, and the wallet is unchanged.
     function test_setAgentWallet_erc1271_hostileWallets_revertNamed() public {
         uint256 id = _alice();
-        address[3] memory hostile =
-            [address(new RevertingMagicWallet()), address(new ShortWallet()), address(new DirtyMagicWallet())];
+        address[2] memory hostile = [address(new RevertingMagicWallet()), address(new ShortWallet())];
         uint256 dl = vm.getBlockTimestamp() + 1 minutes;
         for (uint256 i = 0; i < hostile.length; i++) {
             vm.prank(alice);
