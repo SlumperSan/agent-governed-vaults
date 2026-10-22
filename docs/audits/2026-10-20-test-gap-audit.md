@@ -840,7 +840,7 @@ Functions with no direct test:
 Branches likely uncovered (no test found):
 - Constructor (277-319): `usdc_==0`, `creator_==0`, `minDeposit==0`, `exitFeeMaxBps>0 && decay==0`,
   basket entry == usdc, duplicate basket entry, zero basket entry, basket asset decimals > 18, USDC
-  decimals > 18. Only seen: decimals < 6 (Sprint6Fixes:143 style), `exitFeeMaxBps=101` (Eip170:217),
+  decimals > 18. Only seen: decimals < 6 (Sprint6Fixes:143 style), an `exitFeeMaxBps` of 101 as a test input over `EXIT_FEE_CAP_BPS` (Eip170:216),
   11-asset basket (Sprint6Fixes:137). Verify with a constructor-revert sweep.
 - `_deposit` 444: `received < minDepositUsdc` after a fee-on-transfer USDC (fee-on-transfer mocks exist only
   for `tokenIn` of a swap, AuditAdapterScopedSweep:127). No fee-on-transfer USDC deposit test.
@@ -927,7 +927,7 @@ Not found by grep:
 - `basisRemoved = costBasis * burn / memberShares` rounding to 0 on tiny burns, repeated tiny exits draining
   fee-free gain (floor division favors the exiter on basis). No fuzz of N small exits vs one big exit.
 - `_exitFeeBps`: boundaries tenure == period - 1, == period, and `lastDepositTime` reset on top-up deposit
-  (VaultCore.t.sol:233 is a single decay check). Sole-holder waiver `memberShares == ts` (657) with queued shares.
+  (`test_exitFeeDecaysWithTenure`, VaultCore.t.sol:233, is a single decay check). Sole-holder waiver `memberShares == ts` (657) with queued shares.
 
 #### 6) Ranking by funds at risk
 
@@ -1827,7 +1827,7 @@ Only invariant suite touching adapters: UniswapV3AdapterInvariant (grep `functio
 1) Uncovered
 - `RouterCallFailed` L124: `grep -rn RouterCallFailed test/` hits only UniswapV3Adapter.t.sol. Aggregation router revert path untested.
 - `BadOrder` L104 (tokenIn==tokenOut, amountIn==0): Execution.t.sol:294 covers only minOut==0.
-- `SelectorNotAllowed` with routeData.length < 4 (L106 short-circuit): only 0xdeadbeef tested (Execution.t.sol:265).
+- `SelectorNotAllowed` with routeData.length < 4 (L106 short-circuit): only 0xdeadbeef tested (`test_adapterRejectsUnknownSelector`, Execution.t.sol:265).
 - Constructor L93 (router==0, empty selectors, duplicates): `grep -rn "new AggregationRouterAdapter" test/` = 5 sites, all valid configs; no revert test.
 - `TransferFromFailed` on missing allowance: not at adapter level.
 2) Not fuzzed: no `testFuzz_` and no invariant for this adapter (`grep testFuzz` over AdapterReentrancy, Execution, AuditAdapterScopedSweep = 0). Refund/clamp are example-tested only (AuditAdapterScopedSweep:375-564, good depth, but fixed constants). Missing: for all (amountIn, pull, pushBack, preDonation): refund == clamp(delta); caller never loses > spent; adapter balance == donations only.
@@ -2055,7 +2055,7 @@ found an exercising test. Existing suites: `FeesAndRegistry.t.sol` (10 tests), `
 Uncovered (grep evidence):
 - `claimFees` revert `NothingToClaim` (L163): `grep NothingToClaim test/` hits only VaultCore. Also no test of a non-operator caller.
 - `claimFees` `TransferFailed` path (L165, engine under-funded): no hit for `TransferFailed` against the engine.
-- `onFeeCollectedAsset` (L110-124) with the REAL engine: only a stub impl in `mocks/Mocks.sol:126` and `AuditExitFeeRatchet.t.sol:23`. `grep claimableFees test/` shows only the usdc key; no test asserts `claimableFees[op][wbtc]` after an in-kind exit.
+- `onFeeCollectedAsset` (L110-124) with the REAL engine: only a stub impl in `mocks/Mocks.sol:126` and the empty `onFeeCollectedAsset` of `RatchetPerfFeeEngine` (`AuditExitFeeRatchet.t.sol:23`). `grep claimableFees test/` shows only the usdc key; no test asserts `claimableFees[op][wbtc]` after an in-kind exit.
 - `onFeeCollected` / `onFeeCollectedAsset` `UnattestedVault` (L102, L119): the only `UnattestedVault` test is `onRealize` (`FeesAndRegistry:125`).
 - `pullEscrowed` against a real `VaultCore` (L144-154): the only callers are stub vaults (`AuditFeeEngineReentrancy:81,140,155`). `UnattestedVault` on `pullEscrowed` untested; `received == 0` branch (L150) untested; USDC (6 dec) escrow case untested.
 - `onRealize` `gainUsdc == 0` branch (L83) is hit only through VaultCore loss path; no direct assertion that fee is 0 and no event emitted.
