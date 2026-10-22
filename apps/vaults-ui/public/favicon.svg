@@ -1,6 +1,6 @@
-<!-- THRESHOLD. Replaces the placeholder rounded gradient square per the owner's brand decision,
-     Agent-Governed Vaults/Decisions/the-mark-is-threshold-2026-09-18.md, rolled out repo-wide
-     2026-09-24. Everything below is copied verbatim from Design/brand-threshold/favicon.svg — do
+<!-- THRESHOLD. Replaces the placeholder rounded gradient square per the 2026-09-18 brand decision,
+     rolled out repo-wide 2026-09-24. Everything below is copied verbatim from the brand source
+     favicon.svg; do
      not hand-edit the geometry; regenerate from that source file if it ever changes. This app ships
      no favicon.ico (see index.html; only the SVG is linked), so there is nothing else to rebuild. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RWAlly">

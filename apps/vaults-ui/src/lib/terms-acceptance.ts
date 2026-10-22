@@ -5,7 +5,7 @@
  * per wallet, in `localStorage`.
  *
  * WHY LOCALSTORAGE ALONE, AND ITS LIMIT STATED HERE RATHER THAN LEFT IMPLICIT (card's "choices
- * left to the CTO" note). An EIP-191 signed acceptance message or a small logging endpoint would
+ * left to the implementer" note). An EIP-191 signed acceptance message or a small logging endpoint would
  * both survive a cleared browser and be producible as evidence to a third party; `localStorage`
  * does not; and a wallet address plus a version hash is a CIVIL record, not a security control —
  * nothing this app or the contracts do differs based on whether a member accepted. Given that, and

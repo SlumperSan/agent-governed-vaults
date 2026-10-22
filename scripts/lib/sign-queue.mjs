@@ -6,7 +6,7 @@
  * confirmed send, can never drift between "what a builder wrote" and "what the server will accept
  * as done".
  *
- * QUEUE FILE: `Obsidian Vault/Agent-Governed Vaults/Tasks/_sign-queue.json`, one JSON object,
+ * QUEUE FILE: `Tasks/_sign-queue.json` under the vault root (`QUEUE_PATH` below), one JSON object,
  * written via a temp file in the same directory then `renameSync` — the identical discipline
  * `scripts/dashboard.mjs`'s `recordAnswer` already uses for the task board, so a half-written
  * queue file is never the one a poller reads mid-write.
@@ -20,6 +20,7 @@
  * nothing: `verifyReceipt` returns a reason and the caller must not advance `status`.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 /** @typedef {'pending'|'sent'|'done'|'failed'} ItemStatus */
@@ -57,7 +58,8 @@ import path from 'node:path';
 
 /** AGV_DASHBOARD_VAULT_ROOT is the same test-only override the dashboard honours, so a test run never opens the real queue. */
 export const QUEUE_PATH = path.join(
-  process.env.AGV_DASHBOARD_VAULT_ROOT || 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults',
+  process.env.AGV_DASHBOARD_VAULT_ROOT
+    || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults'),
   'Tasks',
   '_sign-queue.json',
 );

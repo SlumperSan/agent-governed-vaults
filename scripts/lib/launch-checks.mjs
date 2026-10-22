@@ -15,8 +15,8 @@
  * does not match what the row expects. 'green' is asserted ONLY when every read that feeds it
  * actually returned a value consistent with "the check passed". There is no code path from
  * "the read failed" to "green" anywhere below; every function's error branches return 'unknown'
- * or 'red', never fall through to a default that could read as pass. `Rules/a-disclosure-that-
- * vanishes-is-a-claim.md` in the Obsidian vault names this exact failure mode.
+ * or 'red', never fall through to a default that could read as pass: a disclosure that silently
+ * vanishes reads as a claim that the risk is gone.
  *
  * Each row's own function is exported separately so the test suite can call one row at a time
  * with a stubbed `fetch`, rather than driving the whole panel through the network.

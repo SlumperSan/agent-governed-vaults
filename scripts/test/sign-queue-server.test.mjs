@@ -34,7 +34,7 @@ const tmpQueuePath = () => path.join(TMP, `q${n++}.json`);
 //
 // A prior version of this guard diffed the real file's bytes before/after this whole suite ran.
 // That is unsound on this machine: the live dashboard (a separate long-running process, run from
-// C:\Users\Micha\Claude\Projects\Arc\agv-dashboard-main) polls and rewrites the SAME real queue
+// a different checkout) polls and rewrites the SAME real queue
 // file, so any write it makes mid-run turns the byte-diff red for a reason unrelated to this file
 // — a false failure, not a caught regression. Comparing disk state can also MISS the real defect:
 // if the dashboard happens to overwrite the file again after this suite's own accidental write, the

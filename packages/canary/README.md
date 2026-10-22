@@ -98,7 +98,7 @@ every transition, same channel, no severity. Full env reference is in
   line read "pages on harm only" and spelled the predicate with a loose `!=`; the operator is `!==`,
   and the loose form is exactly the mutation that drops `sinks.test.mjs` from 28 to 26. It was the
   last place in the repository still carrying it. Above BTC $100,000 the sane-price band stops
-  catching a −2-decimal drift (`Owner Decisions 2026-09-01.md` §1), and this is then the only
+  catching a −2-decimal drift (from live prices at 2026-09-01), and this is then the only
   detector.
 - **`operator-power` pages on its CRITICAL bar only.** Its WARN (1.5x) and ALERT (1.1x) bars both
   ride one `alert()` status, so it emits under two fixed transition keys, `early-warning` and

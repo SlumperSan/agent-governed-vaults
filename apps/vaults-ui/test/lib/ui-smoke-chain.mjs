@@ -26,7 +26,7 @@
  * a 4-hour wait against the real chain can, and it broadcasts nothing to a public chain.
  *
  * KEY HANDLING. `generateThrowawayKey()` uses viem's own CSPRNG — nothing here reads
- * `C:\Users\Micha\.soak.pw`, a keystore, or any environment variable that could carry the owner's
+ * a password file, a keystore, or any environment variable that could carry a real deployer
  * key. Every `cast`/`forge` invocation below takes `--private-key <throwaway>` directly; none uses
  * `--account`/`--keystore`. The deploy broadcasts with `--broadcast`, but the RPC it broadcasts TO
  * is the local anvil fork this module started, never a public endpoint.

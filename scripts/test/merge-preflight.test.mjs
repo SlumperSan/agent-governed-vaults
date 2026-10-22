@@ -1048,8 +1048,8 @@ test('evaluate(): omitting `reviews` entirely (every pre-existing caller/fixture
 }
 
 // ---------------------------------------------------------------------------------------------
-// Only collaborators speak to the gate (Security, Findings/2026-09-24-merge-gate-counts-anyones-
-// comments.md): the repo is public, and a token names its reviewer in its own text.
+// Only collaborators speak to the gate (security finding, 2026-09-24: the merge gate counted
+// anyone's comments): the repo is public, and a token names its reviewer in its own text.
 // ---------------------------------------------------------------------------------------------
 
 {
@@ -1113,7 +1113,7 @@ test('evaluate(): omitting `reviews` entirely (every pre-existing caller/fixture
 }
 
 // ---------------------------------------------------------------------------------------------
-// Card 190 / Chairman directive 13 — `## Buy / borrow / build` and `## Standards` on `feat/` PRs
+// Card 190 — `## Buy / borrow / build` and `## Standards` on `feat/` PRs
 // ---------------------------------------------------------------------------------------------
 
 test('extractSection: finds the heading loosely, bounds content at the next heading, and returns null when absent', () => {

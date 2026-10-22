@@ -2,7 +2,7 @@
 /**
  * `personaIntentRefusal` (scripts/lib/sign-queue-preconditions.mjs): a persona item is signable only
  * if the bytes the page will send match a DECLARED intent the builder did not write — the #329
- * lesson applied to deposits (Chairman, via the CEO, 2026-09-24).
+ * lesson applied to deposits (2026-09-24).
  *
  * The passing items here are built by the REAL builder (`persona-deposit.mjs`'s `build()`), with
  * calldata encoded by viem rather than by the module under test, so a pass means the check and the

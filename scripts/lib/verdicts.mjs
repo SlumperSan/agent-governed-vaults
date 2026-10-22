@@ -85,7 +85,7 @@
  * @property {Record<string, {verdict: Verdict, at: string}>} latestVerdicts
  */
 
-// Card 190 / Chairman directive 13 -- see scripts/lib/pr-body-sections.mjs for the section
+// Card 190 -- see scripts/lib/pr-body-sections.mjs for the section
 // extraction and blank-detection logic, factored out so it can be unit-tested without a PR fixture.
 import { BBB_SECTIONS, extractSection, isBlankSection } from './pr-body-sections.mjs';
 
@@ -436,7 +436,7 @@ export function evaluate({ pr, comments, runs, reviews = [], mode = 'strict' }) 
     blockers.push({ ruleId: 'pr-open', detail: 'PR is a draft.' });
   }
 
-  // --- buy-borrow-build-declared (Chairman directive 13, card 190) — both modes ---------------
+  // --- buy-borrow-build-declared (card 190) — both modes ---------------
   // A feat/ PR must say what the repo already has and what exists elsewhere before it builds
   // something new. "None found" is a real answer and must pass; a missing section, or one nobody
   // filled in, reads identically to a real search in a diff — that is the failure this rule exists

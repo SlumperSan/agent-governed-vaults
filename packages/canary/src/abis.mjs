@@ -248,9 +248,9 @@ export const ERC20_VIEWS = Object.freeze([
  * SwapRouter02 rather than assumed — see that file's `routerNote`, and its
  * `addressSquattingChecked` note on why the CANONICAL cross-chain Uniswap addresses are NOT safe
  * to assume on this chain). The caller still resolves the ACTUAL POOL address and fee tier live
- * through `getPool`, probing the standard tiers rather than assuming one — see
- * Tasks/deposit-size-warning.md and 2026-09-19-corridor-moved-87-percent-in-a-day.md, which is
- * the finding that this whole notice exists to act on correctly.
+ * through `getPool`, probing the standard tiers rather than assuming one. A 2026-09-19
+ * finding (the corridor moved 87 percent in a day) is what this whole notice exists to act on
+ * correctly.
  */
 export const UNISWAP_V3_FACTORY_VIEWS = Object.freeze([
   view('getPool', ['address', 'address', 'uint24'], ['address']),

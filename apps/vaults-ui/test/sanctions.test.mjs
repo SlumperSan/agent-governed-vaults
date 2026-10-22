@@ -193,7 +193,7 @@ test('sdn-addresses.ts: records its own source URL and fetch date', () => {
   assert.ok(!Number.isNaN(Date.parse(SDN_ADDRESS_DATA.fetchedAt)), 'fetchedAt is not a parseable date');
 });
 
-// ─────── card 217, CTO 2026-09-24: a stale list never blocks a member taking their own money out ───────
+// ─────── card 217, 2026-09-24: a stale list never blocks a member taking their own money out ───────
 
 test('stale list: requestExit and claimEscrowed from a clean address pass; deposit, approve and votes are blocked', () => {
   const at31Days = Date.parse(SDN_ADDRESS_DATA.fetchedAt) + 31 * 86_400_000;

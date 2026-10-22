@@ -18,6 +18,7 @@
 import { createServer } from 'node:http';
 import { Worker } from 'node:worker_threads';
 import { readFileSync, writeFileSync, renameSync, appendFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
 import { buildSignQueueResponse, hostGateRefusal, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
@@ -38,9 +39,9 @@ const HOST = '127.0.0.1';
 // Collecting shells out to git and gh, so a page that gathered on every request would hammer both
 // and make a refresh feel slow. Cache briefly and let the client poll freely.
 let cache = { at: 0, data: null };
-// The board is read from the vault on every request, so a task file edited in Obsidian or by an
+// The board is read from the vault on every request, so a task file edited by hand or by an
 // agent should appear within a second. A 4s server cache on top of a 5s client poll meant up to
-// 9s of lag on a board he watches while departments work.
+// 9s of lag on a board watched while departments work.
 const TTL_MS = 800;
 
 /**
@@ -48,7 +49,8 @@ const TTL_MS = 800;
  * AGV_DASHBOARD_VAULT_ROOT exists for the tests only: they run this server against a temp folder so
  * no test can ever write to the real vault.
  */
-const VAULT_ROOT = process.env.AGV_DASHBOARD_VAULT_ROOT || 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const VAULT_ROOT = process.env.AGV_DASHBOARD_VAULT_ROOT
+  || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults');
 const TASKS_DIR = path.join(VAULT_ROOT, 'Tasks');
 /** Answers waiting to be relayed to the department that asked. One JSON object per line. */
 const OUTBOX = path.join(TASKS_DIR, '_outbox.jsonl');
@@ -57,7 +59,7 @@ const OUTBOX = path.join(TASKS_DIR, '_outbox.jsonl');
  * The board and the content calendar are pure filesystem and cost milliseconds, so they are read on
  * every status request and laid over the snapshot the worker collected (git, CI, launch gates: the
  * slow half). A card he just answered or deleted therefore shows its new state on the next poll
- * instead of waiting for the next collection, and a file edited in Obsidian appears within a poll.
+ * instead of waiting for the next collection, and a file edited by hand appears within a poll.
  * If the fast read fails the worker's own board is served: stale, not wrong.
  */
 function withLiveVault(snap) {
@@ -72,7 +74,7 @@ function withLiveVault(snap) {
  * Number any new task BEFORE the board is read, so a card he can see is a card he can name. This is
  * the only place numbering happens; it inserts `num:` into files that have none and touches nothing
  * else. It is pure filesystem and takes milliseconds, so it runs on this thread just before each
- * refresh is handed to the worker. A file added in Obsidian is numbered on the next poll rather than
+ * refresh is handed to the worker. A file added by hand is numbered on the next poll rather than
  * staying unnameable.
  */
 function numberTasks() {
@@ -281,7 +283,7 @@ const PAGE = `<!doctype html>
 
   /* --- card detail. A CENTRED MODAL, NOT A RIGHT-SIDE DRAWER.
      This was the largest correction in Design's spec: Trello opens a card in a centred modal and
-     the owner asked for a literal copy. The drawer this replaced was the board's own invention.
+     the spec asks for a literal copy. The drawer this replaced was the board's own invention.
      Width, radius, offset and shadow are measured values. */
   #scrim{position:fixed;inset:0;background:#0009;z-index:9;overflow-y:auto}
   /* FIXED, NOT RELATIVE. A relative-positioned modal sits wherever the document flow puts it —
@@ -364,9 +366,8 @@ const PAGE = `<!doctype html>
                 letter-spacing:.07em;padding:3px 0}
   .more[open] summary{margin-bottom:7px}
   /* ==========================================================================================
-     TRELLO GEOMETRY. Every number here was measured off a live Trello board by Design and is
-     recorded in Design/task-board-trello-spec-2026-09-18.md in the vault. The owner asked for a
-     literal copy, so these are copied rather than chosen, and a "tidier" round number is a
+     TRELLO GEOMETRY. Every number here was measured off a live Trello board by Design on
+     2026-09-18. The spec asks for a literal copy, so these are copied rather than chosen, and a "tidier" round number is a
      regression. Scoped to the board: the repo-status fold below it keeps the themed tokens.
 
      BRAND TOKENS DELIBERATELY DO NOT APPLY. This is an internal tool on 127.0.0.1, not a product

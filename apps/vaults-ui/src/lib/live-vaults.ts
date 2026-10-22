@@ -391,11 +391,11 @@ export interface LiveConfig {
   readonly chainId: number;
   readonly vaultAddresses: readonly string[];
   /**
-   * The one v1 vault's display name — card #67, `Decisions/Vault name is cirBTC Vault 2026-09-19`.
+   * The one v1 vault's display name — card #67, named cirBTC Vault on 2026-09-19.
    * `''` when unset, which is `assembleVault`'s own "no name" value, so an unconfigured build still
    * falls back to `shortAddress` rather than printing an empty heading. Applied to EVERY configured
    * address: correct today because the v1 cut line pins exactly one
-   * (`Decisions/v1-cut-line-2026-09-18`), and a config naming more than one vault with one shared
+   * (set 2026-09-18), and a config naming more than one vault with one shared
    * name is a decision for whoever lifts that cut line, not a case this file should silently guess.
    */
   readonly vaultName: string;

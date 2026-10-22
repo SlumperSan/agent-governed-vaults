@@ -118,7 +118,7 @@ reverts every NAV path including exits. The constant was raised to 90,000 s on 2
 
 The figure is stable rather than still rising: a 169 h walk and a 449 h walk both return 86,423 s.
 The earlier smaller readings rose only because each window was shorter than the heartbeat itself and
-never contained a quiet stretch. See `Decisions/2026-09-18 MAX_HEARTBEAT raised to 90000`.
+never contained a quiet stretch. MAX_HEARTBEAT was raised to 90000 on 2026-09-18 for this reason.
 
 ### 4. Widen the sequencer-feed refusal
 

@@ -13,7 +13,7 @@
  * `packages/agent-sdk/src`: both are entirely `.mjs`, both are code an INTEGRATOR reads and
  * copies as a starting point (the reference agent literally exists to be copied), and a false
  * claim in either — e.g. the `exitFeeBpsOf` misstatement the launch checklist's own evidence
- * names as the shape of harm here (Tasks/launch-engineering-13-...md, card 92) — ships silently.
+ * names as the shape of harm here (card 92) — ships silently.
  *
  * ## Why this is its OWN file, scoped to these two directories only
  *

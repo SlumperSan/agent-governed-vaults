@@ -12,6 +12,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -223,7 +224,7 @@ function teamOf(branch) {
 // ---------------------------------------------------------------- departments (the vault)
 
 /**
- * Department output, read from the Obsidian vault. This is the only part of the board that looks
+ * Department output, read from the local notes vault. This is the only part of the board that looks
  * OUTSIDE the repo, because department deliverables are notes, not code.
  */
 function departments(vaultRoot) {
@@ -341,7 +342,7 @@ function frontmatter(text) {
  * The content calendar, read from `GTM/Calendar/*.md` in the vault.
  *
  * One file per planned post. Marketing writes them; this only reads. Same design rule as the board:
- * the vault is the store, nothing here writes back, and a file edited in Obsidian appears on the
+ * the vault is the store, nothing here writes back, and a file edited by hand appears on the
  * next poll.
  *
  * A file missing `date` is REPORTED rather than skipped. A calendar that silently drops an undated
@@ -407,7 +408,7 @@ export function readCalendar(vaultRoot) {
 }
 
 /**
- * The task board, read from `Tasks/*.md` in the Obsidian vault.
+ * The task board, read from `Tasks/*.md` in the local notes vault.
  *
  * WHY THE VAULT AND NOT A DATABASE. Department sessions cannot see each other; the vault is the
  * only thing they all write to, and they already write files there reliably. A task is therefore a
@@ -785,7 +786,8 @@ export function collect(opts = {}) {
   // The `Claude/` segment was missing here, so every vault read silently returned nothing and the
   // Department panel looked empty rather than broken. Verified against the filesystem, not typed
   // from memory.
-  const vaultRoot = opts.vault ?? 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+  const vaultRoot = opts.vault ?? (process.env.AGV_VAULT_ROOT
+    || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults'));
 
   let prs = [];
   let issues = [];

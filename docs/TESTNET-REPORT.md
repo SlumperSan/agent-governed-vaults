@@ -36,10 +36,10 @@ this report.**
 | Chain interaction | **read-only** (`cast call` / `cast block`), no key handled, nothing signed |
 
 > **Worktree note.** This branch is worked in a **separate git worktree**, not the shared checkout at
-> `C:\Users\Micha\desktop\x402`; that one was on `sprint-13/prod-ops` with uncommitted Sprint-13
+> `<your-checkout>`; that one was on `sprint-13/prod-ops` with uncommitted Sprint-13
 > files and untracked Sprint-11 oracle files, and a branch switch would have swept another sprint's
-> work into this PR. Concurrent sessions share this repo; see the `concurrent-sessions-git-add`
-> note.
+> work into this PR. Concurrent sessions share this repo, so stage exact paths and never
+> `git add -A`.
 
 ---
 
@@ -147,7 +147,7 @@ what CI exercised. The address book in §7 will carry `VaultDeployer` regardless
 
 ## 6. Deploy: ✅ COMPLETE
 
-Broadcast by the human on 2026-08-21 from `C:\Users\Micha\desktop\x402-testnet`, source commit
+Broadcast by the human on 2026-08-21 from a separate checkout (`<your-checkout>-testnet`), source commit
 `153d4cf3`. Every transaction succeeded (`status 1`), all in a single block.
 
 | | |

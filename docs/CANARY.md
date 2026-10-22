@@ -890,7 +890,7 @@ config is immutable, so a drift there is not a
 freeze, it is every price being silently wrong until the vault is evacuated. The swap case is
 legitimate routine Chainlink operation and self-clears on the next sweep once the pin is re-taken.
 Nothing else covers the harm cases: the sane-price band catches a ±2-decimal drift only while the
-live price sits inside the band, and per `Owner Decisions 2026-09-01.md` §1 that window closes for
+live price sits inside the band, and, from live prices at 2026-09-01, that window closes for
 cbBTC at BTC $100,000: above it `feed-identity` is the only detector there is, and `nav-backing`
 cannot substitute because it recomputes through the same mis-scaled `priceWad`. The Monitoring Gap
 Analysis' §3 item 4 PAGE list was written 2026-08-30, before `feed-identity` existed (2026-09-01,

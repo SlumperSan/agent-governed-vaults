@@ -57,7 +57,7 @@ function AppShell() {
     <Page current="/">
       <header className="masthead">
         <h1>RWAlly</h1>
-        {/* Chairman directive, cutover condition: this line gates what app.rwally.com is allowed to
+        {/* Cutover condition: this line gates what app.rwally.com is allowed to
          * say about the chain it reads. UNCONDITIONAL on purpose — not gated on `fetched.kind`,
          * freshness, or any other read, because a read that can fail is a disclosure that can
          * vanish, and its absence here would read as an unqualified, unlabelled mainnet. Verbatim

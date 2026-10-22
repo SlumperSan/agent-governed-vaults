@@ -3,7 +3,7 @@
 /**
  * `node scripts/vault-lint.mjs [--vault <path>]`
  *
- * Card 189, advisory in `npm run gate` for one week then blocking (Chairman directive 6). See
+ * Card 189, advisory in `npm run gate` for one week then blocking. See
  * `scripts/lib/vault-lint.mjs` for the three checks and why they are scoped as narrowly as they are.
  *
  * EXIT CODES: 0 clean (or the vault is absent from this environment -- see below), 1 a fail was
@@ -16,9 +16,12 @@
  * way a Windows-only script no-ops on a runner that is not Windows.
  */
 import { existsSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { lintVault } from './lib/vault-lint.mjs';
 
-const DEFAULT_VAULT = 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const DEFAULT_VAULT = process.env.AGV_VAULT_ROOT
+  || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults');
 
 function parseArgs(argv) {
   const idx = argv.indexOf('--vault');

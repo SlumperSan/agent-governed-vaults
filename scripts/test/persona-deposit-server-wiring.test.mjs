@@ -36,7 +36,7 @@ const tmpQueuePath = () => path.join(TMP, `q${n++}.json`);
 
 // Same guard sign-queue-server.test.mjs uses, and the same fix: this used to diff the REAL queue
 // file's bytes before/after, which false-fails whenever the live dashboard (a separate process, run
-// from C:\Users\Micha\Claude\Projects\Arc\agv-dashboard-main) writes that same real file mid-run —
+// from a different checkout) writes that same real file mid-run —
 // see the full explanation there. The replacement checks THIS PROCESS's own calls instead of disk
 // bytes, in two layers:
 //   1. Every write-capable call in this file is routed through a `*Safe` wrapper, which refuses to
