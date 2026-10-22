@@ -2,21 +2,31 @@
 
 A rehearsal of the v2 (same-address CREATE2) bring-up on Ethereum, run on a local anvil with no real
 key and nothing sent to any network. It covers `contracts/script/DeployChainlinkOracle.s.sol` and
-`contracts/script/Deploy.s.sol` at `protocol/main` `c3277fc`, plus a real Safe v1.4.1 set up 2 of 3 as
-the vault creator.
+`contracts/script/Deploy.s.sol`, plus a real Safe v1.4.1 set up 2 of 3 as the vault creator. First run
+at `protocol/main` `c3277fc` on 2026-10-21.
 
-**Frozen at `c3277fc`, before the FeeEngine A1 treasury split (#477).** The measured run, the
-transcript and every gas figure are from that commit. Since then `Deploy.s.sol` also calls
-`FeeEngine.initialize(FEE_TREASURY)` and the `FeeEngine` and `VaultFactory` addresses changed. The
-harness and the checklist below read the current `contracts/config/create2-manifest.json` and the
-current deploy script, and the counts are re-derived from that script; every gas figure not
-re-measured is marked "from the 2026-10-21 run at c3277fc, re-measure at freeze". The harness has not
-been re-run on the current set.
+**Re-run on 2026-10-22 at `protocol/main` `627230b`**, after the agent registry (#468), the factory's
+100 USDC minimum deposit floor (#500) and the agent vault path (#483) landed, and after the FeeEngine
+A1 treasury split (#477). Foundry 1.7.1 with native solc 0.8.26. The transcript, every address and
+every gas figure below are from that re-run. Two harness changes were needed for it to run on the
+current set, both in this folder and neither in `contracts/`:
 
-**Result at `c3277fc`: the run completes. 57 checks pass, 0 fail.** One blocker changed the method
-(no mainnet fork was possible, see below), and three gaps in the scripts and runbook need a decision
-before the freeze. The checklist at the end is for the freeze, after the harness is re-run on the
-frozen commit.
+- `Deploy.s.sol` now refuses unless `RWAllyAgentRegistry` already has code at the address in
+  `contracts/config/agent-registry-create2.json`. The harness gained step 2c, which sends
+  `salt || initcode` from that record to the Arachnid proxy (permissionless, any key) and checks the
+  initcode hash against the record. It deploys the registry's code only; the registry's own
+  `initialize` is a separate owner step and was not run. `plan.tmpl.json` gained the `agentRegistry`
+  field the initialisation preflight now requires.
+- `safe-2of3.mjs` asked for a 10 USDC `minDepositUsdc`, which the factory now refuses
+  (`MinDepositBelowFloor`); it asks for the 100 USDC floor.
+
+Before those changes the re-run at `627230b` failed at step 3c (`Deploy: the agent registry at
+config/agent-registry-create2.json has no code on this chain; deploy it first`) and at step 8.
+
+**Result at `627230b`: the run completes. 63 checks pass, 0 fail** (57 at `c3277fc`). One blocker
+changed the method (no mainnet fork, see below), and three gaps in the scripts and runbook need a
+decision before the freeze. The checklist at the end is for the freeze, after the harness is re-run
+on the frozen commit.
 
 - Harness, re-runnable: [`2026-10-21-deploy-dry-run/run-all.sh`](2026-10-21-deploy-dry-run/run-all.sh)
 - Full transcript of the run summarised here: [`2026-10-21-deploy-dry-run/transcript.txt`](2026-10-21-deploy-dry-run/transcript.txt)
@@ -25,7 +35,12 @@ frozen commit.
 
 ## Blocker: no mainnet fork from this session
 
-The task asked for a fork of Ethereum mainnet. This cloud session's egress policy refuses every
+The 2026-10-22 re-run kept the same fresh-anvil method so its transcript compares line for line with
+the first run; the harness has no fork option. Public Ethereum RPCs did serve historical state to the
+re-run machine (the ERC-8004 import ceiling was re-read at block 26221001 the same day), so a fork is
+now possible but was not run. The rest of this section describes the first run.
+
+The task asked for a fork of Ethereum mainnet. The first run's cloud egress policy refuses every
 Ethereum RPC host tried (publicnode, llamarpc, cloudflare-eth, ankr, merkle, 1rpc, blastapi,
 tenderly gateway, flashbots), and also `foundry.paradigm.xyz` and `binaries.soliditylang.org`. So:
 
@@ -54,45 +69,51 @@ listed in the checklist.
 
 | Step | What ran | Outcome |
 |---|---|---|
-| 0 | chain id, proxy runtime, predicted addresses | chain id 1, Osaka; proxy 69 bytes; all six addresses empty |
+| 0 | chain id, proxy runtime, predicted addresses | chain id 1, Osaka; proxy 69 bytes; all seven manifest addresses empty |
 | 2a | `DeployChainlinkOracle` with no price band | **refused**: band required on every chain except 31337 and 84532 |
 | 2b | `DeployChainlinkOracle`, throwaway anvil key, bands at ratio 200 | `ChainlinkOracle` at `0x5FC8…5707`; both feeds `feed OK`; sequencer feed `address(0)` |
+| 2c | `RWAllyAgentRegistry` via the Arachnid proxy, throwaway key | initcode hash equals the record; code at `0x1337f59A…3D2C`, the recorded address; gas used 3,038,833, under the cap |
 | 3a | `Deploy.s.sol` with empty `BLESSED_ORACLES` | **refused** before any send (C-6 guard) |
 | 3b | `Deploy.s.sol` signed by the throwaway key | **refused** before any send: the broadcast is pinned to `PROTOCOL_INITIALIZER` |
-| 3c | `Deploy.s.sol` as `PROTOCOL_INITIALIZER` (anvil impersonation, no key) | 10 transactions at `c3277fc` (11 on the current script, with `FeeEngine.initialize`), all status 1; six addresses equal the manifest at that commit |
-| 4 | per-transaction gas against the EIP-7825 cap (16,777,216) | at `c3277fc`: largest gas limit 7,222,688 (`VaultDeployer`); all 11 under the cap (11 = 1 oracle + 10 deploy-script transactions); re-measure at freeze |
-| 5 | read-back: immutables, wires, oracle config, replays | at `c3277fc`: 38 of 38 pass; three runtimes equal the local build; the current `readback.sh` adds the treasury and `FeeEngine.initialize` replay checks |
-| 6 | `scripts/protocol-initialize-preflight.mjs`, two endpoints | `preflight ok`; negative plan exits 1 |
+| 3c | `Deploy.s.sol` as `PROTOCOL_INITIALIZER` (anvil impersonation, no key) | 13 transactions, all status 1; seven addresses equal the manifest; the script read the agent registry address from its record |
+| 4 | per-transaction gas against the EIP-7825 cap (16,777,216) | largest gas limit 7,314,100 (`AgentVaultDeployer`); all 14 under the cap (1 oracle + 13 deploy-script transactions) |
+| 5 | read-back: immutables, wires, oracle config, replays | 40 of 40 pass, including `FeeEngine.treasury` and the `FeeEngine.initialize` replay; three runtimes equal the local build |
+| 6 | `scripts/protocol-initialize-preflight.mjs`, two endpoints | `preflight ok` (agent path pinned to the plan's registry); negative plan exits 1 |
 | 7 | `update-create2-manifest.mjs --check` | matches |
 | 8 | real Safe v1.4.1, 2 of 3, creates and registers the first vault | one signature **refused** (`GS020`); `registerVault` from any non-creator refused; two of three succeed; creator and operator are the Safe |
+
+Addresses at `627230b` that differ from the first run: `FeeEngine` `0x9108…8E12` (was `0x71b7…6999`),
+`VaultFactory` `0xe31e…2547` (was `0xcAa8…0e0d`), and the new `AgentVaultDeployer` `0x1c82…ef5b`.
+`OperatorRegistry`, `SubVaultRegistry`, `Governance` and `VaultDeployer` are unchanged.
 
 Anvil does not enforce EIP-7825 (a 16,777,217 gas transaction was accepted when tried by hand in
 this session), so the harness checks the cap itself in step 4.
 
 ### Gas, as measured
 
-All gas figures in this table are from the 2026-10-21 run at `c3277fc`, re-measure at freeze. The
-`PROTOCOL_INITIALIZER` row predates `FeeEngine.initialize` and the larger `FeeEngine` initcode
-(3,039 B then, 3,305 B now per the manifest), so it understates the current batch.
+All gas figures in this table are from the 2026-10-22 re-run at `627230b`; re-measure at freeze if
+`contracts/src` changes again.
 
-| Sender | Transactions | Gas used (from the 2026-10-21 run at `c3277fc`, re-measure at freeze) |
+| Sender | Transactions | Gas used (2026-10-22 re-run at `627230b`) |
 |---|---|---|
 | any key (oracle deploy, plain CREATE) | 1 | 537,930 |
-| `PROTOCOL_INITIALIZER`, as run at `c3277fc` (six CREATE2, `VaultFactory.initialize`, three wires) | 10 | 10,672,157 |
-| `PROTOCOL_INITIALIZER`, current script (the same ten plus `FeeEngine.initialize`) | 11 | not measured, re-measure at freeze |
-| creator Safe (`createVault`, `registerVault`, via `execTransaction`) | 2 | 4,826,350 |
+| any key (`RWAllyAgentRegistry` via the Arachnid proxy) | 1 | 3,038,833 |
+| `PROTOCOL_INITIALIZER` (seven CREATE2, then six one-shot calls) | 13 | 16,495,241 |
+| creator Safe (`createVault`, `registerVault`, via `execTransaction`) | 2 | 4,826,534 |
 
-`Deploy.s.sol` now sends 11 transactions: six CREATE2 creates, then the five one-shot calls
-(`factory.initialize`, `registry.wire`, `subReg.wire`, `governance.wireSubVaultRegistry`,
-`feeEngine.initialize`). A full rehearsal is 1 + 11 + 2 = 14 transactions. Forge sets each gas limit at 130% of its estimate, so the key needs that headroom on
-hand when each transaction is sent. The cost in ETH scales linearly with the day's gas price and
-should be recomputed from the re-measured gas; the 0.0107 ETH at 1 gwei quoted in the first run
-covered only the 10 transactions at `c3277fc`.
+`Deploy.s.sol` sends 13 transactions: seven CREATE2 creates, then the six one-shot calls
+(`factory.initialize`, `factory.initializeAgentPath`, `registry.wire`, `subReg.wire`,
+`governance.wireSubVaultRegistry`, `feeEngine.initialize`). A full rehearsal is 1 + 1 + 13 + 2 = 17
+transactions. Forge sets each gas limit at 130% of its estimate, so the key needs that headroom on hand
+when each transaction is sent. At 1 gwei the `PROTOCOL_INITIALIZER` batch costs about 0.0165 ETH of
+gas used; the cost scales linearly with the day's gas price. The registry deploy is not in that batch
+and its sender need not be `PROTOCOL_INITIALIZER`; the registry's own `initialize` (not run here)
+is sent by `PROTOCOL_INITIALIZER` and is not counted.
 
 ## Constructor arguments, role grants and ownership
 
 **Constructor arguments.** Two singletons take any. Both were read back from the deployed immutables
-at `c3277fc` (the current `FeeEngine` additionally has a one-shot `initialize(treasury)`, below):
+at `627230b` (`FeeEngine` additionally has a one-shot `initialize(treasury)`, below):
 
 - `FeeEngine(registry)`: `registry()` is the `OperatorRegistry` address. The constructor argument is
   fixed by the CREATE2 initcode, so it is not a free choice.
@@ -102,21 +123,23 @@ at `c3277fc` (the current `FeeEngine` additionally has a one-shot `initialize(tr
   returned the feed, heartbeat, `scale` 1e10 and both band edges exactly as passed; `usdc()` is the
   pinned USDC; `sequencerUptimeFeed()` is `address(0)`, the Ethereum exemption.
 
-The other four take none, and their runtime code equals the local build byte for byte
-(`OperatorRegistry`, `SubVaultRegistry`, `Governance`; `VaultDeployer` carries immutables, so it is
-covered by its initcode hash instead).
+The other five take none. Three have runtime code equal to the local build byte for byte
+(`OperatorRegistry`, `SubVaultRegistry`, `Governance`); `VaultDeployer` and `AgentVaultDeployer`
+carry immutables, so they are covered by their initcode hashes instead.
 
 **Role grants: there are none to make.** `contracts/src` contains no `Ownable`, no `AccessControl`,
 no `onlyOwner`, no `grantRole` and no `transferOwnership`. On the same-address (v2, CREATE2) set built
 from the current source, the privileged caller is the constant `PROTOCOL_INITIALIZER` (`0x0f80…9f35`),
-with five one-shot calls: `VaultFactory.initialize`, the three wires and `FeeEngine.initialize`
-(the per-chain treasury, `FEE_TREASURY`; `docs/DEPLOYMENT.md` counts the same five). (The live Arc
-set, v1 by plain CREATE, has no `initialize`.) The run at `c3277fc` proved the first four spent:
-replayed from that address after bring-up, `VaultFactory.initialize` reverts `AlreadyInitialized` and
-the three wires revert `AlreadyWired` / `AlreadyWiredSubRegistry`. `FeeEngine.initialize` is new since
-that run: `FeeEngine.sol` reverts a second call with `AlreadyInitialized`, and the current
-`readback.sh` replays it, but that replay has not been run. `ChainlinkOracle` and the execution
-adapters have no admin at all.
+with six one-shot calls: `VaultFactory.initialize`, `VaultFactory.initializeAgentPath`, the three
+wires and `FeeEngine.initialize` (the per-chain treasury, `FEE_TREASURY`; `docs/DEPLOYMENT.md` counts
+the same six). (The live Arc set, v1 by plain CREATE, has no `initialize`.) The re-run at `627230b`
+proved five of them spent: replayed from that address after bring-up, `VaultFactory.initialize` and
+`FeeEngine.initialize` revert `AlreadyInitialized` and the three wires revert `AlreadyWired` /
+`AlreadyWiredSubRegistry`. `readback.sh` does not replay `initializeAgentPath`; `VaultFactory.sol`
+reverts a second call with `AgentPathAlreadyInitialized`, unexercised by this run. The
+`RWAllyAgentRegistry` has its own one-shot `initialize`, also callable only by `PROTOCOL_INITIALIZER`;
+this run deployed its code without calling it. `ChainlinkOracle` and the execution adapters have no
+admin at all.
 
 **Ownership handoff to the 2 of 3: there is no protocol ownership to hand off.** Nothing in the
 singleton set can be transferred to a Safe, and `PROTOCOL_INITIALIZER` cannot be a Safe either: it
@@ -191,12 +214,13 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
 
 - [ ] `eth_chainId` is 1.
 - [ ] Code at `0x4e59b44847b379578588920cA78FbF26c0B4956C` equals the 69-byte runtime in the transcript.
-- [ ] Each of the six manifest addresses has empty code. If one has code, someone has run the same
+- [ ] Each of the seven manifest addresses has empty code. If one has code, someone has run the same
       public initcode first; the script will then revert in simulation. Compare that runtime with the
       local build and finish the remaining creates by hand, per `docs/DEPLOYMENT.md` §10.
-- [ ] `PROTOCOL_INITIALIZER` balance covers the 11-transaction batch at the day's fee, with 30%
-      headroom. Gas total: re-measure at freeze (10,672,157 for the 10 transactions at `c3277fc`; the
-      current batch is larger).
+- [ ] `RWAllyAgentRegistry` has code at the address in `contracts/config/agent-registry-create2.json`
+      and is initialised for this chain; `Deploy.s.sol` refuses without the code.
+- [ ] `PROTOCOL_INITIALIZER` balance covers the 13-transaction batch at the day's fee, with 30%
+      headroom. Gas used: 16,495,241 at `627230b`; re-measure if `contracts/src` changed since.
 - [ ] `FEE_TREASURY` decided: the real per-chain treasury address, non-zero, set once and never
       changed. The harness uses a placeholder (`0x…fEE1`) that is not the real treasury.
 - [ ] Each feed proxy: code present, `description()` ends in `/ USD`, `decimals()` is 8, answer
@@ -207,9 +231,9 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
 - [ ] `DeployChainlinkOracle.s.sol` with the committed config (any key; the oracle has no admin).
       Read `feedOf(asset)` back and compare with the config (finding 1).
 - [ ] `Deploy.s.sol` with `BLESSED_ORACLES=<that oracle>` and `FEE_TREASURY=<the treasury>`, signed as
-      `PROTOCOL_INITIALIZER`. Expect 11 transactions (six creates, then the five one-shot calls
-      listed under Gas), all under 16,777,216. The largest gas limit was 7,222,688 at `c3277fc`
-      (`VaultDeployer`); re-measure at freeze.
+      `PROTOCOL_INITIALIZER`. Expect 13 transactions (seven creates, then the six one-shot calls
+      listed under Gas), all under 16,777,216. The largest gas limit was 7,314,100 at `627230b`
+      (`AgentVaultDeployer`).
 - [ ] `node scripts/protocol-initialize-preflight.mjs --plan <plan>` with two real endpoints: `preflight ok`.
 - [ ] `R=<rpc> ORA=<oracle> FEE_TREASURY=<the treasury> docs/audits/2026-10-21-deploy-dry-run/readback.sh`
       on each endpoint, with the `feedOf` expectations edited to the frozen config: 0 fail. It reads
@@ -229,8 +253,8 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
 
 - [ ] Deployment record `contracts/config/deployments/ethereum-mainnet.json` written from two-endpoint
       reads; `docs/NOW.md` updated in the same commit.
-- [ ] `PROTOCOL_INITIALIZER` key back in cold storage. It has spent its five one-shot calls on Ethereum, but
-      it still makes the five one-shot calls on every chain where the v2 set is not yet initialised.
+- [ ] `PROTOCOL_INITIALIZER` key back in cold storage. It has spent its six one-shot calls on Ethereum, but
+      it still makes the six one-shot calls on every chain where the v2 set is not yet initialised.
 
 ## Re-running this
 
