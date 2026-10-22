@@ -61,6 +61,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 // Same default as `lib.mjs`: publicnode prunes logs, and a sampler on a different endpoint
@@ -127,7 +128,7 @@ function tryCast(args, { attempts = 2 } = {}) {
     try {
       return { ok: true, out: execFileSync(CAST, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }).trim() };
     } catch (e) {
-      const raw = e.stderr ? String(e.stderr).trim() : String(e.message);
+      const raw = redactUrls(e.stderr ? String(e.stderr).trim() : String(e.message));
       const err = raw.split('\n').slice(0, 2).join(' ').slice(0, 220);
       last = { ok: false, err, kind: classifyCallError(err) };
       // A revert is the answer, not a fault — never retry it. A transport blip gets one more try,
@@ -509,7 +510,7 @@ if (invokedDirectly) {
   // describes. Everything downstream — the oracle probe, every price age, drill 4's whole verdict —
   // is attributed to `dep`, so sampling the wrong chain writes a series that reads as evidence.
   const idRead = tryCast(['chain-id', '--rpc-url', RPC]);
-  if (!idRead.ok) throw new Error(`oracle-sampler: could not read the chain id from ${RPC}: ${idRead.err}`);
+  if (!idRead.ok) throw new Error(`oracle-sampler: could not read the chain id from ${redactUrls(RPC)}: ${redactUrls(idRead.err)}`);
   assertLiveChainId(dep, Number(clean(idRead.out)));
 
   const { sequencerFeed } = probeOracle();
@@ -522,7 +523,7 @@ if (invokedDirectly) {
   };
 
   fs.mkdirSync(path.dirname(SERIES), { recursive: true });
-  console.log(`[oracle-sampler] rpc=${RPC} every ${SAMPLE_MS}ms -> ${SERIES}`);
+  console.log(`[oracle-sampler] rpc=${redactUrls(RPC)} every ${SAMPLE_MS}ms -> ${SERIES}`);
   console.log(`[oracle-sampler] ChainlinkOracle ${dep.aggregator}, sequencerUptimeFeed=${sequencerFeed}, GRACE_PERIOD=${env.grace}s, assets=${dep.assets.map((a) => a.symbol).join(',')}`);
   for (;;) {
     const s = sample(env);

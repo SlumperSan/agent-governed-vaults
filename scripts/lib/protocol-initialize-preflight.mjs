@@ -32,6 +32,7 @@
  */
 import { decodeAbiParameters, getAddress, isAddress, toEventSelector, toFunctionSelector } from 'viem';
 import { ethCall, ethChainId, ethGetCode, rpcCall } from './chain-rpc.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 export const SEL_INITIALIZED = toFunctionSelector('initialized()');
 export const SEL_ENFORCED = toFunctionSelector('oracleAllowlistEnforced()');
@@ -86,7 +87,7 @@ export function planProblems(name, plan) {
 export async function checkEndpoint({ fetchImpl, rpcUrl, name, plan, factory }) {
   /** @type {string[]} */
   const problems = [];
-  const at = `${name} @ ${rpcUrl}`;
+  const at = `${name} @ ${redactUrls(rpcUrl)}`;
   const fail = (/** @type {string} */ m) => problems.push(`${at}: ${m}`);
 
   const cid = await ethChainId(fetchImpl, rpcUrl);

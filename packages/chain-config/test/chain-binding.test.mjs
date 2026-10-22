@@ -18,7 +18,21 @@ import os from 'node:os';
 import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chainBindingVerdict, assertChainBinding, ChainBindingError } from '../src/chain-binding.mjs';
+import { chainBindingVerdict, assertChainBinding, ChainBindingError, rpcForMessage } from '../src/chain-binding.mjs';
+
+test('rpcForMessage keeps scheme plus host and drops path, query and userinfo', () => {
+  const KEY = 'Zk3vQ9xL2mN8pR4tW6yB1cD5fG7hJ0aS';
+  assert.equal(rpcForMessage(`https://base-sepolia.g.alchemy.com/v2/${KEY}`), 'https://base-sepolia.g.alchemy.com');
+  assert.equal(rpcForMessage(`https://node.example:8545/rpc?apikey=${KEY}#x`), 'https://node.example:8545');
+  assert.equal(rpcForMessage(`wss://user:${KEY}@node.example/ws`), 'wss://node.example');
+  assert.equal(rpcForMessage('http://127.0.0.1:8545'), 'http://127.0.0.1:8545');
+  // Not a URL: returned unchanged, so a test label or "(no rpcUrl)" still reads as itself.
+  assert.equal(rpcForMessage('(no rpcUrl)'), '(no rpcUrl)');
+  const v = chainBindingVerdict({
+    declaredChainId: 84532, rpcChainId: 8453, rpc: `https://base-sepolia.g.alchemy.com/v2/${KEY}`, declaredBy: 'test',
+  });
+  assert.ok(!v.message.includes(KEY), `verdict message leaked the key: ${v.message}`);
+});
 
 // --- #293: every createChainReader caller reaches its binding, decided by a PARSER ---------------
 //
