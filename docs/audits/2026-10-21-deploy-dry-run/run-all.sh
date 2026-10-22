@@ -39,8 +39,8 @@ if [ -n "$FORK_URL" ]; then
   sleep 8
   FROM_BLOCK=$(cast block-number -r $R); export FROM_BLOCK
   echo "MODE fork of Ethereum mainnet at block $FROM_BLOCK (endpoint host: $(echo "$FORK_URL" | sed -E 's#^[a-z]+://([^/]+).*#\1#'))"
-  # The anvil test keys are public; on mainnet some of their addresses carry EIP-7702 delegations set by
-  # sweeper bots. Clear any such code locally so the throwaway sender and Safe owners are plain accounts.
+  # The anvil test keys are public, and on mainnet their addresses carry EIP-7702 delegations (all four
+  # did on 2026-10-22). Clear that code locally so the throwaway sender and Safe owners are plain accounts.
   for a in 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC 0x90F79bf6EB2c4f870365E785982E1f101E93b906; do
     cast rpc anvil_setCode $a 0x -r $R >/dev/null; cast rpc anvil_setBalance $a 0x8AC7230489E80000 -r $R >/dev/null
   done
