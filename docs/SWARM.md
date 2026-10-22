@@ -10,27 +10,14 @@ porting guide, not into porting.** That guide is what made the other 64 agents a
 
 ---
 
-## 0. Start in the vault, end in the vault
+## 0. Start from the current state, end by recording it
 
-**Every sprint opens by onboarding from Obsidian ("ob") and closes by updating it.** Not optional,
-and not a nicety: the vault is the project's memory. The repo records what the code does; the vault
-records *why*, what was decided, what was tried and rejected, and what is blocked on a human. A
-sprint that skips the read re-derives context that already exists; a sprint that skips the write
-makes the next sprint pay for it again.
-
-**Vault root:** `C:\Users\Micha\desktop\Obsidian Vault\Agent-Governed Vaults\`
+Maintainers keep private working notes outside this repository.
 
 ### Onboarding: first thing, before any code
 
-Read, in this order, stopping once you have what your task needs:
-
-1. `Project State.md`: where the build actually stands.
-2. The most recent `Session Handoff *.md`: what the last session did and left open.
-3. `Key Decisions.md` and `Security Findings.md`: decisions and findings you must not re-litigate.
-4. Whichever of `Business/` or `Working Agreement.md` your task touches.
-
-Then `docs/NOW.md` and `npm run cc` for the live, computed state. The vault carries the reasoning;
-`cc` carries the facts. Where they disagree the facts win, and the vault is what needs fixing.
+Read `docs/NOW.md` and run `npm run cc` for the live, computed state. Notes carry the reasoning;
+`cc` carries the facts. Where they disagree the facts win, and the notes are what need fixing.
 
 **Never re-derive "is this head verified" by hand — `cc` computes it.** The `PER-HEAD` block reports,
 for every open PR, the head SHA and three things about *that exact commit*:
@@ -75,18 +62,16 @@ If you need it, run `cc`; if you need to hand it to someone, hand them the comma
 
 ### Closeout: last thing, after the gate passes
 
-Update the vault before you report done. At minimum:
+Before you report done, your report states at minimum:
 
-- `Project State.md`: what changed, and what is now true that was not before.
-- Anything your work invalidated. A stale vault note is worse than a missing one, because it will be
+- What changed, and what is now true that was not before.
+- Anything your work invalidated. A stale note is worse than a missing one, because it will be
   believed. If you found that a recorded number or claim is wrong, correct it and say so explicitly
   rather than quietly overwriting it.
 - New findings, decisions and dead ends worth not repeating, including what you deliberately did
-  **not** do, and why. Rejected approaches are among the most valuable things in the vault.
+  **not** do, and why. Rejected approaches are among the most valuable things to record.
 
-Convert relative dates to absolute. Link related notes with `[[wikilinks]]`.
-
-The shorthand for this is **"update ob"**.
+Convert relative dates to absolute.
 
 ---
 
@@ -135,7 +120,7 @@ best placed to check it.
 
 ### Before you produce, read what already exists
 
-The Obsidian vault's `Business/` tree is the shared surface, and `npm run cc` lists every
+The maintainers' private notes are the shared surface, and `npm run cc` lists every
 department's notes with how recently each changed. Read the neighbouring departments' output before
 writing yours. If another department has already answered your question, cite it; do not
 re-derive it, and do not quietly contradict it. If you believe they are wrong, say so explicitly

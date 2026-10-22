@@ -9,8 +9,8 @@ work it describes.
 
 - **Live facts** (branch, gate result, deployed addresses, launch gate board, open PRs) are computed
   by `npm run cc`: never duplicate them here, they will drift.
-- **Reasoning** lives in `docs/LAUNCH-READINESS.md` (go/no-go, argued) and the Obsidian vault
-  (`Agent-Governed Vaults/`): narrative, decisions, session handoffs.
+- **Reasoning** lives in `docs/LAUNCH-READINESS.md` (go/no-go, argued) and the maintainers'
+  private notes, kept outside this repository.
 - **This file** holds only what neither of those gives you: what is being worked on right now, what
   is blocked on a human, and the traps that are not visible in the code.
 
