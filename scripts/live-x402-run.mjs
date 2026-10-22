@@ -317,11 +317,12 @@ async function main() {
   const loopMs = Date.now() - t0;
   if (!receipt?.receiptId) throw new Error('paid read returned no receipt id');
 
-  // Balances are snapshotted only AFTER the settlement is mined. The facilitator returns the hash
-  // as soon as it broadcasts — it does not wait for inclusion — so the API answers the paid read
-  // while the transfer is still in the mempool. Reading balances at that moment shows a delta of
-  // zero on any chain with a real block time. (A fork with instant mining hides this completely,
-  // which is exactly how it was found.)
+  // Balances are snapshotted only AFTER the settlement is mined. When this run was written the
+  // facilitator returned the hash as soon as it broadcast, so the API answered while the transfer
+  // was still in the mempool and balances read at that moment showed a delta of zero. (A fork with
+  // instant mining hid this completely, which is exactly how it was found.) Since 2026-10-21
+  // (PR 496) the settling facilitator waits for a success receipt before returning, so this wait
+  // normally resolves at once; it stays as a guard for any facilitator that returns on broadcast.
   const settleRcpt = await publicClient.waitForTransactionReceipt({ hash: receipt.receiptId });
   const confirmedMs = Date.now() - t0;
   const after = await snapshotBalances('after-settlement-mined');

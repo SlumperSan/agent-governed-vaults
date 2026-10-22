@@ -6,6 +6,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { chainBindingVerdict } from '../../chain-config/src/chain-binding.mjs';
+import { createLogger } from '../src/log.mjs';
 import {
   DEFAULT_CONFIG,
   EXECUTE_ENV_VAR,
@@ -14,6 +18,7 @@ import {
   gateMode,
   loadConfig,
   redact,
+  redactUrls,
   toBaseUnits,
 } from '../src/config.mjs';
 
@@ -104,6 +109,77 @@ test('redact survives cycles and deep nesting without throwing', () => {
   assert.equal(redact(10n ** 20n), '100000000000000000000');
 });
 
+test('redact removes session-key and serialized-account fields', () => {
+  const out = redact({ sessionKey: 'S1', sessionPrivateKey: 'S2', serializedSessionKey: 'S3', serializedAccount: 'S4', approval: 'kept' });
+  for (const k of ['sessionKey', 'sessionPrivateKey', 'serializedSessionKey', 'serializedAccount']) assert.equal(out[k], '[redacted]', k);
+  assert.equal(out.approval, 'kept', 'the dry-run approval field must stay readable');
+});
+
+// An Alchemy RPC URL carries its API key in the path. It must never reach a log line, whether it
+// arrives in the message, in a detail, inside an error's text, or through the chain-binding verdict.
+const KEY_SEGMENT = 'sk9Xq2LmT7vR4wZ8yB1nC6dF3gH5jK0p';
+const ALCHEMY = `https://arb-sepolia.g.alchemy.com/v2/${KEY_SEGMENT}?x=1`;
+
+test('redactUrls cuts any URL in a string to scheme plus host', () => {
+  assert.equal(redactUrls(`could not reach ${ALCHEMY} (retrying)`), 'could not reach https://arb-sepolia.g.alchemy.com (retrying)');
+  assert.equal(redactUrls(`a ${ALCHEMY}\nb ${ALCHEMY}`), 'a https://arb-sepolia.g.alchemy.com\nb https://arb-sepolia.g.alchemy.com');
+  assert.equal(redactUrls('wss://u:pw@node.example:8546/ws/KEY'), 'wss://node.example:8546');
+  assert.equal(redactUrls('http://127.0.0.1:8402'), 'http://127.0.0.1:8402');
+  assert.equal(redactUrls('no url here'), 'no url here');
+});
+
+for (const json of [false, true]) {
+  test(`a key-shaped URL path never appears in captured log output (${json ? 'json' : 'prose'})`, async () => {
+    const lines = [];
+    const log = createLogger({ write: (l) => lines.push(l), json });
+    log.info(`chain binding: ${ALCHEMY}`);
+    log.error('read failed', { err: `HTTP request failed. URL: ${ALCHEMY} Details: fetch failed`, nested: [{ url: ALCHEMY }] });
+    log.banner([`rpc ${ALCHEMY}`]);
+    log.section(`reading ${ALCHEMY}`);
+    log.checks('rpc', [{ ok: false, name: 'reachable', detail: ALCHEMY }]);
+    // The verdict is what run.mjs logs as `chain binding: ...`, and what the indexer and canary throw.
+    for (const rpcChainId of [null, 1, 84532]) {
+      const v = chainBindingVerdict({ declaredChainId: 84532, rpcChainId, rpc: ALCHEMY, declaredBy: '--chain-id' });
+      log.info(`chain binding: ${v.message}`);
+      assert.ok(!v.message.includes(KEY_SEGMENT), `verdict leaked the key: ${v.message}`);
+      assert.match(v.message, /https:\/\/arb-sepolia\.g\.alchemy\.com/);
+    }
+    const out = lines.join('\n') + JSON.stringify(log.records());
+    assert.ok(out.length > 0);
+    assert.ok(!out.includes(KEY_SEGMENT), `the key reached a log line:\n${out}`);
+    assert.ok(!out.includes('/v2/'), `a URL path reached a log line:\n${out}`);
+    assert.ok(out.includes('arb-sepolia.g.alchemy.com'), 'the host should stay, so the operator can tell which RPC');
+  });
+}
+
+test('run.mjs never prints the RPC URL path when the RPC is unreachable', () => {
+  // End to end: the real CLI, an RPC on a refused port, the key in the path. Binding refuses
+  // (unreadable chain id) and exits 2; nothing it printed may carry the path.
+  const r = spawnSync(process.execPath, [fileURLToPath(new URL('../src/run.mjs', import.meta.url)), `--rpc=http://127.0.0.1:1/v2/${KEY_SEGMENT}`], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: { ...process.env, NO_COLOR: '1' },
+  });
+  const out = `${r.stdout}\n${r.stderr}`;
+  assert.equal(r.status, 2, `expected the binding refusal exit code, got ${r.status}:\n${out}`);
+  assert.match(out, /UNPROVEN/);
+  assert.ok(out.includes('http://127.0.0.1:1'), `the host should be printed:\n${out}`);
+  assert.ok(!out.includes(KEY_SEGMENT), `the key reached the CLI output:\n${out}`);
+});
+
+test('run.mjs crash handler redacts URLs in the uncaught error it prints', () => {
+  // Any uncaught error whose text carries a URL takes this path; a URL given as a profile name is
+  // the cheapest way to make one (the ConfigError quotes the value it refused).
+  const r = spawnSync(process.execPath, [fileURLToPath(new URL('../src/run.mjs', import.meta.url)), `--profile=https://h.example/v2/${KEY_SEGMENT}`], {
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+  const out = `${r.stdout}\n${r.stderr}`;
+  assert.equal(r.status, 1, `expected the crash exit code, got ${r.status}:\n${out}`);
+  assert.match(r.stderr, /unknown policy\.join\.profile "https:\/\/h\.example"/);
+  assert.ok(!out.includes(KEY_SEGMENT), `the key reached the crash output:\n${out}`);
+});
+
 test('USDC amounts round-trip through base units', () => {
   assert.equal(toBaseUnits('25'), 25_000_000n);
   assert.equal(toBaseUnits('0.01'), 10_000n);
@@ -183,6 +259,24 @@ test('an explicit setting beside the preset wins over it', () => {
 test('a chainId that disagrees with the preset is refused, an agreeing one is accepted', () => {
   assert.throws(() => loadConfig({ chain: { preset: 'arc-mainnet', chainId: 84532 } }), (e) => e instanceof ConfigError && /is chain 5042, but chain.chainId is 84532/.test(e.message));
   assert.equal(loadConfig({ chain: { preset: 'arc-mainnet', chainId: 5042 } }).chain.chainId, 5042);
+});
+
+test('a null or empty rpcUrl beside a preset is refused, an absent one takes the preset RPC', () => {
+  for (const bad of [null, ''])
+    assert.throws(() => loadConfig({ chain: { preset: 'arc-mainnet', rpcUrl: bad } }), (e) => e instanceof ConfigError && /rpcUrl is .* beside chain.preset/.test(e.message), String(bad));
+  assert.equal(loadConfig({ chain: { preset: 'arc-mainnet', } }).chain.rpcUrl, 'https://rpc.mainnet.arc.io');
+  assert.equal(loadConfig({ chain: { rpcUrl: null } }).chain.rpcUrl, null, 'no preset: null still means the stub');
+});
+
+test('a usdc override beside a preset needs its own EIP-712 name and version', () => {
+  const other = '0x' + 'ab'.repeat(20);
+  assert.throws(() => loadConfig({ chain: { preset: 'arc-mainnet', usdc: other } }), (e) => e instanceof ConfigError && /usdcName and chain.usdcVersion/.test(e.message));
+  assert.throws(() => loadConfig({ chain: { preset: 'arc-mainnet', usdc: other, usdcName: 'X' } }), ConfigError, 'name alone is not both');
+  const cfg = loadConfig({ chain: { preset: 'arc-mainnet', usdc: other, usdcName: 'X', usdcVersion: '1' } });
+  assert.equal(cfg.chain.usdcName, 'X');
+  assert.equal(cfg.chain.usdcVersion, '1');
+  // The preset's own token, in any casing, keeps the preset's domain.
+  assert.equal(loadConfig({ chain: { preset: 'arc-mainnet', usdc: '0x3600000000000000000000000000000000000000'.toUpperCase().replace('0X', '0x') } }).chain.usdcName, 'USDC');
 });
 
 test('an unknown preset name is refused, including a path-shaped one', () => {

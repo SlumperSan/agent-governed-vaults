@@ -116,6 +116,8 @@ for the **root-only launch configuration**:
 
 The net launch-blocking set after Phase 2 is: **external audit (gate 1)**, plus **C-6**, the new Critical the re-verification pass surfaced (C-4 re-opens at `a ≥ 2` adversarial oracle sources; a config/curation requirement with no clean code fix at m=5). C-1/C-2/C-3/C-5 are closed with executed evidence; **C-4/C-6 keep gate 0 NO-GO** until the oracle-curation requirement (`quorum ≥ 2a+1`, independent sources) is settled and the external audit signs off. The re-verification did its job: it converted an *inferred* C-4 closure into an *executed* refutation. The `test_finding_*` tests that pass by executing an exploit now fall into two qualified buckets: **unreachable at launch by configuration** (the sub-vault suite, `AuditRootVaultsOnly` finding case) and **config-mitigated residual** (`AuditQuorumRegimeDust` H-8(a)), quote the "N passing tests" figure only with that qualifier.
 
+> **Note (2026-10-21):** the C-6 status above is the Phase-2 snapshot. This report's own C-6 section records the factory oracle allowlist (2026-08-28) as closing C-6 as a class; current source enforces it (`VaultFactory._requireAllowedOracle`, `OracleNotAllowed`), and closure on each chain requires a non-empty blessed list at `VaultFactory.initialize`.
+
 ---
 
 ## 2. Scope
@@ -1055,6 +1057,8 @@ well. **Requires redeploy + re-review of the quorum regime and holder accounting
 > above suggests is exactly M-6's shape and was NOT taken). `forWeight` (never `revealedWeight`) is
 > the numerator, and `snapshotTotal` is the same denominator the stake regime already uses. All 260
 > forge tests pass; the 23 existing Governance tests are unchanged.
+>
+> **Note (2026-10-21):** current source measures both branch stake terms on self-directed FOR weight, `selfDirectedFor = forWeight - delegatedForWeight[pid]` (cranked delegations subtracted, VO-2b), so branch (2) is now `selfDirectedFor * 2 > snapshotTotal` (`Governance.finalize`).
 >
 > **The regime-flip (attack (a)) has no safe contract fix** and is **mitigated at the config layer.**
 > Crossing the `memberCount < 5` boundary costs exactly one `minDepositUsdc`; distinguishing a real

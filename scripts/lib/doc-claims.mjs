@@ -156,7 +156,13 @@ export function retractedLines(text) {
 
 // ── the source tree ───────────────────────────────────────────────────────────
 
-const SKIP_DIRS = new Set(['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast']);
+// `dist` and `dist-ssr` are gitignored build output (apps/*/.gitignore; `git ls-files` lists nothing
+// under either), so a citation can never legitimately resolve into them and skipping them narrows
+// nothing this index is for. They are skipped because `apps/vaults-ui` tests create and delete
+// directories under `dist-ssr/` while `node --test` runs this file concurrently: `readdirSync`
+// lists an entry, the owner deletes it, and the `statSync` below dies with ENOENT. Same class and
+// same skip as scripts/test/claims-lede-truth.test.mjs and config-doc-truth.test.mjs.
+const SKIP_DIRS = new Set(['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast', 'dist', 'dist-ssr']);
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir)) {

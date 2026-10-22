@@ -322,6 +322,8 @@ exists **only on `OracleAggregator.sol`**: the contract the C-6 pivot retired.
 `contracts/src/oracle/ChainlinkOracle.sol`, which the pivot deployed and allowlisted, exposes
 `priceWad` and nothing else (`grep -c assetConfig` → **0**). The signal therefore reverts on every
 poll, for every asset, on every vault, and parks permanently in `skipped`.
+*Note added 2026-10-21: "nothing else" overstates it; `ChainlinkOracle` also exposes `feedOf`,
+`usdc`, `sequencerUptimeFeed` and `GRACE_PERIOD`. It has no `assetConfig`, which is the point.*
 
 **Consequence: gate 6 (canary) has a signal that can never go green on the launch tree**, and
 "silence means healthy" is not true for oracle freshness: it is silent because it is blind. This

@@ -47,6 +47,8 @@ contract SubVaultsTest is Test {
         registry = new OperatorRegistry();
         subReg = new SubVaultRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         gov = new Governance();
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),
@@ -356,5 +358,111 @@ contract SubVaultsTest is Test {
         vm.prank(operator);
         address ok = factory.createChildVault(_params(b, 50), address(parent));
         assertEq(subReg.parentOf(ok), address(parent), "edge registered for the legitimate creator");
+    }
+
+    // ── the exit-fee ratchet floor, reached through a child vault ────────────
+    //
+    // RECORDS TODAY'S BEHAVIOUR, PENDING A DESIGN DECISION. `VaultCore.MIN_POSITION_SHARES` makes any
+    // exit revert `PositionBelowFloor` when the EXITER's remainder would be nonzero and below 1e18
+    // share-wei. When the exiter is a parent vault redeeming from a child (the SV-5 shortfall unwind in
+    // `_settleExit`, or governance `redeemFromChild`), the exiter is the parent and the remainder is the
+    // parent's position in the child. The child's revert bubbles through the parent, so the parent's
+    // member exit, or the governance redemption, reverts. Nothing in the contract rounds the unwind up to
+    // the full child position or catches the revert. Whether it should is undecided; these tests pin what
+    // happens now so that a change, either way, is a visible decision and not a silent one. Reachable
+    // only when the factory was built with `allowSubVaults` true, which the CREATE2 recipe fixes false.
+
+    uint256 constant CHILD_FLOOR = 1e18; // VaultCore.MIN_POSITION_SHARES
+
+    /// @dev A fresh parent/child pair (parent min deposit 1 unit) where alice holds almost all of the
+    /// parent and bob holds 0.5 USDC of it, with every USDC allocated to the child. The child's shares
+    /// are minted 1:1 (1 USDC is 1e18 share-wei), so bob's slice of the parent is 0.5e18 child
+    /// share-wei, below the floor.
+    function _pairWithAMinority() internal returns (VaultCore p, VaultCore c, address bob) {
+        address[] memory b = new address[](1);
+        b[0] = address(weth);
+        VaultFactory.VaultParams memory pp = _params(b, 50);
+        pp.minDepositUsdc = 1;
+        vm.prank(operator);
+        p = VaultCore(factory.createVault(pp));
+        vm.prank(operator);
+        c = VaultCore(factory.createChildVault(_params(b, 50), address(p)));
+
+        bob = makeAddr("bob");
+        usdc.mint(bob, USDC_1);
+        vm.prank(bob);
+        usdc.approve(address(p), type(uint256).max);
+        vm.prank(alice);
+        usdc.approve(address(p), type(uint256).max);
+
+        vm.startPrank(alice);
+        p.deposit(1_000 * USDC_1);
+        p.skipWindow();
+        vm.stopPrank();
+        vm.startPrank(bob);
+        p.deposit(USDC_1 / 2);
+        p.skipWindow(); // a first-time deposit is pending until the member skips the window
+        vm.stopPrank();
+        assertEq(p.sharesOf(bob), CHILD_FLOOR / 2, "bob holds half a share");
+
+        uint256 idle = p.idleUsdc();
+        vm.prank(address(gov));
+        p.allocateToChild(address(c), idle);
+        assertEq(p.idleUsdc(), 0, "everything is in the child");
+        skip(31 days); // exit-fee tenure fully decayed, so the numbers are clean
+    }
+
+    /// @notice A parent's member exit whose SV-5 unwind would leave the parent a sub-floor position in the
+    /// child reverts `PositionBelowFloor` through the parent. A smaller exit, leaving the child at least
+    /// the floor, still works.
+    function test_currentBehaviour_childFloorBlocksParentUnwind_pendingDesign() public {
+        (VaultCore p, VaultCore c, address bob) = _pairWithAMinority();
+        uint256 aliceShares = p.sharesOf(alice);
+        uint256 parentInChild = c.sharesOf(address(p));
+        uint256 usdcBefore = usdc.balanceOf(alice);
+
+        // Alice's full exit needs ~all of the child back; the child would be left ~0.5e18 share-wei.
+        vm.prank(alice);
+        vm.expectRevert(VaultCore.PositionBelowFloor.selector);
+        p.requestExit(aliceShares);
+        assertEq(p.sharesOf(alice), aliceShares, "alice's shares untouched");
+        assertEq(c.sharesOf(address(p)), parentInChild, "the child position untouched");
+        assertEq(usdc.balanceOf(alice), usdcBefore, "nothing paid");
+
+        // The workaround today is a smaller exit: it leaves the child at least the floor.
+        vm.prank(alice);
+        p.requestExit(aliceShares * 99 / 100);
+        assertGe(c.sharesOf(address(p)), CHILD_FLOOR, "the child position stays at or above the floor");
+        assertGt(usdc.balanceOf(alice) - usdcBefore, 989 * USDC_1, "alice was paid from the child");
+
+        // And the minority member's own exit is unaffected: it takes a sliver of the child.
+        uint256 bobShares = p.sharesOf(bob);
+        vm.prank(bob);
+        p.requestExit(bobShares);
+        assertEq(p.sharesOf(bob), 0, "bob exited in full");
+    }
+
+    /// @notice Governance `redeemFromChild` is held to the same floor: it cannot leave the parent a
+    /// sub-floor position in the child, and the revert is the child's, bubbled. Exactly the floor, and a
+    /// full redemption, are allowed.
+    function test_currentBehaviour_childFloorBlocksRedeemFromChild_pendingDesign() public {
+        _allocate(800 * USDC_1);
+        uint256 held = child.sharesOf(address(parent));
+        assertEq(held, 800 * CHILD_FLOOR, "parent holds the whole child");
+
+        vm.startPrank(address(gov));
+        vm.expectRevert(VaultCore.PositionBelowFloor.selector);
+        parent.redeemFromChild(address(child), held - 1); // would leave 1 share-wei
+        vm.expectRevert(VaultCore.PositionBelowFloor.selector);
+        parent.redeemFromChild(address(child), held - (CHILD_FLOOR - 1)); // would leave floor - 1
+        assertEq(child.sharesOf(address(parent)), held, "nothing moved");
+
+        parent.redeemFromChild(address(child), held - CHILD_FLOOR); // leaves exactly the floor: allowed
+        assertEq(child.sharesOf(address(parent)), CHILD_FLOOR);
+        vm.expectRevert(VaultCore.PositionBelowFloor.selector);
+        parent.redeemFromChild(address(child), 1); // would leave floor - 1
+        parent.redeemFromChild(address(child), CHILD_FLOOR); // a full redemption is allowed
+        vm.stopPrank();
+        assertEq(child.sharesOf(address(parent)), 0, "child position closed");
     }
 }

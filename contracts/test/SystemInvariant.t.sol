@@ -139,6 +139,8 @@ contract SystemInvariantTest is Test {
         registry = new OperatorRegistry();
         subReg = new SubVaultRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         gov = new Governance();
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),

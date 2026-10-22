@@ -2,6 +2,8 @@
 
 <!-- doc-claims: historical record. The `file:line` citations below describe the deployment this run was made against and are deliberately NOT re-pointed as the code moves; re-pointing them would falsify the record. `scripts/check-doc-claims.mjs` skips this file. -->
 
+> Note added 2026-10-21: the deployment this report verifies was retired; Base Sepolia was redeployed on 2026-08-29 around `ChainlinkOracle` (see the [SOAK-REPORT](SOAK-REPORT.md) banner), and `OracleAggregator` is no longer in `contracts/src`.
+
 **Status: ✅ COMPLETE, full green lifecycle on Base Sepolia, every phase independently verified.**
 
 The blocker that stopped the first attempt is **resolved**: the Sprint-8 merge train landed, so
@@ -446,6 +448,8 @@ with `revealedVoterCount == 0` quorum fails under every regime, settling it **`D
 *is* settled, so `propose()` proceeds. Confirmed by static call before changing anything:
 `cast call finalize(1) --from 0x0f80…` returned `0x`, exit 0.
 
+> Note added 2026-10-21: in today's `Governance.finalize` a zero-reveal proposal is not always `Defeated`: in a vault of fewer than five members, applied standing defaults count toward the FOR-stake majority test (`contracts/src/Governance.sol` `forStakeMajority`), so a Rebalance can pass with no reveals. This run applied none.
+
 The decision was extracted to a pure module, `scripts/proposal-recovery.mjs`, because
 `smoke-test.mjs` drives `cast` at import time and cannot be unit-tested directly. `smoke-test.mjs`
 now imports it, so there is one source of truth.
@@ -734,6 +738,9 @@ Honest scope limits, unchanged from TESTNET-CHECKLIST §4; both need a second fu
 - **Multi-member governance**: `memberCount` was 1 throughout, so the run tested the *signer*
   quorum regime (`revealedVoterCount * 2 > memberCount`) and never the **stake** quorum regime
   (`revealedWeight * BPS >= quorumBps * snapshotTotal`) that applies at ≥ 5 members.
+  *Note added 2026-10-21: today's under-five regime is no longer a head count alone; it passes on
+  a member majority revealing with self-directed FOR stake clearing `quorumBps`, or on FOR stake
+  above half of `snapshotTotal` (`contracts/src/Governance.sol` `finalize`).*
 - **Non-trivial rebalance**: the executed proposal was a deliberate no-op (adapter + zero orders),
   so `AggregationRouterAdapter` never actually routed a swap through Uniswap.
 - **Fee accrual**: no performance fee was ever charged, since the sole holder exited at par.

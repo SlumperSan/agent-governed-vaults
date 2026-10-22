@@ -357,6 +357,14 @@
       "count": 1,
       "reason": "By design. The free import window closes at importEnd = initialize time + 30 days; block.timestamp is the only clock available and the window is measured in days, far outside any miner tolerance. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
     },
+    "timestamp::RWAllyAgentRegistry.mintMirrored": {
+      "count": 1,
+      "reason": "By design. An attestation carries an expiry that must not have passed and may be at most MAX_ATTEST_TTL (7 days) away, and the daily mint cap is keyed to block.timestamp / 1 days; both are measured in hours or days, far outside any miner tolerance, and block.timestamp is the only clock available. SLITHER-TRIAGE.md 'Registry attestation (mintMirrored)'."
+    },
+    "timestamp::RWAllyAgentRegistry.mirrorsRemainingToday": {
+      "count": 1,
+      "reason": "By design. A view that reports how many mirrors remain in the current UTC day, so it compares block.timestamp / 1 days with the stored day. SLITHER-TRIAGE.md 'Registry attestation (mintMirrored)'."
+    },
     "timestamp::RWAllyAgentRegistry.setAgentWallet": {
       "count": 1,
       "reason": "By design. The agent-wallet signature carries a deadline that must be in the future and no more than one hour out (MAX_DEADLINE_DELAY, long enough for a user operation to wait in a bundler mempool); block.timestamp is the only clock available. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."

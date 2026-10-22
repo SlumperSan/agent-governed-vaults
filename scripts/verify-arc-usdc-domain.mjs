@@ -25,6 +25,7 @@ import { pathToFileURL } from 'node:url';
 import { decodeAbiParameters, encodeFunctionData, hashDomain, parseAbi } from 'viem';
 import { rpcCall, ethCall } from './lib/chain-rpc.mjs';
 import { chainBindingVerdict } from './lib/chain-binding.mjs';
+import { redactUrls } from '../packages/reference-agent/src/config.mjs';
 import { buildPreset, serialize, RECORD_PATH, CONFIG_PATH, PRESET_PATH } from './build-agent-preset.mjs';
 
 export const ARC_CHAIN_ID = 5042;
@@ -71,7 +72,7 @@ async function readOne(fetchImpl, rpc, usdc, chainId) {
   try {
     return { ok: true, rpc, name: await call('name', 'string'), version: await call('version', 'string'), separator: await call('DOMAIN_SEPARATOR', 'bytes32') };
   } catch (e) {
-    return { ok: false, rpc, reason: `${rpc}: ${/** @type {Error} */ (e).message}` };
+    return { ok: false, rpc, reason: redactUrls(`${rpc}: ${/** @type {Error} */ (e).message}`) };
   }
 }
 

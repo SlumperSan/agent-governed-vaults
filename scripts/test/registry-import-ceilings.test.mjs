@@ -16,6 +16,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { keccak256, toBytes } from 'viem';
 import { checkImportCeilings } from '../lib/registry-import-ceilings.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -33,6 +34,29 @@ const entry = () => ({
 const fixture = (/** @type {Record<string, any>} */ over) => ({
   outsideRegistry: { 'arc-mainnet': '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432' },
   importCeilings: { chains: { 'arc-mainnet': { ...entry(), ...over } } },
+});
+
+/// The salt in this record is mined (cast create2 --starts-with 1337), so it normally has no preimage.
+/// A `saltPreimage` field, if one is ever added, must be the true preimage: the stale
+/// "RWAllyAgentRegistry/1" survived the mining commit because nothing read the field.
+test('a saltPreimage anywhere in the CREATE2 record hashes to the recorded salt', () => {
+  const rec = real();
+  assert.match(rec.salt, /^0x[0-9a-f]{64}$/i);
+  const found = [];
+  const walk = (/** @type {any} */ v) => {
+    if (v && typeof v === 'object') {
+      for (const [k, x] of Object.entries(v)) {
+        if (k === 'saltPreimage') found.push(x);
+        else walk(x);
+      }
+    }
+  };
+  walk(rec);
+  for (const p of found) {
+    assert.equal(typeof p, 'string', 'saltPreimage must be a string');
+    assert.equal(keccak256(toBytes(p)), rec.salt, 'saltPreimage does not hash to the recorded salt');
+  }
+  assert.equal(typeof rec.saltMethod, 'string', 'a mined salt records how it was mined');
 });
 
 test('the recorded import ceilings are complete: no placeholder, every field valid', () => {

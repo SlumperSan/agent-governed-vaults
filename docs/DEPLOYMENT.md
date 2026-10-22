@@ -93,7 +93,7 @@ allowlist. So the oracle is deployed **before** the factory:
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
-> A Base-mainnet `Deploy.s.sol` run **reverts** if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist`): an empty allowlist would ship the C-6 gate disabled. Testnet/local may run empty (permissive). The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); on a factory brought up through `initialize`, `scripts/protocol-initialize-preflight.mjs` reads `initialized()`, `oracleAllowlistEnforced()` and `isAllowedOracle(...)` back on-chain from the deployed factory address (section 10). The live Arc deployment is recorded in `contracts/config/deployments/arc-mainnet.json`.
+> A `Deploy.s.sol` run **reverts** on every chain except local 31337 if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist` pins the Base-mainnet case): an empty allowlist would ship the C-6 gate disabled. Only the local test chain may run empty. The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); on a factory brought up through `initialize`, `scripts/protocol-initialize-preflight.mjs` reads `initialized()`, `oracleAllowlistEnforced()` and `isAllowedOracle(...)` back on-chain from the deployed factory address (section 10). The live Arc deployment is recorded in `contracts/config/deployments/arc-mainnet.json`.
 
 ### Arc — the sequencer-uptime-feed exemption
 
@@ -124,11 +124,14 @@ gets queried.
 The six protocol singletons deploy through the Arachnid CREATE2 proxy, then take their per-chain
 oracle allowlist and one-shot wiring, via
 [`contracts/script/Deploy.s.sol`](../contracts/script/Deploy.s.sol). The broadcast is pinned to
-`PROTOCOL_INITIALIZER` (§10), so `--account` must resolve to that address. Set `BLESSED_ORACLES` from §1:
+`PROTOCOL_INITIALIZER` (§10), so `--account` must resolve to that address. Set `BLESSED_ORACLES` from §1,
+and `FEE_TREASURY` to this chain's RWAlly treasury address (the v2 `FeeEngine` credits it a share of every
+performance fee; it is set once and cannot be changed):
 
 ```bash
 cd contracts
 BLESSED_ORACLES="$CHAINLINK_ORACLE_ADDR" \
+FEE_TREASURY="$FEE_TREASURY_ADDR" \
 forge script script/Deploy.s.sol:Deploy \
   --rpc-url "$BASE_SEPOLIA_RPC" \
   --account deployer \
@@ -137,9 +140,12 @@ forge script script/Deploy.s.sol:Deploy \
 
 This deploys `OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer`,
 `VaultFactory`, calls `factory.initialize(BLESSED_ORACLES)`, then performs the **irreversible** wiring:
-`registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`.
-`test/Deploy.t.sol` asserts each wire locks; re-running any wire reverts `AlreadyWired`, and a second
-`initialize` reverts `AlreadyInitialized`.
+`registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`, and
+finally `feeEngine.initialize(FEE_TREASURY)`, which sets the treasury once. The script refuses a
+real-chain run with `FEE_TREASURY` unset or zero, and the engine takes no fee until the treasury is set.
+`test/Deploy.t.sol` asserts each wire locks; re-running `registry.wire` or `subReg.wire` reverts
+`AlreadyWired`, re-running `gov.wireSubVaultRegistry` reverts `AlreadyWiredSubRegistry`, and a second
+`initialize` (the factory's or the fee engine's) reverts `AlreadyInitialized`.
 
 Ordering note (#10): `VaultDeployer` **must** be deployed before `VaultFactory`, which pins it
 immutably in its constructor (under CREATE2 its address is known in advance, so the order is bookkeeping,
@@ -176,8 +182,8 @@ allowlist makes it non-selectable there anyway).
    `testnetCompromise` recorded in
    [`base-sepolia.json`](../contracts/config/base-sepolia.json), acceptable only because Base
    Sepolia has one feed per pair and no real capital. **A BASE mainnet stack is:** (Base-shaped, and
-   not the universal mainnet shape — Arc, an L1, has no sequencer leg at all and its feeds run at
-   the 86,400 s `MAX_HEARTBEAT` ceiling)
+   not the universal mainnet shape — Arc, an L1, has no sequencer leg at all; its feed publishes
+   every 86,400 s, and the 90,000 s staleness limit configured for it is the `MAX_HEARTBEAT` ceiling)
 
    | Class | Adapter | Fails when | `updatedAt` |
    | --- | --- | --- | --- |
@@ -267,9 +273,10 @@ factory.createVault(VaultFactory.VaultParams({
 ```
 
 > **`minDepositUsdc` is a governance-security parameter, not just dust control (H-8).** The
-> `<5`-member signer quorum regime counts any address with shares > 0, so a cheap minimum deposit
-> lets an attacker buy the regime flip (`minDepositUsdc` to reach 5 members and pass a plurality
-> alone) or park dust seats to grief a small vault into ungovernability. There is no safe
+> `<5`-member signer quorum regime counts any address with shares > 0 toward its head count, so a
+> cheap minimum deposit lets an attacker buy the regime flip (`minDepositUsdc` to reach 5 members
+> and pass a plurality alone). Dust seats can no longer lock out a member holding over half the
+> eligible stake (`Governance.finalize`, `forStakeMajority`). There is no safe
 > contract-level floor (a fraction-of-stake floor repeats M-6's liveness cliff). **Set
 > `minDepositUsdc` to an economically meaningful value relative to `capacityCapUsdc`** so that
 > manufacturing ~4 dust members costs a materially non-trivial sum. 1 USDC (the testnet smoke value)
@@ -334,10 +341,10 @@ Run each check against the live addresses:
       that `block.timestamp - startedAt > 3600` (outside the grace period), or `priceWad` will
       revert for every asset. A deploy without it has no sequencer guard at all. On **Arc (chain
       5042)**, an L1 with no L2 Sequencer Uptime Feed published or expected, `address(0)` is the
-      configuration this checklist item resolves to — but per §1's Arc section, that exemption is
-      an owner decision that has **not yet been made**: `requiresSequencerUptimeFeed` in
-      `DeployChainlinkOracle.s.sol` must be widened to admit chain 5042 deliberately before this
-      item can be satisfied by confirming the zero rather than by finding a feed.
+      configuration this checklist item resolves to. Per §1's Arc section that exemption is an
+      owner decision, made 2026-09-19, and `requiresSequencerUptimeFeed` in
+      `DeployChainlinkOracle.s.sol` already admits chain 5042, so this item is satisfied by
+      confirming the zero rather than by finding a feed.
 - [ ] `factory.isAllowedOracle(<oracle>)` is true and `factory.oracleAllowlistEnforced()` is true
       — the C-6 curation gate. An unenforced allowlist on mainnet ships the finding.
 - [ ] **Know what has no check:** there is exactly one feed per asset, so there is nothing to
@@ -346,7 +353,8 @@ Run each check against the live addresses:
       lever. That is gate 5's named residual, accepted deliberately.
 - [ ] A full governance dry-run on testnet: propose → commit → reveal → finalize → execute a
       no-op rebalance; confirm a Mode-F exit during reveal settles at post-execution NAV.
-- [ ] Exit path: instant Mode-I exit pays pro-rata; exit fee accrues to remainers, never the operator.
+- [ ] Exit path: instant Mode-I exit pays pro-rata; the exit fee stays in the vault and accrues
+      pro rata to remaining shareholders.
 
 ## 6. Indexer + API
 
@@ -357,10 +365,9 @@ Run each check against the live addresses:
   - **Chains that meter** (Base Sepolia; anything with no `x402` block, which is the default):
     deploy `apps/api` behind the x402 facilitator for the chain (Coinbase x402 facilitator on
     Base). Set the price spec (asset = USDC, payTo = your treasury, network).
-  - **Arc mainnet (chain 5042)**: whether this chain's config will declare `x402.enabled: true` is
-    an owner decision not yet made — `contracts/config/arc-mainnet.json` does not exist yet (see
-    [arc-deploy-runbook.md](evidence/arc-deploy-runbook.md) §5). If it takes the metering branch
-    above, one thing is simpler here than it used to be: **the settlement token genuinely is
+  - **Arc mainnet (chain 5042)**: `contracts/config/arc-mainnet.json` declares `x402.enabled: true`
+    as an intended posture (its own note says no facilitator is stood up and `apps/api` is not
+    deployed anywhere), so it takes the metering branch above. One thing is simpler here than it used to be: **the settlement token genuinely is
     Circle USDC.** It is a native predeploy at `0x3600000000000000000000000000000000000000`, read
     on-chain as `decimals() 6`, `symbol() "USDC"`, `name() "USDC"`
     ([arc-mainnet-survey.json](evidence/arc-mainnet-survey.json)). The key named `usdc` and the
@@ -635,10 +642,10 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
   `VaultFactory.initialize`.
 - **Who may initialise.** `PROTOCOL_INITIALIZER`
   (`0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, constant in `contracts/src/lib/ProtocolInitializer.sol`)
-  is the only address that can call `factory.initialize`, `registry.wire`, `subReg.wire` and
-  `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
-  been the proxy. Each call works once. That is four one-shot calls per chain, and `factory.initialize` is the
-  one that decides which oracles a vault may use: the oracle allowlist, where an empty list leaves the C-6 gate off for good. The three wires check only the caller and non-zero arguments, so they also choose which factory, fee engine and sub-registry the registries point at. The
+  is the only address that can call `factory.initialize`, `feeEngine.initialize`, `registry.wire`, `subReg.wire`
+  and `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
+  been the proxy. Each call works once. That is five one-shot calls per chain, and `factory.initialize` is the
+  one that decides which oracles a vault may use: the oracle allowlist, where an empty list leaves the C-6 gate off for good. `feeEngine.initialize` sets the treasury address the v2 fee engine credits a share of each performance fee (a zero address is refused, and until it runs the engine takes no fee). The three wires check only the caller and non-zero arguments, so they also choose which factory, fee engine and sub-registry the registries point at. The
   live Arc set (v1, plain CREATE) is different: its key made only the three wire calls, all three made, and
   its factory fixed the allowlist in its constructor and has no `initialize`.
 - **Order on each chain.** Gate on the proxy having 69 bytes and each predicted address being empty. `ProtocolCreate2.create`
@@ -646,7 +653,7 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
   the remaining creates by hand, after checking the runtime at each existing address against a local
   build. Deploy the six (any order). Deploy the per-chain oracle and adapter.
   Send `factory.initialize([oracle])`, then run the initialisation preflight (next bullet). Only when it
-  passes send the three wires. An uninitialised factory has its allowlist off; `createVault` and
+  passes send the three wires and `feeEngine.initialize(treasury)`. An uninitialised factory has its allowlist off; `createVault` and
   `createChildVault` revert `NotInitialized` until `initialize` lands.
 - **Initialisation preflight, per chain, before any wire, vault or announced address.**
   `node scripts/protocol-initialize-preflight.mjs --plan <plan.json>` (plan shape in the script header)

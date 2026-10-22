@@ -42,6 +42,23 @@ export class ChainBindingError extends Error {
 }
 
 /**
+ * The RPC as it may appear in a message: scheme plus host only. An Alchemy-style URL carries its
+ * API key in the path, and every verdict message here ends up in some caller's log line or thrown
+ * error, so the path, query and userinfo never leave this function. A value that does not parse
+ * as a URL (a test label, "(no rpcUrl)") is returned unchanged.
+ *
+ * @param {string} rpc
+ */
+export function rpcForMessage(rpc) {
+  try {
+    const u = new URL(String(rpc));
+    return u.host ? `${u.protocol}//${u.host}` : String(rpc);
+  } catch {
+    return String(rpc);
+  }
+}
+
+/**
  * PURE — no RPC call, no file read — so the decision table is unit-testable with no network and no
  * `cast`/`viem` stub.
  *
@@ -52,7 +69,8 @@ export class ChainBindingError extends Error {
  * @param {{declaredChainId:number|string, rpcChainId:number|null, rpc:string, declaredBy:string}} a
  * @returns {{ok:boolean, message:string}}
  */
-export function chainBindingVerdict({ declaredChainId, rpcChainId, rpc, declaredBy }) {
+export function chainBindingVerdict({ declaredChainId, rpcChainId, rpc: rawRpc, declaredBy }) {
+  const rpc = rpcForMessage(rawRpc);
   const want = Number(declaredChainId);
   if (!Number.isInteger(want) || want <= 0) {
     return {

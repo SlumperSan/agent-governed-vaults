@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {Test} from "forge-std/Test.sol";
 import {Create2ProxyFixture} from "./helpers/Create2ProxyFixture.sol";
 import {ProtocolCreate2} from "../script/lib/ProtocolCreate2.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
@@ -11,6 +12,14 @@ import {FeeEngine} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
+import {TreasuryConfig} from "../script/lib/TreasuryConfig.sol";
+
+/// @dev Exposes the internal `TreasuryConfig.read` so a test can call it at a chosen chain id.
+contract TreasuryConfigHarness is Test {
+    function read() external view returns (address) {
+        return TreasuryConfig.read(vm);
+    }
+}
 
 /// Proves the deploy script wires the system correctly and locks every one-shot back-reference.
 contract DeployTest is Create2ProxyFixture {
@@ -86,6 +95,33 @@ contract DeployTest is Create2ProxyFixture {
         assertEq(address(factory), p.vaultFactory, "VaultFactory");
         assertTrue(factory.initialized(), "factory initialised");
         assertTrue(registry.initialized() && subReg.initialized() && gov.initialized(), "wired");
+    }
+
+    /// @notice Fee model A1: the script performs the one-shot `FeeEngine.initialize`, so the engine
+    /// takes a fee from the first settlement. On the local chain (31337) it uses the fixed
+    /// placeholder; the one-shot is spent, so a second call reverts.
+    function test_deploySetsTheFeeTreasuryOnce() public {
+        Deploy d = new Deploy();
+        (,, FeeEngine feeEngine,,,) = d.run();
+        assertEq(feeEngine.treasury(), TreasuryConfig.LOCAL_TREASURY, "treasury set by the script");
+        vm.prank(PROTOCOL_INITIALIZER);
+        vm.expectRevert(FeeEngine.AlreadyInitialized.selector);
+        feeEngine.initialize(address(0xBEEF));
+    }
+
+    /// @notice On any real chain the treasury must be supplied: with `FEE_TREASURY` unset the read
+    /// refuses, so the deploy stops before anything is sent. (FEE_TREASURY is unset in CI.)
+    function test_realChainRefusesAnUnsetFeeTreasury() public {
+        TreasuryConfigHarness h = new TreasuryConfigHarness();
+        vm.chainId(5042000); // any non-31337 chain
+        vm.expectRevert(
+            bytes(
+                "FeeEngine: a real-chain deploy requires a non-zero FEE_TREASURY (the per-chain treasury, set once)"
+            )
+        );
+        h.read();
+        vm.chainId(31337);
+        assertEq(h.read(), TreasuryConfig.LOCAL_TREASURY, "local chain falls back to the placeholder");
     }
 
     function test_proxyFixtureMatchesTheKnownCodehash() public view {

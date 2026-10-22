@@ -51,7 +51,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,7 +65,12 @@ const SRC = path.join(REPO, 'contracts', 'src');
 // docs/audit/walkthroughs/VaultFactory.md. Enumerated from the filesystem,
 // never from a list — a negative guard that names its files cannot catch the file nobody added.
 const SIZE_EXT = new Set(['.sol', '.md', '.html', '.txt', '.json']);
-const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'out', 'cache', 'broadcast', 'coverage', 'artifacts']);
+// `dist-ssr` is gitignored transient build output that `apps/vaults-ui` tests create and delete under
+// (the ui-smoke SSR bundle, the config-doc-truth probe) WHILE `node --test` runs this file: a walk
+// that lists one and reads it after its owner deleted it dies with ENOENT (PR 454's CI, line 184).
+// It holds no prose the walk would otherwise miss, as claims-lede-truth.test.mjs records. `dist`
+// is deliberately NOT skipped: apps/site publishes its prose only as build output, so that is read.
+const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'out', 'cache', 'broadcast', 'coverage', 'artifacts', 'dist-ssr']);
 // Path-anchored, NOT name-matched: a bare `lib` entry also swallows `contracts/src/lib/`, which is
 // how three shipped source files sat outside the sibling claims guard's walk entirely.
 const SKIP_PATHS = ['contracts/lib/', 'contracts/test/retired/vendor/'];
@@ -297,4 +303,24 @@ test('the pattern distinguishes EIP-170 from EIP-3860, and creation from runtime
   assert.equal(evaluate('VaultCore', 'creation', 'exceeds', 'EIP-170').ok, false);
   assert.equal(evaluate('VaultCore', 'creation', 'is under', 'EIP-170').ok, true);
   assert.equal(evaluate('VaultCore', 'creation', 'fits under', 'EIP-3860').ok, true);
+});
+
+test('the size walk never lists dist-ssr, which a concurrent test creates and deletes mid-run', () => {
+  // THE PROBE TREE IS A TEMP DIRECTORY: sizeSurfaces takes the root as its first argument, so this
+  // writes nothing inside the repository, where a walk in another test file could list it and lose
+  // it. The control `.md` proves the walk ran and found prose; the dist-ssr probe must be absent.
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'size-truth-probe-'));
+  try {
+    mkdirSync(path.join(tmp, 'apps', 'x', 'dist-ssr'), { recursive: true });
+    writeFileSync(path.join(tmp, 'apps', 'x', 'control.md'), 'control');
+    writeFileSync(path.join(tmp, 'apps', 'x', 'dist-ssr', 'probe.md'), 'probe');
+    const listed = sizeSurfaces(tmp);
+    assert.ok(listed.some((f) => f.endsWith('control.md')), 'the control file was not listed: the walk did not run');
+    assert.ok(
+      !listed.some((f) => f.split(path.sep).includes('dist-ssr')),
+      'sizeSurfaces() listed a file under dist-ssr; reading it after its owner deletes it is ENOENT',
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });

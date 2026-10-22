@@ -56,6 +56,7 @@ import {
   decideReveal, finalizeDeadRound, waitOutProposalCooldown,
 } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 const dep = loadDeployment(deploymentPath(ROOT));
 
@@ -80,7 +81,7 @@ function resolveHost() {
 // ────────────────────────────────── phases ──────────────────────────────────
 
 function preflight() {
-  log(`rpc=${RPC}  governance=${dep.governance}`);
+  log(`rpc=${redactUrls(RPC)}  governance=${dep.governance}`);
   assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
 
   const vault = resolveHost();

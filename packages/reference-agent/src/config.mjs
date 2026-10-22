@@ -318,6 +318,15 @@ export function loadConfig(overrides = {}) {
     // would pair them with a chain they are not on.
     if (chosen !== undefined && Number(chosen) !== fragment.chain.chainId)
       throw new ConfigError(`chain.preset ${presetName} is chain ${fragment.chain.chainId}, but chain.chainId is ${chosen}; drop one of them`);
+    const over = /** @type {any} */ (overrides).chain ?? {};
+    // A null or empty rpcUrl is not a setting that wins over the preset, it is the stub-fixture
+    // trigger in run.mjs; beside a preset it would silently serve fixture data as chain reads.
+    if (over.rpcUrl === null || over.rpcUrl === '')
+      throw new ConfigError(`chain.rpcUrl is ${JSON.stringify(over.rpcUrl)} beside chain.preset ${presetName}; drop it to use the preset's RPC, or give a URL`);
+    // The EIP-712 name and version belong to the token at the preset's USDC address. A different
+    // token keeps them only by accident, and a wrong pair signs over the wrong struct hash.
+    if (over.usdc !== undefined && String(over.usdc).toLowerCase() !== fragment.chain.usdc && (over.usdcName === undefined || over.usdcVersion === undefined))
+      throw new ConfigError(`chain.usdc differs from chain.preset ${presetName}'s USDC; set chain.usdcName and chain.usdcVersion beside it, read from that token`);
     base = merge(DEFAULT_CONFIG, fragment);
   }
   if (profileName !== undefined && profileName !== null) {
@@ -402,7 +411,19 @@ export function gateMode({ mode, account = null, env = {} }) {
   return { mode: 'execute', signsTransactions: true };
 }
 
-const KEYISH = /^(privateKey|privkey|secret|mnemonic|seed|key|pk|signature)$/i;
+// `approval` is deliberately absent: the dry-run record has an `approval` field (act.mjs) and
+// this pattern is anchored, so adding it would blank a field the operator needs to read.
+const KEYISH = /^(privateKey|privkey|secret|mnemonic|seed|key|pk|signature|sessionKey|sessionPrivateKey|serializedSessionKey|serializedAccount)$/i;
+
+// Any URL inside a string. An Alchemy-style RPC URL carries its API key in the path, and viem
+// request errors embed the URL they called, so a URL is cut to scheme plus host wherever it
+// appears in a line, and userinfo (`user:pass@`) is dropped with the rest.
+const URL_IN_TEXT = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/?#'"`<>]+)([^\s'"`<>]*)/gi;
+
+/** `https://x.g.alchemy.com/v2/KEY` → `https://x.g.alchemy.com`, anywhere in `text`. */
+export function redactUrls(text) {
+  return String(text).replace(URL_IN_TEXT, (_, scheme, authority) => scheme + authority.replace(/^.*@/, ''));
+}
 
 /**
  * Reduce anything log-bound to something safe to print. Accounts collapse to their public
@@ -419,7 +440,7 @@ export function redact(value, depth = 0) {
   if (typeof value === 'string') {
     // A raw 32-byte hex string in a log is either a key or indistinguishable from one at a glance.
     // Salts and commitments are shown via explicit helpers (see log.mjs), not through redact().
-    return /^0x[0-9a-fA-F]{64}$/.test(value) ? '[redacted:32-byte-hex]' : value;
+    return /^0x[0-9a-fA-F]{64}$/.test(value) ? '[redacted:32-byte-hex]' : redactUrls(value);
   }
   if (typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
