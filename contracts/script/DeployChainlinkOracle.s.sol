@@ -24,7 +24,8 @@ interface IFeedMeta {
 ///                                   An ASSET/ETH feed (e.g. Base's `CBETH / ETH`) is rejected here and
 ///                                   again by the ChainlinkOracle constructor — it would be read as USD.
 ///   ORACLE_HEARTBEATS  uint[]     — per-asset staleness bound = the feed's OWN heartbeat (seconds);
-///                                   the ChainlinkOracle constructor bounds it to [600, 86400]
+///                                   the ChainlinkOracle constructor bounds it to [600, 90000]
+///                                   (MIN_HEARTBEAT, MAX_HEARTBEAT)
 ///   ORACLE_MIN_WAD     uint[]     — per-asset sane-price floor (WAD), 0 to disable the band with max 0
 ///   ORACLE_MAX_WAD     uint[]     — per-asset sane-price ceiling (WAD), 0 to disable the band. An
 ///                                   enabled band must be at most 1000x wide and must contain the

@@ -71,7 +71,7 @@ export function requireBin(name) {
 }
 
 function run(bin, args, opts = {}) {
-  const r = spawnSync(requireBin(bin), args, { encoding: 'utf8', cwd: opts.cwd, windowsHide: true, timeout: opts.timeout });
+  const r = spawnSync(requireBin(bin), args, { encoding: 'utf8', cwd: opts.cwd, windowsHide: true, timeout: opts.timeout, env: opts.env });
   if (r.status !== 0) {
     throw new Error(`${bin} ${args.slice(0, 6).join(' ')}… failed (exit ${r.status}, signal ${r.signal}):\n${r.stderr || r.stdout}`);
   }
@@ -200,6 +200,9 @@ function withDeployLock(fn) {
   }
 }
 
+/** The per-chain fee treasury the fork deploy passes to `FeeEngine.initialize` (env `FEE_TREASURY`). */
+export const FORK_FEE_TREASURY = '0x0000000000000000000000000000000000fee001';
+
 /** `forge script DeployTestnet.s.sol --broadcast`, UNMODIFIED, against the local fork. Returns the
  *  singleton addresses parsed from its own broadcast receipt. Serialized machine-wide by
  *  `withDeployLock` (see its own doc) against every other concurrent caller of this function. */
@@ -211,10 +214,12 @@ export function deployProtocol(rpcUrl, _unusedDeployerKey) {
     // kept so callers do not change; it is not used.
     cast(['rpc', 'anvil_impersonateAccount', PROTOCOL_INITIALIZER, '--rpc-url', rpcUrl]);
     setEthBalance(rpcUrl, PROTOCOL_INITIALIZER, '0x56bc75e2d63100000');
+    // Fee model A1: the script passes FEE_TREASURY to the one-shot `FeeEngine.initialize` and refuses to
+    // run without it on a non-local chain id (84532 here). A fixed throwaway address: nothing here claims.
     run('forge', [
       'script', 'script/DeployTestnet.s.sol:DeployTestnet',
       '--rpc-url', rpcUrl, '--unlocked', '--sender', PROTOCOL_INITIALIZER, '--broadcast', '--non-interactive',
-    ], { cwd: CONTRACTS_DIR, timeout: 120_000 });
+    ], { cwd: CONTRACTS_DIR, timeout: 120_000, env: { ...process.env, FEE_TREASURY: FORK_FEE_TREASURY } });
     const deployJson = path.join(CONTRACTS_DIR, 'broadcast', 'DeployTestnet.s.sol', String(BASE_SEPOLIA_CHAIN_ID), 'run-latest.json');
     if (!fs.existsSync(deployJson)) throw new Error(`deployProtocol: expected forge to write ${deployJson}`);
     const j = JSON.parse(fs.readFileSync(deployJson, 'utf8'));

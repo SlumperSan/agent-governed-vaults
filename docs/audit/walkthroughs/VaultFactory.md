@@ -24,15 +24,26 @@ operator), never curated.
 
 Every vault it deploys gets the **same immutable protocol singletons** (registry, governance,
 feeEngine, subVaultRegistry, all immutable on the factory itself) plus the **creator's
-choices** from `VaultParams`: usdc, basket, oracle, capacity cap, min deposit, exit-fee
+choices** from `VaultParams`: usdc, basket, oracle (from the factory's allowlist when it is
+enforced), capacity cap, min deposit, exit-fee
 ceiling + decay, adapter allowlist. `msg.sender` becomes the vault's `creator` (the 5% gate
 binds to this identity) and its attested operator.
+
+One of those choices is bounded here rather than in VaultCore: every creation path reverts
+`MinDepositBelowFloor` when `minDepositUsdc` is below `MIN_DEPOSIT_FLOOR_USDC` (100 USDC in
+6-decimal base units). VaultCore itself only requires `> 0`, and a
+1-unit minimum makes the first mint 1e12 share-wei (a millionth of one share), a supply small enough for a second member's
+fee-bearing entries and exits to ratchet NAV per share-wei (A4 freeze review, finding 3). The
+floor assumes `p.usdc` has 6 decimals and does not read them. It binds attested vaults only: a
+VaultCore built through the permissionless `VaultDeployer` directly is never attested
+(`Eip170::test_deployingDirectlyThroughTheDeployerIsNeverAttested`). Tests:
+`FactoryMinDeposit.t.sol`, one revert one unit below and one pass at exactly the floor per path.
 
 ## Entry points
 
 | Function | Notes |
 | --- | --- |
-| `createVault(params)` | `_deploy` → `registry.attestVault(vault, msg.sender)` → record in `allVaults`. `_deploy` wires each vault's `subVaultRegistry` to the real registry **only when `allowSubVaults`**; otherwise `address(0)` (root-only, C-1) |
+| `createVault(params)` | In current source, requires `initialize` to have run (`NotInitialized`) and, when the allowlist is enforced, an allowlisted oracle (`OracleNotAllowed`); `_deploy` → oracle-covers-basket probe (`OracleMissingAsset`) → `registry.attestVault(vault, msg.sender)` → record in `allVaults`. `_deploy` wires each vault's `subVaultRegistry` to the real registry **only when `allowSubVaults`**; otherwise `address(0)` (root-only, C-1) |
 | `allowSubVaults` | **Immutable, C-1 launch switch.** False at launch: `createChildVault` reverts `SubVaultsDisabled` and every deployed vault is wired root-only (`subVaultRegistry = address(0)`, so `allocateToChild` reverts and `parentVault()` is `address(0)`). A funded child would otherwise have an empty electorate capturable by one dust deposit (C-1), and there is no purely-internal fix; sub-vaults are deferred to a post-launch, post-audit release. Set true only once the parent-casts-child-vote mechanism ships |
 | `vaultDeployer` | Immutable. The factory's ONLY vault construction path (#10). Named `vaultDeployer`, not `deployer`, because the singletons already use `deployer` for the account that deployed them (`registry.deployer()`) |
 | `createChildVault(params, parent)` | **Reverts `SubVaultsDisabled` unless `allowSubVaults`** (C-1, see above). When enabled: `msg.sender == parent.creator()` (L-1), **child USDC must equal parent USDC** and **child basket ⊆ parent basket** (`assetUnit != 0` check per asset). The property that makes in-kind child redemptions always map into parent accounting and look-through pricing always resolvable (SV-7). Then `subVaultRegistry.registerChild(parent, vault, exitFeeMaxBps)` (depth + fee-stack checks live there) + attestation |
@@ -84,7 +95,10 @@ because the factory pins it immutably. `Deploy.s.sol` documents the ordering.
    stake; the fake holds no shares). Recorded so the case is not re-derived from scratch;
    see [SPRINT10-DEPLOYMENT-REVIEW §F-2](../../reviews/SPRINT10-DEPLOYMENT-REVIEW.md).
 3. **No de-attestation exists.** A vault attested is attested forever (SF-5 retention). The
-   factory has no owner, no pause, no list curation.
+   factory has no owner, no pause and no curation of attestation. Its one curated list, the
+   oracle allowlist, is set once, when the factory is brought up (by the one-shot `initialize` on
+   the same-address deployment built from current source; the live Arc factory fixed it in its
+   constructor).
 
 ## Accepted risks here (do not re-report)
 

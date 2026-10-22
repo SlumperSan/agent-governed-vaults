@@ -5,8 +5,9 @@ import {Test, stdStorage, StdStorage} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle, StubGovernance, StubFeeEngine, StubRegistry} from "./mocks/Mocks.sol";
+import {VaultHook} from "./mocks/VaultHook.sol";
 
-contract VaultCoreTest is Test {
+contract VaultCoreTest is Test, VaultHook {
     using stdStorage for StdStorage;
 
     uint256 constant USDC_1 = 1e6;
@@ -40,7 +41,7 @@ contract VaultCoreTest is Test {
         basket[0] = address(wbtcLike);
         basket[1] = address(wethLike);
 
-        vault = new VaultCore(
+        vault = _newVault(
             address(usdc),
             basket,
             creator,

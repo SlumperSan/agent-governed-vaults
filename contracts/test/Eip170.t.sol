@@ -62,6 +62,8 @@ contract Eip170Test is Test {
         registry = new OperatorRegistry();
         subReg = new SubVaultRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         gov = new Governance();
         vaultDeployer = new VaultDeployer();
         factory = new VaultFactory(
@@ -138,6 +140,29 @@ contract Eip170Test is Test {
         // without printing its own message in exactly the case it exists for. Both operands here
         // are compile-time constants, so the subtraction cannot underflow.
         assertLt(core, EIP170_RUNTIME_CAP - CORE_MIN_RUNTIME_MARGIN, "VaultCore headroom spent");
+    }
+
+    /// AgentVaultCore is VaultCore plus one immutable and one override, deployed directly (not through
+    /// the deployer's pinned blob), so it has its own floor. Measured 21,206 B runtime against the
+    /// 24,576 B cap on 2026-10-20 (`forge build --sizes`), which is 3,370 B of margin; the floor is the same 2,000 B as
+    /// VaultCore's. Same shape as above, so a runtime over the cap fails with the message and not
+    /// with a Panic(0x11).
+    uint256 constant AGENT_CORE_MIN_RUNTIME_MARGIN = 2_000;
+
+    function test_agentVaultCoreKeepsItsEip170Margin_andItsInitcodeFitsEip3860() public view {
+        uint256 runtime = vm.getDeployedCode("AgentVaultCore.sol:AgentVaultCore").length;
+        uint256 initcode = vm.getCode("AgentVaultCore.sol:AgentVaultCore").length;
+        assertLt(runtime, EIP170_RUNTIME_CAP - AGENT_CORE_MIN_RUNTIME_MARGIN, "AgentVaultCore headroom spent");
+        // Constructor arguments (14 of them) add to the initcode at deploy time; 2,000 B is ample.
+        assertLt(initcode, EIP3860_INITCODE_CAP - 2_000, "AgentVaultCore initcode too close to EIP-3860");
+    }
+
+    /// The identity registry is small and has no proxy; pin that it stays small enough that nobody
+    /// has quietly re-embedded something large in it.
+    function test_agentRegistryStaysSmall() public view {
+        assertLt(
+            vm.getDeployedCode("RWAllyAgentRegistry.sol:RWAllyAgentRegistry").length, 16_000, "registry grew"
+        );
     }
 
     /// The cliff the fix trades onto: VaultCore's creation code no longer has to fit in a

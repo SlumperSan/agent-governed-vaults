@@ -33,6 +33,10 @@
  * from the filesystem) plus the string literals of `apps/site/src/*.ts`, which that walk cannot see
  * (see `claims-site-ts-truth.test.mjs`).
  *
+ * A FIFTH call exists in the v2 source from fee model A1: `FeeEngine.initialize(address)`, which sets the
+ * fee treasury. The shapes below are unchanged (they require the fourth call and the deployment each count
+ * describes); public sentences that list the key's calls name the fifth beside the fourth.
+ *
  * LIMIT, stated rather than implied: this catches the bounded-power shape and the unqualified
  * allowlist shape. A new way of saying the key has no other power, built without any cue word above,
  * will pass. The shapes are widened when one is found, the way `claims-lede-truth.test.mjs` guard 6

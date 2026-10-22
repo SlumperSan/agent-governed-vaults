@@ -4,7 +4,7 @@
  * Command center: one screen answering "where does this project stand right now?"
  *
  *     npm run cc               # the board
- *     npm run cc -- --md       # same content as markdown (paste into Obsidian / a PR / a handoff)
+ *     npm run cc -- --md       # same content as markdown (paste into notes / a PR / a handoff)
  *     npm run cc -- --no-gh    # skip the GitHub lookups (offline, or when gh is slow)
  *     npm run cc -- --no-ci    # keep the PR list, skip the per-head CI column (one fewer API call)
  *     npm run cc -- --ci-jobs  # additionally CONFIRM each fail(no-runner?) — one API call per run

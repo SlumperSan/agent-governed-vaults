@@ -69,7 +69,7 @@ cap), `exitFeeDecayPeriod`, the adapter allowlist (EX-1), the basket (≤ `MAX_B
 
 | Function | What it does |
 | --- | --- |
-| `executeRebalance(adapter, orders)` | Allowlisted adapter; per-leg: debit input accounting → approve → swap → measure output delta ≥ minOut → revoke approval → credit output → refund unspent input from **this swap's own delta** (S6 E3 fix) |
+| `executeRebalance(adapter, maxSlippageBps, orders)` | Allowlisted adapter; `0 < maxSlippageBps ≤ MAX_REBALANCE_SLIPPAGE_BPS` (2%); per-leg: oracle-price check of `minAmountOut` against the input value less `maxSlippageBps` (else `MinOutTooLow`) → debit input accounting → approve → swap → measure output delta ≥ minOut → revoke approval → credit output → refund unspent input from **this swap's own delta** (S6 E3 fix) |
 | `allocateToChild(child, amount)` | Only along registered registry edges (SV-3); first allocation registers the child locally and calls `child.skipWindow()` |
 | `redeemFromChild(child, shares)` | Redeems child shares, credits measured deltas to internal accounting; reverts `ChildSettlementPending` if the child queues (Mode F) |
 

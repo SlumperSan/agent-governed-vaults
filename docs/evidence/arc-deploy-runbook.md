@@ -118,7 +118,7 @@ reverts every NAV path including exits. The constant was raised to 90,000 s on 2
 
 The figure is stable rather than still rising: a 169 h walk and a 449 h walk both return 86,423 s.
 The earlier smaller readings rose only because each window was shorter than the heartbeat itself and
-never contained a quiet stretch. See `Decisions/2026-09-18 MAX_HEARTBEAT raised to 90000`.
+never contained a quiet stretch. MAX_HEARTBEAT was raised to 90000 on 2026-09-18 for this reason.
 
 ### 4. Widen the sequencer-feed refusal
 
@@ -173,3 +173,8 @@ funds** — that is the design working as specified, not an omission. `VaultCore
 withdrawal, no sweep and no migrate; the only way out is `requestExit`, which each member calls for
 themselves. A migration to Arc is therefore a new deployment plus members individually exiting
 4663 and depositing on Arc. Nobody can do it on their behalf, including you.
+
+*Note added 2026-10-21: `requestExit` is not the only way out. A member can also reclaim an
+unactivated deposit with `cancelPending`, a queued Mode F exit is paid out by `settleQueuedExit`,
+which anyone may call, and governance-approved rebalances and child allocations move the vault's
+own assets. No admin or deployer path moves member funds.*

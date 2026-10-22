@@ -3,8 +3,8 @@
  * `deposit()` from anyone, which is why the notice below says "this app" and never "this vault".
  *
  * Owner decision 2026-10-18: app.rwally.com stops offering deposits into the Arc v1 vault. Exits,
- * escrow claims and every read stay. The reason is kept in the vault note
- * `Findings/2026-10-18 Exit fee ratchet PoC.md`; v1 is immutable, so the fix ships as a new vault.
+ * escrow claims and every read stay. The reason is the v1 exit fee share-price ratchet (proof of
+ * concept 2026-10-18); v1 is immutable, so the fix ships as a new vault.
  *
  * KEYED BY ADDRESS, LOWERCASE, in this one module, so no component names an address and a v2 vault
  * is open by default. `test/vault-policy.test.mjs` pins the v1 entry to `firstVault.address` in

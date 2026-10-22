@@ -68,6 +68,8 @@ contract AuditOracleCoversBasketTest is Test {
         registry = new OperatorRegistry();
         subReg = new SubVaultRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         gov = new Governance();
         f = new VaultFactory(
             IOperatorRegistry(address(registry)),
@@ -104,7 +106,7 @@ contract AuditOracleCoversBasketTest is Test {
             basketAssets: basket,
             oracle: IOracleAggregator(oracle),
             capacityCapUsdc: 0,
-            minDepositUsdc: 10 * USDC_1,
+            minDepositUsdc: 100 * USDC_1,
             exitFeeMaxBps: 50,
             exitFeeDecayPeriod: 30 days,
             allowedAdapters: new address[](0)

@@ -133,6 +133,13 @@ was before relying on it.
 | `VaultDeployer.sol` | ~60 | holds VaultCore's creation code (EIP-170 forced, #10); no authority | Medium |
 | `lib/` (SafeTransferLib, Checkpoints, BoundedCall) | ~150 | primitives | Medium |
 
+> Note (2026-10-21, `protocol/main` @ `1dfb3cda`): the `FeeEngine.sol` row is stale; the v2
+> FeeEngine takes 10% of realized gain net of the loss carryforward, has no NAV high-water mark,
+> and splits each fee 90% to the vault creator and 10% to the treasury, each claiming per token.
+> `OracleAggregator.sol`, `oracle/UniswapV3TwapSource.sol` and `oracle/PythSource.sol` are no
+> longer in `contracts/src` (retired; the launch oracle is `oracle/ChainlinkOracle.sol`), so the
+> rows above and the two focus areas numbered 4 below that name them are history.
+
 Out of scope for the contract audit (separate review): `packages/indexer`, `apps/api`
 (x402 metering), `apps/web`. These never custody MEMBER funds. The API server holds no keys under
 `FACILITATOR=stub` and `FACILITATOR=http`; under the opt-in `FACILITATOR=svm` it holds a Solana

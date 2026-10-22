@@ -802,7 +802,8 @@ rather than poisoning the rest.
 **The canary's procedure is the same six steps with its own service and paths**: substitute
 `canary` for `indexer`, `/data/canary-state.json` (bare metal: `./data/canary-state.json`) for the
 snapshot path, and `packages/canary/src/canary-runner.mjs` for the runner. Its `verify` is under
-"Inspect before you act" above.
+"Inspect before you act" above. The `pendingMembers` refusal in step 2 is the indexer's snapshot
+schema alone: do not look for it in a canary state file.
 
 #### The volume name is `<project>_vault-state`, not `vault-state`
 
@@ -1048,7 +1049,7 @@ absence there as a signal of anything.
 | `vault_indexer_snapshot_age_seconds` climbing | indexer stopped or is stuck on the RPC | `ops-check` the indexer; check its logs for `poll.failed`. The API keeps serving the last good block, correctly and staleley: it is not the broken piece. |
 | API logs `snapshot.reload_failed` | torn, corrupt, or schema-refused snapshot (the `error` field says which) | The API is serving **stale-but-valid** state: no torn read reaches a client. `verify` the snapshot (§8.3); if it is bad and a rung verifies, restore that rung and restart the indexer. If every rung is refused for the same schema reason, restoring cannot help: see *If every backup is bad* in §8.3. The API picks a fix up on its next reload with no restart. |
 | `verify` says snapshot **UNUSABLE** | bad write (the bytes of that file), or a schema refusal such as `snapshot predates the pendingMembers set` | Read the error and the rung list. Bad write: restore the newest rung that `verify` prints with a `lastBlock` (usually `.1`) per §8.3, and keep the bad file. Schema refusal: every rung written by that build is refused the same way, so restoring one fails identically; rebuild from the factory deploy block per *If every backup is bad* in §8.3. |
-| Every backup is unreadable | disk or filesystem fault | Delete the snapshot, set `START_BLOCK` to the **factory deploy block**, let it rebuild from chain history. Then check the disk: this should not happen. |
+| Every backup is unreadable | disk or filesystem fault | Move the snapshot aside (§8.3 step 3), set `START_BLOCK` to the **factory deploy block**, let it rebuild from chain history. Then check the disk: this should not happen. |
 | API returning 429s to your own front end | one shared IP behind a proxy | Set `TRUST_PROXY=1` **iff** a reverse proxy overwrites `x-forwarded-for`; otherwise raise `RATE_LIMIT_BURST`. Never set `TRUST_PROXY` on a directly-reachable API (§8.4). |
 | `/metrics` returning 429 mid-incident | your own `curl`s share the scraper's bucket | Wait one refill, or raise `RATE_LIMIT_BURST`. `ops-check` and `verify` read files, not HTTP, so they keep working when the API will not answer you (§8.5). |
 | API returning 402 to a paying agent | asset/network/amount mismatch, or a dead facilitator | `curl -s <api>/.well-known/x402` and compare against what the agent signs. Then check `FACILITATOR_URL` is reachable: a failed settlement is reported as a 402. |

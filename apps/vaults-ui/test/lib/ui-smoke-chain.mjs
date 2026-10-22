@@ -26,7 +26,7 @@
  * a 4-hour wait against the real chain can, and it broadcasts nothing to a public chain.
  *
  * KEY HANDLING. `generateThrowawayKey()` uses viem's own CSPRNG — nothing here reads
- * `C:\Users\Micha\.soak.pw`, a keystore, or any environment variable that could carry the owner's
+ * a password file, a keystore, or any environment variable that could carry a real deployer
  * key. Every `cast`/`forge` invocation below takes `--private-key <throwaway>` directly; none uses
  * `--account`/`--keystore`. The deploy broadcasts with `--broadcast`, but the RPC it broadcasts TO
  * is the local anvil fork this module started, never a public endpoint.
@@ -68,7 +68,7 @@ export function requireBin(name) {
  * shell:true — these are real executables, not npm .cmd wrappers (see scripts/gate.mjs's own note
  * on why that distinction matters on Windows). */
 function run(bin, args, opts = {}) {
-  const r = spawnSync(requireBin(bin), args, { encoding: 'utf8', cwd: opts.cwd, windowsHide: true });
+  const r = spawnSync(requireBin(bin), args, { encoding: 'utf8', cwd: opts.cwd, env: opts.env, windowsHide: true });
   if (r.status !== 0) {
     throw new Error(`${bin} ${args.slice(0, 4).join(' ')}\u2026 failed (exit ${r.status}):\n${r.stderr || r.stdout}`);
   }
@@ -214,7 +214,9 @@ export function deployProtocol(rpcUrl, _unusedDeployerKey) {
       '--broadcast',
       '--non-interactive',
     ],
-    { cwd: CONTRACTS_DIR },
+    // Fee model A1: the script passes FEE_TREASURY to the one-shot `FeeEngine.initialize` and refuses to
+    // run on a real chain without it. A fixed placeholder; the smoke never claims a fee.
+    { cwd: CONTRACTS_DIR, env: { ...process.env, FEE_TREASURY: '0x0000000000000000000000000000000000fee001' } },
   );
   const deployJson = path.join(CONTRACTS_DIR, 'broadcast', 'DeployTestnet.s.sol', String(BASE_SEPOLIA_CHAIN_ID), 'run-latest.json');
   if (!existsSync(deployJson)) {

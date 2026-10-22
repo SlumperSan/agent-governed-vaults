@@ -1,0 +1,133 @@
+
+######## stand-ins: compile
+
+######## 0. chain and proxy
+chainId 1  hardfork Osaka
+Arachnid proxy runtime 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3
+PROTOCOL_INITIALIZER code bytes 0  nonce 0
+predicted OperatorRegistry 0xf80382d75920A41647F6934610f40493A3920Ea8 code bytes 0
+predicted SubVaultRegistry 0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0 code bytes 0
+predicted FeeEngine 0x71b75692565B47B2fA803a38d0933b99FA6E6999 code bytes 0
+predicted Governance 0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11 code bytes 0
+predicted VaultDeployer 0x9d24cef2bC101CBc02303819ac8f611eA7cbAC23 code bytes 0
+predicted VaultFactory 0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d code bytes 0
+
+######## 1. stage stand-ins at mainnet feed and token addresses (no mainnet RPC was reachable)
+ETH/USD "ETH / USD" answer 2500e8; BTC/USD "BTC / USD" answer 80000e8; token decimals 18/8/6
+
+######## 2a. DeployChainlinkOracle on chain 1 with NO price band (must refuse)
+Error: script failed: DeployChainlinkOracle: a sane-price band per asset is required on every chain except local 31337 and Base Sepolia 84532
+
+######## 2b. DeployChainlinkOracle, throwaway key, bands at ratio 200
+oracle: contract ChainlinkOracle 0x5FC8d32690cc91D4c39d9d3abcBD16989F875707
+  feed OK ETH / USD 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
+  feed OK BTC / USD 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c
+  ChainlinkOracle  0x5FC8d32690cc91D4c39d9d3abcBD16989F875707
+  sequencer feed   0x0000000000000000000000000000000000000000
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+ORA=0x5fc8d32690cc91d4c39d9d3abcbd16989f875707
+
+######## 3a. Deploy.s.sol with EMPTY BLESSED_ORACLES on chain 1 (must refuse)
+Error: script failed: C-6: a real-chain deploy requires a non-empty BLESSED_ORACLES allowlist (empty allowed only on local 31337)
+
+######## 3b. Deploy.s.sol signed by the throwaway key (must refuse: broadcast is pinned to PROTOCOL_INITIALIZER)
+Error: No associated wallet for addresses: [0x0f80606a2283fd9c67ce2eec79b90e95907f9f35]. Unlocked wallets: [0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266]
+block after refusals 6
+
+######## 3c. Deploy.s.sol as PROTOCOL_INITIALIZER (anvil impersonation, no key)
+  OperatorRegistry 0xf80382d75920A41647F6934610f40493A3920Ea8
+  SubVaultRegistry 0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0
+  FeeEngine        0x71b75692565B47B2fA803a38d0933b99FA6E6999
+  Governance       0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11
+  VaultDeployer    0x9d24cef2bC101CBc02303819ac8f611eA7cbAC23
+  VaultFactory     0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+######## 4. per-transaction gas (EIP-7825 cap 16,777,216; anvil does not enforce it, so it is checked here)
+PASS CREATE ChainlinkOracle  from=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 gasLimit=699309 gasUsed=537930 status=0x1
+PASS CREATE2 OperatorRegistry  from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=724734 gasUsed=524695 status=0x1
+PASS CREATE2 SubVaultRegistry  from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=541091 gasUsed=391741 status=0x1
+PASS CREATE2 FeeEngine  from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=1014824 gasUsed=693897 status=0x1
+PASS CREATE2 Governance  from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=3948634 gasUsed=2699921 status=0x1
+PASS CREATE2 VaultDeployer  from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=7222688 gasUsed=5229096 status=0x1
+PASS CREATE2 VaultFactory  from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=1321645 gasUsed=903689 status=0x1
+PASS CALL VaultFactory initialize(address[]) from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=98597 gasUsed=71383 status=0x1
+PASS CALL OperatorRegistry wire(address,address) from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=95413 gasUsed=69078 status=0x1
+PASS CALL SubVaultRegistry wire(address) from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=60885 gasUsed=44080 status=0x1
+PASS CALL Governance wireSubVaultRegistry(address) from=0x0f80606a2283fd9c67ce2eec79b90e95907f9f35 gasLimit=65193 gasUsed=44577 status=0x1
+
+######## 5. read-back
+PASS  chainId = 1
+PASS  code at OperatorRegistry 0xf80382d75920A41647F6934610f40493A3920Ea8 (2173 bytes)
+PASS  code at SubVaultRegistry 0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0 (1559 bytes)
+PASS  code at FeeEngine 0x71b75692565B47B2fA803a38d0933b99FA6E6999 (2848 bytes)
+PASS  code at Governance 0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11 (12223 bytes)
+PASS  code at VaultDeployer 0x9d24cef2bC101CBc02303819ac8f611eA7cbAC23 (884 bytes)
+PASS  code at VaultFactory 0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d (3913 bytes)
+PASS  code at ChainlinkOracle 0x5fc8d32690cc91d4c39d9d3abcbd16989f875707 (1478 bytes)
+-- constructor arguments (immutables)
+PASS  FeeEngine.registry = 0xf80382d75920A41647F6934610f40493A3920Ea8
+PASS  VaultFactory.registry = 0xf80382d75920A41647F6934610f40493A3920Ea8
+PASS  VaultFactory.governance = 0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11
+PASS  VaultFactory.feeEngine = 0x71b75692565B47B2fA803a38d0933b99FA6E6999
+PASS  VaultFactory.subVaultRegistry = 0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0
+PASS  VaultFactory.vaultDeployer = 0x9d24cef2bC101CBc02303819ac8f611eA7cbAC23
+PASS  VaultFactory.allowSubVaults = false
+-- one-shot wiring and initialise
+PASS  VaultFactory.initialized = true
+PASS  VaultFactory.oracleAllowlistEnforced = true
+PASS  VaultFactory.isAllowedOracle(oracle) = true
+PASS  VaultFactory.isAllowedOracle(random) = false
+PASS  OperatorRegistry.factory = 0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d
+PASS  OperatorRegistry.feeEngine = 0x71b75692565B47B2fA803a38d0933b99FA6E6999
+PASS  OperatorRegistry.initialized = true
+PASS  SubVaultRegistry.factory = 0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d
+PASS  SubVaultRegistry.initialized = true
+PASS  Governance.subVaultRegistry = 0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0
+PASS  Governance.initialized = true
+PASS  VaultFactory Initialized events = 1
+-- ChainlinkOracle constructor arguments
+PASS  oracle.usdc = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+PASS  oracle.sequencerUptimeFeed = 0x0000000000000000000000000000000000000000
+PASS  oracle.feedOf(WETH) = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419 3600 10000000000 250000000000000000000 50000000000000000000000
+PASS  oracle.feedOf(WBTC) = 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c 3600 10000000000 5000000000000000000000 1000000000000000000000000
+-- PROTOCOL_INITIALIZER: the constant each contract checks, and no residual power after bring-up
+PASS  OperatorRegistry.deployer = 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35
+PASS  SubVaultRegistry.deployer = 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35
+PASS  Governance.deployer = 0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35
+PASS  replay reverts: initialize(address[]) (custom error 0x0dc149f0)
+PASS  replay reverts: wire(address,address) (custom error 0xda7c0e55)
+PASS  replay reverts: wire(address) (custom error 0xda7c0e55)
+PASS  replay reverts: wireSubVaultRegistry(address) (custom error 0x828cea67)
+-- result: 38 pass, 0 fail
+PASS  runtime == local build: OperatorRegistry
+PASS  runtime == local build: SubVaultRegistry
+PASS  runtime == local build: Governance
+
+######## 6. initialisation preflight (repo script, two endpoints)
+preflight ok: 1 chain(s) initialised as planned at factory 0xcAa8749b68FC185E14996b4Cf6fE8199A1AC0e0d: ethereum-dryrun
+exit 0
+-- negative: plan names an oracle that was not blessed
+PREFLIGHT FAIL: ethereum-dryrun @ http://127.0.0.1:8545: oracle 0x000000000000000000000000000000000000dEaD carries no code on this chain
+PREFLIGHT FAIL: ethereum-dryrun @ http://127.0.0.1:8545: factory.isAllowedOracle(0x000000000000000000000000000000000000dEaD) is false, expected true
+exit 1
+
+######## 7. manifest
+create2-manifest.json matches contracts/out
+
+######## 8. real Safe v1.4.1, 2 of 3, as vault creator and operator
+Safe 0xf1CD2C9CBc85BA0Ec94113765Ee42B6165018D71 (SafeL2 1.4.1 singleton 0x0165878a594ca255338adfa4d48449f69242eb8f, factory 0xa513e6e4b8f2a923d98304ec87f64353c4d5c853)
+  VERSION "1.4.1"  threshold 2  owners 0x70997970C51812dc3A010C7d01b50e0d17dc79C8, 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC, 0x90F79bf6EB2c4f870365E785982E1f101E93b906  nonce 0
+  PROTOCOL_INITIALIZER is an owner: false
+Error: Failed to estimate gas: server returned an error response: error code 3: execution reverted: GS020, data: "0x08c379a0..."
+PASS  createVault with ONE owner signature (1 of 3, below threshold): reverted GS020
+PASS  createVault with owners 1 and 3 (2 of 3): status 0x1 gasUsed 4692703 safeTxHash 0xaa2f2c6b3fa969afcddb970430b1f80ff8b00f119d281d3db0e1043d7d483fe5 tx 0x23d587ad0218170dd9b3f786d4130edbe090173186195eecb24e3ccb12785902
+  vault 0xb061EB493f30043437DF9E800BE0Cc2727eACFb1  creator 0xf1CD2C9CBc85BA0Ec94113765Ee42B6165018D71  operator #1 0xf1CD2C9CBc85BA0Ec94113765Ee42B6165018D71
+Error: server returned an error response: error code 3: execution reverted: custom error 0x9db30794, data: "0x9db30794"
+PASS  registerVault from PROTOCOL_INITIALIZER reverts: custom error 0x9db30794
+Error: server returned an error response: error code 3: execution reverted: custom error 0x9db30794, data: "0x9db30794"
+PASS  registerVault from the throwaway deployer key reverts: custom error 0x9db30794
+PASS  registerVault with owners 2 and 3 (2 of 3): status 0x1 gasUsed 133647 safeTxHash 0xdef1f08d8cd70f44a0e4cfdeeb71b774552fe52987d86068365277fafecb5959 tx 0x28a35ef4c0cacd736c089a127fe6b086d8ac9b987270b4cfd6a4835b9342ed41
+  vaultRegistered true  configOf 86400,86400,0,86400,2500,500,4000,3600
+
+######## done

@@ -109,8 +109,8 @@ deliberately.
 - **Permissionless `deploy` is intentional** (see "Trust" above). Anyone can create an
   unattested `VaultCore` through it; anyone could already do so without it.
 - **A direct caller bumps the deployer's nonce**, changing the addresses of subsequently
-  created vaults. Nothing predicts vault addresses — there is no `CREATE2`, no
-  `computeCreateAddress` anywhere in the contracts, scripts, or indexer, and the indexer
-  discovers vaults from `VaultCreated` logs.
+  created vaults. Vault addresses come from plain `CREATE` in `VaultDeployer.deploy`; CREATE2 is
+  used only for the protocol singletons by the deploy scripts, and the indexer discovers vaults
+  from `VaultCreated` logs.
 - **Vault creation costs marginally more gas** (one external call plus two `EXTCODECOPY`s)
   against a ~5M-gas creation. Recorded in `.gas-snapshot`.

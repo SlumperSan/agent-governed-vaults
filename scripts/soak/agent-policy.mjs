@@ -14,7 +14,11 @@
  *     private key into a shell to make it stop.
  *   - `policyFor` is where the forced drawdown trigger is applied. Keeping it visible and
  *     asserted means the report cannot quietly claim a real drawdown was observed.
+ *   - `recordingLogger` is what the drill saves into `docs/evidence/soak-agent-run.json`, a
+ *     committed file, so no URL path (an Alchemy key) may reach a recorded event.
  */
+import { redact as redactKeystore } from '../lib/keystore.mjs';
+import { redact as redactAgent, redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 export const EXECUTE_ENV_VAR = 'AGENT_I_UNDERSTAND_THIS_SPENDS_FUNDS';
 
@@ -83,4 +87,19 @@ export function policyFor(phase, { depositUsdc, maxDrawdownBps = 1000 }) {
     policy.exit.forced = true;
   }
   return policy;
+}
+
+/**
+ * Wrap the agent logger so every line is also pushed to `events`, which `record()` saves. A viem
+ * request error's message carries the RPC URL it called, so the message goes through `redactUrls`
+ * and the detail through both redactors (keystore's for password-named fields, the agent's for URLs).
+ *
+ * @param {{info:Function, warn:Function, error:Function}} logger @param {any[]} events
+ */
+export function recordingLogger(logger, events) {
+  const wrap = (level) => (m, d) => {
+    events.push({ level, msg: redactUrls(m), detail: redactAgent(redactKeystore(d)) });
+    logger[level](m, d);
+  };
+  return { ...logger, info: wrap('info'), warn: wrap('warn'), error: wrap('error') };
 }

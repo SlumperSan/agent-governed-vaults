@@ -139,6 +139,8 @@ contract SystemInvariantTest is Test {
         registry = new OperatorRegistry();
         subReg = new SubVaultRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         gov = new Governance();
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),
@@ -188,7 +190,7 @@ contract SystemInvariantTest is Test {
             basketAssets: basket,
             oracle: IOracleAggregator(address(oracle)),
             capacityCapUsdc: 1_000_000_000 * USDC_1,
-            minDepositUsdc: 10 * USDC_1,
+            minDepositUsdc: 100 * USDC_1,
             exitFeeMaxBps: 0,
             exitFeeDecayPeriod: 0,
             allowedAdapters: new address[](0)

@@ -43,6 +43,11 @@
  */
 
 const SIG_RE = /^0x[0-9a-fA-F]{130}$/; // 65 bytes: r(32) s(32) v(1)
+// ERC-1271 / ERC-6492 payers sign with whatever bytes their account defines. Accept 65 to 8192
+// bytes of even-length hex; the chain, not this regex, decides validity.
+// shortcut: a sub-65-byte 1271 signature (rare) is refused here, lower the floor if one appears.
+const SMART_SIG_RE = /^0x(?:[0-9a-fA-F]{2}){65,8192}$/;
+const ERC6492_MAGIC = '6492'.repeat(16); // the 32-byte suffix that marks a counterfactual signature
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 
 /**
@@ -94,8 +99,9 @@ export function reconstructTypedData(envelope, cfg) {
 
 /**
  * Non-crypto structural validation of an envelope before we spend a settlement. Confirms the
- * authorization is well-formed and the signature is a 65-byte hex string. Cryptographic recovery
- * and the on-chain nonce check happen in the settling/remote path.
+ * authorization is well-formed and the signature is hex of 65 to 8192 bytes (65 = ECDSA, longer =
+ * ERC-1271 / ERC-6492). Cryptographic recovery and the on-chain nonce check happen in the
+ * settling/remote path.
  * @returns {{ok:true}|{ok:false, reason:string}}
  */
 export function verifyEnvelopeShape(envelope, nowMs) {
@@ -106,7 +112,7 @@ export function verifyEnvelopeShape(envelope, nowMs) {
   for (const f of ['from', 'to']) {
     if (!ADDR_RE.test(a[f] ?? '')) return { ok: false, reason: `bad-${f}` };
   }
-  if (typeof envelope.signature !== 'string' || !SIG_RE.test(envelope.signature))
+  if (typeof envelope.signature !== 'string' || !SMART_SIG_RE.test(envelope.signature))
     return { ok: false, reason: 'bad-signature-format' };
   let value;
   try { value = BigInt(a.value ?? ''); } catch { return { ok: false, reason: 'bad-value' }; }
@@ -118,26 +124,55 @@ export function verifyEnvelopeShape(envelope, nowMs) {
 }
 
 /**
- * Recover the EIP-712 signer of an authorization and confirm it equals `authorization.from`.
- * Uses viem (lazy). Returns { ok, payer } — payer lowercased.
+ * Confirm the authorization's `from` signed it. Uses viem (lazy). Returns { ok, payer } with payer
+ * lowercased, plus `smart:true` when the proof came from the chain rather than ECDSA recovery.
+ *
+ * A 65-byte signature is tried as ECDSA first, exactly as before. Anything else, or a 65-byte
+ * signature that recovers to a different address, is checked on chain through `cfg.publicClient`
+ * (viem `verifyTypedData`: ERC-1271 `isValidSignature` for a deployed smart account, the ERC-6492
+ * universal validator eth_call for a counterfactual one). With no publicClient those are refused.
  * @param {object} envelope
- * @param {{chainId:number, usdcName?:string, usdcVersion?:string, usdcAddress?:string}} cfg
+ * @param {{chainId:number, usdcName?:string, usdcVersion?:string, usdcAddress?:string, publicClient?:any}} cfg
  */
 export async function recoverPayer(envelope, cfg) {
   const { recoverTypedDataAddress } = await import('viem').catch(() => {
     throw new Error('facilitator: viem is not installed — run `npm install viem`');
   });
   const td = reconstructTypedData(envelope, cfg);
-  const recovered = await recoverTypedDataAddress({
+  const typed = {
     domain: td.domain,
     types: { TransferWithAuthorization: td.types.TransferWithAuthorization },
     primaryType: 'TransferWithAuthorization',
     message: td.message,
-    signature: envelope.signature,
-  });
+  };
   const from = (envelope.authorization?.from ?? '').toLowerCase();
-  const payer = recovered.toLowerCase();
-  return payer === from ? { ok: true, payer } : { ok: false, reason: 'signer-mismatch', payer };
+
+  let mismatch;
+  if (SIG_RE.test(envelope.signature)) {
+    // A 65-byte account-defined signature may not be a valid (r,s,v); recovery then throws and the
+    // on-chain check below decides, with no mismatch recorded.
+    let recovered;
+    try {
+      recovered = await recoverTypedDataAddress({ ...typed, signature: envelope.signature });
+    } catch {
+      recovered = undefined;
+    }
+    if (recovered) {
+      const payer = recovered.toLowerCase();
+      if (payer === from) return { ok: true, payer };
+      mismatch = { ok: false, reason: 'signer-mismatch', payer };
+    }
+  }
+
+  if (typeof cfg.publicClient?.verifyTypedData !== 'function') return mismatch ?? { ok: false, reason: 'smart-account-needs-rpc' };
+  let valid;
+  try {
+    valid = await cfg.publicClient.verifyTypedData({ ...typed, address: envelope.authorization.from, signature: envelope.signature });
+  } catch (e) {
+    return { ok: false, reason: `smart-account-verify-failed: ${e?.shortMessage ?? e?.message ?? e}` };
+  }
+  if (valid) return { ok: true, payer: from, smart: true };
+  return mismatch ?? { ok: false, reason: 'smart-account-signature-invalid' };
 }
 
 /** Accept/deny facilitator for tests and local dev — no chain, no crypto. */
@@ -152,13 +187,23 @@ export function createStubFacilitator({ accept = true, receiptPrefix = 'stub' } 
   };
 }
 
+/** Default bound on the settling facilitator's wait for the settlement receipt. */
+export const SETTLE_RECEIPT_TIMEOUT_MS = 30_000;
+/**
+ * Default abort for the API's call to a run-your-own facilitator. It must exceed
+ * SETTLE_RECEIPT_TIMEOUT_MS plus the pre-broadcast round trips (verify, authorizationState,
+ * simulate, send): if the client gives up first, a transfer that settles on chain answers
+ * `facilitator-unreachable`, so the payer pays and is not served.
+ */
+export const HTTP_FACILITATOR_TIMEOUT_MS = 45_000;
+
 /**
  * Production default: delegate verify+settle to a REMOTE facilitator over HTTP. Under
  * `FACILITATOR=http` the API server holds no key; this posts the challenge+envelope and returns
  * the remote verdict. Non-custodial.
  * @param {{url:string, fetchImpl?:typeof fetch, timeoutMs?:number}} cfg
  */
-export function createHttpFacilitator({ url, fetchImpl = fetch, timeoutMs = 10_000 }) {
+export function createHttpFacilitator({ url, fetchImpl = fetch, timeoutMs = HTTP_FACILITATOR_TIMEOUT_MS }) {
   return {
     async verifyAndSettle(challenge, envelope) {
       const ctrl = new AbortController();
@@ -348,6 +393,19 @@ const USDC_ABI = [
   { type: 'function', name: 'DOMAIN_SEPARATOR', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'bytes32' }] },
 ];
 
+// The `bytes signature` overload (FiatTokenV2_2+), the only one that accepts a smart-account signature.
+const USDC_ABI_BYTES_SIG = [
+  {
+    type: 'function', name: 'transferWithAuthorization', stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' },
+      { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' },
+      { name: 'signature', type: 'bytes' },
+    ],
+    outputs: [],
+  },
+];
+
 export { USDC_ABI };
 
 /**
@@ -426,10 +484,11 @@ export async function assertUsdcDomain(cfg) {
  * @param {string} [cfg.usdcName]   USDC EIP-712 domain name (default 'USD Coin')
  * @param {string} [cfg.usdcVersion]
  * @param {() => number} [cfg.now]
+ * @param {number} [cfg.receiptTimeoutMs] bound on the wait for the settlement receipt (default 30s)
  */
-export function createSettlingFacilitator({ publicClient, walletClient, usdcAddress, chainId, usdcName, usdcVersion, now = () => Date.now() }) {
+export function createSettlingFacilitator({ publicClient, walletClient, usdcAddress, chainId, usdcName, usdcVersion, now = () => Date.now(), receiptTimeoutMs = SETTLE_RECEIPT_TIMEOUT_MS }) {
   if (!ADDR_RE.test(usdcAddress ?? '')) throw new Error('settling facilitator: usdcAddress required');
-  const domainCfg = { chainId, usdcName, usdcVersion, usdcAddress };
+  const domainCfg = { chainId, usdcName, usdcVersion, usdcAddress, publicClient };
 
   return {
     async verifyAndSettle(_challenge, envelope) {
@@ -440,13 +499,27 @@ export function createSettlingFacilitator({ publicClient, walletClient, usdcAddr
       if (!rec.ok) return { ok: false, reason: rec.reason };
 
       const a = envelope.authorization;
-      const sig = envelope.signature;
-      const r = `0x${sig.slice(2, 66)}`;
-      const s = `0x${sig.slice(66, 130)}`;
-      let v = parseInt(sig.slice(130, 132), 16);
-      if (v < 27) v += 27; // normalize recovery id
+      let sig = envelope.signature;
 
       try {
+        // A smart-account payer: USDC verifies it itself through the `bytes signature` overload
+        // (FiatTokenV2_2 and later). USDC does not understand an ERC-6492 wrapper, so it is
+        // unwrapped, and only an already-deployed account can settle: this facilitator never sends
+        // the account's factory call. shortcut: counterfactual payers are verified but not settled
+        // until deployed, add a deploy step if that is wanted.
+        if (rec.smart && sig.toLowerCase().endsWith(ERC6492_MAGIC)) {
+          const { parseErc6492Signature } = await import('viem');
+          const code = await publicClient.getCode({ address: a.from });
+          if (!code || code === '0x') return { ok: false, reason: 'counterfactual-account-not-deployed' };
+          sig = parseErc6492Signature(sig).signature;
+        }
+        const bytesSig = rec.smart === true;
+        const sigArgs = bytesSig ? [sig] : (() => {
+          let v = parseInt(sig.slice(130, 132), 16);
+          if (v < 27) v += 27; // normalize recovery id
+          return [v, `0x${sig.slice(2, 66)}`, `0x${sig.slice(66, 130)}`];
+        })();
+
         // Pre-flight: reject an already-used authorization nonce before spending gas.
         const used = await publicClient.readContract({
           address: usdcAddress, abi: USDC_ABI, functionName: 'authorizationState', args: [a.from, a.nonce],
@@ -454,11 +527,28 @@ export function createSettlingFacilitator({ publicClient, walletClient, usdcAddr
         if (used) return { ok: false, reason: 'authorization-used' };
 
         const { request } = await publicClient.simulateContract({
-          address: usdcAddress, abi: USDC_ABI, functionName: 'transferWithAuthorization',
-          args: [a.from, a.to, BigInt(a.value), BigInt(a.validAfter), BigInt(a.validBefore), a.nonce, v, r, s],
+          address: usdcAddress, abi: bytesSig ? USDC_ABI_BYTES_SIG : USDC_ABI, functionName: 'transferWithAuthorization',
+          args: [a.from, a.to, BigInt(a.value), BigInt(a.validAfter), BigInt(a.validBefore), a.nonce, ...sigArgs],
           account: walletClient.account,
         });
         const hash = await walletClient.writeContract(request);
+        // A hash proves a broadcast, not a settlement: the payer can still make the transfer revert
+        // between simulate and inclusion (cancelAuthorization, moving the balance, rotating a 1271
+        // signer). Only a mined `success` receipt is a settlement. No receipt in time is a
+        // transport-shaped "could not tell" (same `settle-unreachable` prefix as the standard
+        // path), never success and never a revert verdict: the tx may still land.
+        let receipt;
+        try {
+          receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: receiptTimeoutMs });
+        } catch (err) {
+          return { ok: false, reason: `settle-unreachable: no receipt for ${hash}: ${err?.shortMessage ?? err?.message ?? err}` };
+        }
+        // viem resolves with the REPLACEMENT's receipt when another tx from the same sender and
+        // nonce replaced ours: that receipt is a different transfer, so ours never settled.
+        // shortcut: a repriced copy of the same call (an operator speed-up) is refused too, read
+        // viem's onReplaced reason if this settler ever reprices its own transactions.
+        if (receipt?.transactionHash !== hash) return { ok: false, reason: `settle-replaced: ${hash}` };
+        if (receipt?.status !== 'success') return { ok: false, reason: `settle-reverted: ${hash}` };
         return { ok: true, receiptId: hash };
       } catch (err) {
         return { ok: false, reason: `settle-failed: ${err?.shortMessage ?? err?.message ?? err}` };

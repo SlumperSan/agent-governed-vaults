@@ -4,7 +4,7 @@
  * (the clickwrap), so the two cannot ship different words or disagree about the version hash.
  *
  * `TERMS_TEXT` IS VERBATIM. It is the part of
- * "Obsidian Vault/Agent-Governed Vaults/Business/Legal/Terms of Use draft v0.1 2026-09-23.md"
+ * the maintainers' private "Terms of Use draft v0.1 2026-09-23"
  * under its own "## Terms of Use" heading, through the end of "### 13. Whole agreement" —
  * card #214's own instruction: publish that part, not "## Held for counsel" above or below it.
  * Do not paraphrase or "clean up" this string. The owner-approved draft is the legal text; editing

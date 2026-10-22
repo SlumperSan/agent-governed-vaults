@@ -1,11 +1,11 @@
 /**
  * A CLAIM ABOUT A GUARD is a different thing from the guard itself, and nothing checked the claim.
  *
- * Five vault notes said `claims-lede-truth.test.mjs enforces the vote/trade claims`. It never has —
+ * Five project notes said `claims-lede-truth.test.mjs enforces the vote/trade claims`. It never has —
  * `scripts/test/claims-lede-truth.test.mjs` covers who-does-what, weighting, stake-blindness, the
  * deposit gate and RWLY attribution; none of its eleven tests mention a vote or a trade shape. The
  * false belief survived because it read fine on its own and nobody re-derived it from the suite's
- * source before repeating it (see `Rules/fix-the-source-not-only-the-consumer.md`).
+ * source before repeating it. Fix the source of a claim, not only the place that repeats it.
  *
  * Card 45, scoped by Security on 2026-09-23. Deliberately narrow, so it cannot cry wolf on the
  * paraphrases that actually shipped the defect ("enforces the vote/trade claims" with no quoted

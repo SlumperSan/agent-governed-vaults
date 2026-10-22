@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {FeeEngine, IRegistryView} from "../../src/FeeEngine.sol";
+import {PROTOCOL_INITIALIZER} from "../../src/lib/ProtocolInitializer.sol";
 import {MockERC20} from "../mocks/Mocks.sol";
 
 /// @notice AUDIT ARTIFACT — not a protocol test. **M-3 IS REMEDIATED.**
@@ -51,10 +52,12 @@ contract ReentrantVault {
     address public inner; // the second vault to nest into
     uint256 public amount;
     bool public armed;
+    address public creator; // fee model A1: the engine credits the creator, read from the vault
 
-    constructor(FeeEngine engine_, MockERC20 token_) {
+    constructor(FeeEngine engine_, MockERC20 token_, address creator_) {
         engine = engine_;
         token = token_;
+        creator = creator_;
     }
 
     function arm(address inner_, uint256 amount_) external {
@@ -88,11 +91,13 @@ contract PlainVault {
     MockERC20 public token;
     address public engine;
     uint256 public amount;
+    address public creator; // fee model A1: the engine credits the creator, read from the vault
 
-    constructor(MockERC20 token_, address engine_, uint256 amount_) {
+    constructor(MockERC20 token_, address engine_, uint256 amount_, address creator_) {
         token = token_;
         engine = engine_;
         amount = amount_;
+        creator = creator_;
     }
 
     function usdc() external pure returns (address) {
@@ -119,14 +124,16 @@ contract AuditFeeEngineReentrancyTest is Test {
     function setUp() public {
         registry = new StubRegistryView();
         engine = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        engine.initialize(address(0x7EA5));
         token = new MockERC20("HOOK", 18);
     }
 
     /// @notice M-3 FIXED: the cross-vault nesting is refused outright. Before the mutex the
     /// outer frame credited `2X + X2` against `X + X2` delivered.
     function test_remediated_crossVaultNestingIsRefused() public {
-        ReentrantVault outer = new ReentrantVault(engine, token);
-        PlainVault innerVault = new PlainVault(token, address(engine), 40e18);
+        ReentrantVault outer = new ReentrantVault(engine, token, opA);
+        PlainVault innerVault = new PlainVault(token, address(engine), 40e18, opB);
 
         registry.setOperator(address(outer), 1, opA);
         registry.setOperator(address(innerVault), 2, opB);
@@ -144,8 +151,8 @@ contract AuditFeeEngineReentrancyTest is Test {
     /// pulls credit exactly what each vault delivered, and the engine's balance equals the sum of
     /// its credits — the invariant M-3 violated.
     function test_remediated_sequentialPullsCreditExactlyWhatArrived() public {
-        PlainVault a = new PlainVault(token, address(engine), 60e18);
-        PlainVault b = new PlainVault(token, address(engine), 40e18);
+        PlainVault a = new PlainVault(token, address(engine), 60e18, opA);
+        PlainVault b = new PlainVault(token, address(engine), 40e18, opB);
 
         registry.setOperator(address(a), 1, opA);
         registry.setOperator(address(b), 2, opB);
@@ -155,11 +162,19 @@ contract AuditFeeEngineReentrancyTest is Test {
         engine.pullEscrowed(address(a), address(token));
         engine.pullEscrowed(address(b), address(token));
 
-        assertEq(engine.claimableFees(opA, address(token)), 60e18, "A credited its own delivery");
-        assertEq(engine.claimableFees(opB, address(token)), 40e18, "B credited its own delivery");
+        // Fee model A1: each delivery splits 90% to its vault's creator and 10% to the treasury.
+        address treasury = engine.treasury();
+        assertEq(engine.claimableFees(opA, address(token)), 54e18, "A's creator credited 90% of its own 60");
+        assertEq(engine.claimableFees(opB, address(token)), 36e18, "B's creator credited 90% of its own 40");
+        assertEq(
+            engine.claimableFees(treasury, address(token)),
+            10e18,
+            "treasury credited 10% of the 100 delivered"
+        );
         assertEq(
             token.balanceOf(address(engine)),
-            engine.claimableFees(opA, address(token)) + engine.claimableFees(opB, address(token)),
+            engine.claimableFees(opA, address(token)) + engine.claimableFees(opB, address(token))
+                + engine.claimableFees(treasury, address(token)),
             "engine balance == sum of credits: the invariant M-3 broke"
         );
     }

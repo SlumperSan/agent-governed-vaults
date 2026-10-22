@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * Validation for `docs/seeded-addresses.json` — the public disclosure list of owner-funded persona
- * wallets (Decisions/Seed agent personas 2026-09-23.md). The file itself ships with an empty
+ * wallets (seeded agent personas, 2026-09-23). The file itself ships with an empty
  * `addresses` array, so a test that only reads the shipped file proves nothing about the shape this
  * module enforces; `scripts/test/seeded-addresses.test.mjs` feeds this function planted fixtures
  * (a valid entry, a bad checksum, a case-variant duplicate) for that reason.

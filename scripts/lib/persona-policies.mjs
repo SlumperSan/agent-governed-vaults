@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * Pure `decide(readout) => action` policies for the four seeded personas
- * (`Obsidian Vault/Agent-Governed Vaults/Decisions/Seed agent personas 2026-09-23.md`). No chain
+ * Pure `decide(readout) => action` policies for the four seeded personas (seeded on
+ * 2026-09-23). No chain
  * call, no LLM call, no `process.exit` — every function here takes a plain-object "readout" the
  * caller assembles from real chain reads and returns a plain-object "action" the caller then
  * drives against the chain. This is what `scripts/test/persona-round-sim.test.mjs` calls for

@@ -52,6 +52,8 @@ contract AuditDosExitLivenessTest is Test {
         registry = new OperatorRegistry();
         subReg = new SubVaultRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(address(0x7EA5));
         gov = new Governance();
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),
@@ -89,7 +91,7 @@ contract AuditDosExitLivenessTest is Test {
             basketAssets: basket,
             oracle: IOracleAggregator(address(oracle)),
             capacityCapUsdc: 0,
-            minDepositUsdc: 10 * USDC_1,
+            minDepositUsdc: 100 * USDC_1,
             exitFeeMaxBps: exitFeeBps,
             exitFeeDecayPeriod: exitFeeBps == 0 ? 0 : 30 days,
             allowedAdapters: new address[](0)
@@ -266,12 +268,13 @@ contract AuditDosExitLivenessTest is Test {
         parent.allocateToChild(address(child), 1_900 * USDC_1);
         assertEq(parent.idleUsdc(), 100 * USDC_1);
 
-        // A dust non-parent holder in the child, so the sole-holder fee waiver cannot fire.
-        _join(child, bob, 10 * USDC_1);
+        // A small non-parent holder in the child (the factory floor, 100 USDC), so the sole-holder fee
+        // waiver cannot fire.
+        _join(child, bob, 100 * USDC_1);
 
-        // Nothing is pending anywhere; the child holds 1,910 USDC of idle cash.
+        // Nothing is pending anywhere; the child holds 2,000 USDC of idle cash.
         assertFalse(gov.hasPendingExecution(address(child)));
-        assertEq(child.idleUsdc(), 1_910 * USDC_1);
+        assertEq(child.idleUsdc(), 2_000 * USDC_1);
         assertEq(child.exitFeeBpsOf(address(parent)), 100, "child charges the parent 1%");
 
         uint256 aliceShares = parent.sharesOf(alice);

@@ -414,6 +414,21 @@ salt    = keccak256(account.signMessage(message))
 Every input is public and recoverable from chain state, so any process holding the same account
 derives the same salt forever. Nothing is written to disk; there is nothing to lose.
 
+An account that sets `saltVersion: 'v2'` signs a voter-bound message instead:
+
+```
+message = "x402-vaults:reveal-salt:v2:{chainId}:{vault}:{pid}:{voter}"
+```
+
+`voter` is `account.address` lowercased, the address that sends `commitVote`. v2 is for agents
+whose voting address is not the key that signs, such as a smart account: one signing key serving
+several accounts gets a different salt for each, where v1 would give them the same salt and the
+first reveal would expose the others' direction. The signing key must be a dedicated salt key, not
+a rotating session key, because rotating it would make every outstanding commit unrevealable. v1 is
+unchanged and remains the default. Recovery always tries both schemes, the configured one first, so
+a commit still reveals after a switch or after a restart without `saltVersion`
+(`packages/reference-agent/src/salt.mjs`).
+
 The commitment matches `revealVote` (`Governance.sol:409`) exactly:
 
 ```
@@ -431,9 +446,9 @@ cast keccak $(cast abi-encode "f(uint256,address,bool,bytes32)" 7 0x111111111111
 ### Recovery after a restart
 
 An outstanding commit is discovered from **chain state**, never from local storage:
-`commitOf(pid, voter) != 0 && !revealedOf(pid, voter)`. The agent then re-derives the salt and
-tries both support values against the on-chain commitment; exactly one reproduces it, and that is
-the recovery; the direction is recovered from the hash, not from memory. It verifies the
+`commitOf(pid, voter) != 0 && !revealedOf(pid, voter)`. The agent then re-derives the salt (both
+schemes, the configured one first) and tries both support values against the on-chain commitment;
+exactly one reproduces it, and that is the recovery; the direction is recovered from the hash, not from memory. It verifies the
 reconstruction before spending gas on a call that would otherwise revert.
 
 A reveal it owes therefore outranks every other action in the plan, including a policy that would
@@ -454,8 +469,10 @@ rather than "no active proposal on this vault". The next tick retries.
 
 ### Voting weight is not the share balance
 
-Commits are gated on `pastVotingEligibleShares(member, proposal.createdAt)`, the measure the
-contract counts, and the same one quorum uses. Shares deposited after a proposal opened, still
+Commits are gated on `pastVotingEligibleShares(member, proposal.createdAt)`, an approximation of the
+measure the contract counts: `Governance` weighs each vote at the lesser of
+`pastVotingEligibleShares(member, createdAt - 1)` and the member's current `votingEligibleShares`,
+and quorum is computed from that same weight. Shares deposited after a proposal opened, still
 inside the observation window, or locked behind a Mode-F exit carry **no** vote, so committing on
 `sharesOf` would cast votes that can never count. An unreadable weight falls to zero, which blocks
 the commit.
@@ -543,8 +560,9 @@ What is still true about the demo path:
 ### The oracle-freeze trigger detects, it does not warn
 
 `navPerShareWad()` reverts with `StaleOracle` when a basket price is stale, so a failed NAV read
-means the vault is **already frozen**, at which point exits are frozen too (ARCHITECTURE §11) and
-`requestExit` will revert as well. The oracle exposes no per-asset freshness view, so a genuine
+means the vault is **already frozen**, at which point exits that price a basket asset are frozen
+too (ARCHITECTURE §11): an immediate (Mode I) `requestExit` and `settleQueuedExit` will revert as
+well, while a Mode F `requestExit` still queues, because queueing reads no price. The oracle exposes no per-asset freshness view, so a genuine
 early warning is not readable on-chain. The trigger is worth keeping; breakers can clear, and an
 agent that queues its exit the moment it notices is ahead of one that waits, but it is detection
 after the fact, not prevention. Do not read "oracle-freeze warning" as protection against being

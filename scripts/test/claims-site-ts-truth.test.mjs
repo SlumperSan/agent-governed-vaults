@@ -9,10 +9,10 @@
  * the two files that hold, respectively, every public-facing sentence on the marketing site and
  * the disclaimers page's own claims about the live contracts — are invisible to that walk. A false
  * or stale claim written directly into either file ships with a fully green claims-guard suite.
- * Two separate cards tracked this: a draft CTA sentence nearly shipped in `copy.ts` uncaught
- * (Tasks/copy-ts-invisible-to-claims-guards), and the disclaimers page carried a superseded
+ * Two separate cards tracked this: a draft CTA sentence nearly shipped in `copy.ts` uncaught,
+ * and the disclaimers page carried a superseded
  * 86,400-second oracle bound for two days after the live value moved to 90,000 seconds, on a file
- * no guard could see either (Tasks/launch-security-14-...). Fixing the disclaimers sentence did
+ * no guard could see either. Fixing the disclaimers sentence did
  * not fix the structural gap that let it go unguarded in the first place; this file is that fix.
  *
  * ## Why this is a SEPARATE file rather than an added `PUBLIC_EXT` entry

@@ -66,8 +66,9 @@ what the approved replacement wording is.
 
 Three rules that guard has already had to be widened to catch:
 
-- **Enumerate the operator's lack of power; never claim it as a universal.** The operator is the
-  sole recipient of the 10% performance fee, so a blanket negative about what the operator holds
+- **Enumerate the operator's lack of power; never claim it as a universal.** On the deployed Arc v1
+  FeeEngine the operator address is the sole recipient of the 10% performance fee (the v2 FeeEngine
+  in the source credits the vault creator and the treasury instead), so a blanket negative about what the operator holds
   on-chain is falsifiable in one transaction. Write "operatorship confers no authority to vote,
   execute, pause, reprice, or move member funds". Note that guard 6 matches the banned *shape*, so
   it reds a file that quotes the wide form even to prohibit it. This paragraph is written the long
@@ -146,7 +147,7 @@ encodes the *rules*, not the order to apply them in.)
 
 ### On making this faster — what was tried, and where the real lever is
 
-The owner asked on 2026-09-10 for merging to be faster. Two changes were drafted and an independent
+Faster merging was requested on 2026-09-10. Two changes were drafted and an independent
 review rejected both on evidence from this repository. They are recorded because both look obviously
 correct until someone checks them:
 
@@ -175,7 +176,7 @@ correct until someone checks them:
   also contains `scripts/lib/verdicts.mjs`, `scripts/lib/merge-policy.json` and every
   `scripts/test/*.test.mjs` guard, so it would cover the machinery that enforces the bar.
 
-**The rebase treadmill is gone, by an owner decision on 2026-09-10, and this is what replaced it.**
+**The rebase treadmill is gone, by a repository settings decision on 2026-09-10, and this is what replaced it.**
 The `protocol-main` ruleset used to set `strict_required_status_checks_policy: true`, so merging any
 one PR advanced `protocol/main` and put every other at `behind_by 1`; each re-integration moved the
 head, tripped `verdict-covers-head`, and forced a fresh verdict and a fresh CI run.
@@ -213,7 +214,7 @@ reasons unrelated to the change being tested.
 
 - **Reviewing, investigating, casting a verdict: no worktree.** Read the shared tree, and read
   other refs with `git show <ref>:<path>`, `git diff`, and `gh`. This covers most work here.
-- **Committing and pushing: one worktree, under the session scratchpad, removed when done.**
+- **Committing and pushing: one worktree, under a scratch directory outside the repository, removed when done.**
   Two agents cannot `git checkout` in one directory without destroying each other's work, and the
   repository root periodically runs long-lived jobs that a checkout underneath would break.
 - **Never use the harness's own worktree isolation.** It writes to `.claude/worktrees/`, which is

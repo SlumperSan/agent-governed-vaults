@@ -31,7 +31,7 @@ propose ──► commit phase ──► reveal phase ──► finalize ──�
 
 | Type | Quorum | Standing defaults? | Execution payload |
 | --- | --- | --- | --- |
-| `Rebalance` | normal (regime below) | **Yes — only type** | `(adapter, SwapOrder[])` → `vault.executeRebalance` |
+| `Rebalance` | normal (regime below) | **Yes — only type** | `(adapter, maxSlippageBps, SwapOrder[])` → `vault.executeRebalance` |
 | `RuleChange` | **full consensus**: `revealedWeight == snapshotTotal && forWeight >= snapshotTotal` | No | `GovConfig` → validate + parent-floor check + store |
 | `ChildAllocation` | normal | No | `(child, allocateUsdc, redeemShares)` → `allocateToChild` / `redeemFromChild` |
 
@@ -70,8 +70,10 @@ counted at most once (verified in the S6 review and by `invariant_revealedNeverE
 
 All weight reads — proposer eligibility, commit gate, reveal weight, delegated weight, default
 weight — use `pastVotingEligibleShares(…, createdAt − 1)`: strictly before creation, so stake
-minted in the proposal's own second (flash deposits included) carries zero weight. First-ever
-deposits mint no shares at all (observation window), doubly defeating atomic flash-stake.
+minted in the proposal's own second (flash deposits included) carries zero weight. A first deposit
+by a member who has not called `skipWindow()` mints no shares until the 4-hour observation window
+elapses; a member who opted in via `skipWindow()` mints immediately, and only the `createdAt − 1`
+snapshot gives that stake zero weight.
 `snapshotTotal` and `memberCount` are captured once at propose and never rewritten.
 
 ## Config (`GovConfig`) validation
@@ -81,7 +83,8 @@ deposits mint no shares at all (observation window), doubly defeating atomic fla
 a commit phase at or beyond the 72h standing-default TTL outlives every default, so VO-3 would be
 dead before the reveal window opened), `timelockDuration ≤ 30 days` (hard cap),
 `2500 ≤ quorumBps ≤ 10000`,
-`proposalThresholdBps ≤ 10000`, `0 < concentrationCapBps ≤ 10000`. Plus SV-6 parent-floor
+`proposalThresholdBps ≤ 10000`, `0 < concentrationCapBps ≤ 5000`,
+`1h ≤ proposalCooldown ≤ 30 days`, `revealDuration ≤ 30 days`, `executionWindow ≤ 90 days`. Plus SV-6 parent-floor
 inheritance — `quorumBps >= parent's quorumBps` — enforced at **both** `registerVault` and the
 RuleChange update path (G2 fix; the check is shared, `_requireParentQuorumFloor`).
 
@@ -117,8 +120,10 @@ degrades vaults to Mode-I-only exits — never a lockup (H-1 design).
   written in the same branch of `revealDelegated`, which is why `finalize`'s subtraction cannot
   underflow.
 - `snapshotTotal` immutable per proposal.
-- Standing defaults contribute to tally only — a vault of pure defaults is defeated in every
-  regime (accepted-rows review, Area 2).
+- Standing defaults contribute to the tally and never to `revealedWeight`, so a vault of pure
+  defaults is defeated in the RuleChange and five-or-more-member regimes; in the sub-five regime a
+  Rebalance can pass on applied FOR defaults alone when they exceed 50% of eligible stake
+  (`forStakeMajority`, which deliberately keeps applied defaults in its numerator).
 
 ## Trickiest paths (review focus)
 

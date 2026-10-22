@@ -21,7 +21,7 @@ import {
 import {
   sequencerState, attributeAsset, classifyCallError, SEL_STALE_ORACLE, SEL_NO_PENDING,
 } from '../soak/oracle-sampler.mjs';
-import { resolveAgentRunConfig, policyFor, EXECUTE_ENV_VAR } from '../soak/agent-policy.mjs';
+import { resolveAgentRunConfig, policyFor, recordingLogger, EXECUTE_ENV_VAR } from '../soak/agent-policy.mjs';
 
 // ───────────────────────────── fixtures ─────────────────────────────
 
@@ -839,6 +839,36 @@ test('the exit phase forces the drawdown trigger AND flags it as forced', () => 
   assert.equal(p.exit.maxDrawdownBps, 1);
   assert.equal(p.exit.forced, true);
   assert.notEqual(policyFor('join', { depositUsdc: '1' }).exit.forced, true);
+});
+
+test('drill5 recorded events never carry an RPC key, though the transcript is committed', async () => {
+  // agent.mjs logs `tick failed: ${err.message}`, and a viem HttpRequestError's message embeds the
+  // URL it called. drill5 saves every logged event into docs/evidence/soak-agent-run.json.
+  const { HttpRequestError } = await import('viem');
+  const KEY = 'Zk3vQ9xL2mN8pR4tW6yB1cD5fG7hJ0aS';
+  const url = `https://base-sepolia.g.alchemy.com/v2/${KEY}`;
+  const err = new HttpRequestError({ url, status: 429, body: { method: 'eth_call' } });
+  assert.ok(err.message.includes(KEY), 'fixture must reproduce the leak shape');
+
+  const printed = [];
+  const events = [];
+  const logger = recordingLogger(
+    { info: (m) => printed.push(m), warn: (m) => printed.push(m), error: (m) => printed.push(m) }, events);
+  logger.error(`tick failed: ${err.message}`, { rpcUrl: url, nested: [{ cause: err.message }] });
+  logger.warn(`retrying ${url}`);
+  logger.info('chain binding: ok', { password: 'hunter2' });
+
+  assert.equal(printed.length, 3, 'every line still reaches the underlying logger');
+  // The same shape record() saves: state.log = events.map((e) => ({ phase, ...e })).
+  const saved = JSON.stringify(events.map((e) => ({ phase: 'join', ...e })));
+  assert.ok(!saved.includes(KEY), `RPC key reached the saved record: ${saved}`);
+  assert.ok(!saved.includes('hunter2'), 'password-named detail fields stay redacted');
+  assert.match(saved, /https:\/\/base-sepolia\.g\.alchemy\.com/, 'the host stays readable');
+
+  const drill5 = fs.readFileSync(path.join(LIB_ROOT, 'scripts', 'soak', 'drill5-agent-execute.mjs'), 'utf8');
+  assert.match(drill5, /const wrapped = recordingLogger\(logger, events\);/,
+    'drill5 must record through recordingLogger, not its own events.push wrapper');
+  assert.doesNotMatch(drill5, /events\.push\(/, 'a second recording path in drill5 bypasses the redaction');
 });
 
 // ───────────────────── send lock (nonce contention) ─────────────────────
@@ -2319,7 +2349,7 @@ test('lib.mjs ROOT resolves a checkout whose path contains a space to a real dir
   // encoding is not Windows-only: only the drive-letter strip in the old expression was, so this
   // asserts nothing platform-shaped.
   //
-  // Reproduced by copying lib.mjs and its single non-builtin import into a scratch tree whose
+  // Reproduced by copying lib.mjs and its non-builtin imports into a scratch tree whose
   // path contains a space, then reading ROOT back out of a child process. The child's import
   // specifier is built with pathToFileURL rather than string concatenation, so the harness cannot
   // reintroduce the very encoding bug under test.
@@ -2328,6 +2358,8 @@ test('lib.mjs ROOT resolves a checkout whose path contains a space to a real dir
   const copies = [
     ['scripts', 'soak', 'lib.mjs'],
     ['packages', 'canary', 'src', 'call-error.mjs'],
+    ['packages', 'reference-agent', 'src', 'config.mjs'],
+    ['packages', 'reference-agent', 'presets', 'arc-mainnet.json'],
   ];
   try {
     const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -2361,4 +2393,29 @@ test('lib.mjs ROOT resolves a checkout whose path contains a space to a real dir
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }
+});
+
+// ───────── cast() never carries a key-bearing RPC URL into its thrown message ─────────
+
+test('lib.mjs cast() redacts the RPC URL key from the message it throws when cast fails', () => {
+  // Drills call `cast(['chain-id', '--rpc-url', RPC])`, so the first three args ARE the URL and the
+  // old message `cast chain-id --rpc-url <url> failed: ...` reached the uncaught-exception stack.
+  // CAST=node makes the call fail without a real `cast`: node cannot open a file named `chain-id`.
+  const KEY = 'Zk3vKeyShapedSecret0123456789abcdef';
+  const url = `https://base-sepolia.g.alchemy.com/v2/${KEY}`;
+  const target = pathToFileURL(fileURLToPath(new URL('../soak/lib.mjs', import.meta.url))).href;
+  const src = `
+    const m = await import(${JSON.stringify(target)});
+    try { m.cast(['chain-id', '--rpc-url', m.RPC]); console.log(JSON.stringify({ threw: false })); }
+    catch (e) { console.log(JSON.stringify({ threw: true, message: e.message })); }
+  `;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', src], {
+    encoding: 'utf8',
+    env: { ...process.env, SOAK_RPC: url, CAST: process.execPath },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout.trim().split('\n').pop());
+  assert.equal(out.threw, true, 'the cast call must fail for this probe to mean anything');
+  assert.ok(out.message.includes('base-sepolia.g.alchemy.com'), `host should survive: ${out.message}`);
+  assert.ok(!out.message.includes(KEY), `thrown message leaks the RPC key: ${out.message}`);
 });

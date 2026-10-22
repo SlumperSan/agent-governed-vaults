@@ -29,6 +29,7 @@ contract FeesAndRegistryTest is Test {
     VaultFactory factory;
 
     address operator = makeAddr("operator"); // vault creator = operator identity
+    address treasury = makeAddr("treasury"); // fee model A1: the per-chain RWAlly treasury
     address alice = makeAddr("alice");
 
     function setUp() public {
@@ -39,6 +40,8 @@ contract FeesAndRegistryTest is Test {
 
         registry = new OperatorRegistry();
         fees = new FeeEngine(IRegistryView(address(registry)));
+        vm.prank(PROTOCOL_INITIALIZER);
+        fees.initialize(treasury);
         gov = new Governance();
         factory = new VaultFactory(
             IOperatorRegistry(address(registry)),
@@ -67,7 +70,7 @@ contract FeesAndRegistryTest is Test {
                     basketAssets: basket,
                     oracle: IOracleAggregator(address(oracle)),
                     capacityCapUsdc: 1_000_000_000 * USDC_1,
-                    minDepositUsdc: 10 * USDC_1,
+                    minDepositUsdc: 100 * USDC_1,
                     exitFeeMaxBps: 0, // isolate performance-fee math from exit fees
                     exitFeeDecayPeriod: 0,
                     allowedAdapters: new address[](0)
@@ -152,7 +155,18 @@ contract FeesAndRegistryTest is Test {
         (uint256 g,, uint256 feesCollected,) = registry.statsOf(opId);
         assertApproxEqRel(g, 50_000 * USDC_1, 0.02e18, "gain recorded");
         assertGt(feesCollected, 0, "fee collected recorded");
-        assertEq(fees.claimableFees(operator, address(usdc)), feesCollected, "credited = collected");
+        // Fee model A1: the vault creator (also the operator here) is credited 90% of the collected
+        // fee and the treasury 10%, and the two parts sum to exactly what was collected.
+        uint256 toTreasury = feesCollected * 1_000 / 10_000;
+        assertEq(fees.claimableFees(treasury, address(usdc)), toTreasury, "treasury credited 10%");
+        assertEq(
+            fees.claimableFees(operator, address(usdc)), feesCollected - toTreasury, "creator credited 90%"
+        );
+        assertEq(
+            fees.claimableFees(operator, address(usdc)) + fees.claimableFees(treasury, address(usdc)),
+            feesCollected,
+            "credited = collected"
+        );
         // Fee ≤ 10% of gain always (cash-leg clamp may bind below).
         assertLe(feesCollected, g / 10 + 1);
     }
@@ -165,11 +179,21 @@ contract FeesAndRegistryTest is Test {
         _exitAll(v, alice);
 
         uint256 claimable = fees.claimableFees(operator, address(usdc));
+        uint256 treasuryClaimable = fees.claimableFees(treasury, address(usdc));
+        assertGt(claimable, 0, "creator has something to claim");
+        assertGt(treasuryClaimable, 0, "treasury has something to claim");
         uint256 bal = usdc.balanceOf(operator);
         vm.prank(operator);
         fees.claimFees(address(usdc));
         assertEq(usdc.balanceOf(operator) - bal, claimable);
         assertEq(fees.claimableFees(operator, address(usdc)), 0);
+
+        // The treasury claims its own share, and the engine ends fully paid out.
+        uint256 tBal = usdc.balanceOf(treasury);
+        vm.prank(treasury);
+        fees.claimFees(address(usdc));
+        assertEq(usdc.balanceOf(treasury) - tBal, treasuryClaimable);
+        assertEq(usdc.balanceOf(address(fees)), 0, "no dust left in the engine");
     }
 
     // ── the marquee mechanic: cross-vault HWM carryforward (§7, CM-4/CM-5) ───
@@ -194,10 +218,11 @@ contract FeesAndRegistryTest is Test {
 
         // Small appreciation: gain LESS than the carried loss ⇒ zero fee.
         _fundBasket(vaultB, 100); // 1e-6 wBTC ≈ $0.1... use small but nonzero gain
-        uint256 collectedBefore = fees.claimableFees(operator, address(usdc));
+        uint256 collectedBefore =
+            fees.claimableFees(operator, address(usdc)) + fees.claimableFees(treasury, address(usdc));
         _exitAll(vaultB, alice);
         assertEq(
-            fees.claimableFees(operator, address(usdc)),
+            fees.claimableFees(operator, address(usdc)) + fees.claimableFees(treasury, address(usdc)),
             collectedBefore,
             "no fee while under water cross-vault"
         );
@@ -252,7 +277,7 @@ contract FeesAndRegistryTest is Test {
                     basketAssets: basket,
                     oracle: IOracleAggregator(address(oracle)),
                     capacityCapUsdc: 1_000_000_000 * USDC_1,
-                    minDepositUsdc: 10 * USDC_1,
+                    minDepositUsdc: 100 * USDC_1,
                     exitFeeMaxBps: 0,
                     exitFeeDecayPeriod: 0,
                     allowedAdapters: new address[](0)

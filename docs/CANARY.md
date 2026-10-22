@@ -141,13 +141,13 @@ and `_requireSequencerUp` ignores it for exactly that reason. It gets its own tr
 
 **On an oracle deployed with no uptime feed, the leg is NOT-APPLICABLE, not degraded.**
 `sequencerUptimeFeed` is immutable (`ChainlinkOracle.sol:75`) and `_requireSequencerUp` returns
-without reading a feed when it is `address(0)` (`ChainlinkOracle.sol:314`), so no sequencer state
+without reading a feed when it is `address(0)` (`ChainlinkOracle.sol:348`), so no sequencer state
 can ever freeze such a vault. The canary says so once per vault, as a NOTICE, and is silent
 thereafter; it does not repeat a "cannot run" line on every vault on every sweep for the life of
 the deployment,
 and the leg does not sit in the not-OK tally forever. Every other guard in `priceWad` is unaffected
 and still measured per asset: unlisted feed, dead or non-positive answer, unset or future timestamp,
-the heartbeat, and the sane-price band (`priceWad`, `ChainlinkOracle.sol:285-304`).
+the heartbeat, and the sane-price band (`priceWad`, `ChainlinkOracle.sol:313-340`).
 
 **Which chains may ship without an uptime feed is not the canary's call.** It is settled before the
 oracle exists, by `DeployChainlinkOracle.requiresSequencerUptimeFeed`
@@ -322,8 +322,9 @@ projection, so the canary reads them itself.
 
 - `ModuleCallFailed(module, member)`: a creator-chosen bookkeeping module misbehaved on the exit
   path. The exit still settled (the mitigation working) but the module's bookkeeping was
-  **forfeited**; for the `feeEngine.*` paths that means an operator's fee accounting silently did not
-  happen. It is also the leading indicator for signal (d).
+  **forfeited**; for the `feeEngine.*` paths that means fee accounting silently did not happen, and for
+  `registry.recordRealization` the registry's realized gain or loss mark (the loss carryforward)
+  was not recorded. It is also the leading indicator for signal (d).
 - `SliceEscrowed(member, asset, amount)`: an in-kind transfer failed, so that asset's slice was set
   aside as `claimable` rather than reverting the whole redemption (EE-6 / MO-2). Also the mitigation
   working, and also worth knowing, because a token that keeps failing transfers leaves members
@@ -336,9 +337,9 @@ alert naming the events, then a recovery on the next quiet window. The recovery 
 failures in the following window", **not** "the earlier failure was resolved."
 
 **When it fires.** `detail.moduleCallFailed[].module` is the decoded label
-(`feeEngine.onRealize`, `feeEngine.onFeeCollected`, `feeEngine.onFeeCollectedAsset`). Repeated
-failures on one module mean that module is broken for this vault: reconcile the operator's fee
-accounting by hand, and treat it as a strong hint to re-check signal (d). Repeated `SliceEscrowed`
+(`feeEngine.onRealize`, `feeEngine.onFeeCollected`, `feeEngine.onFeeCollectedAsset`, or
+`registry.recordRealization`). Repeated failures on one module mean that module is broken for this
+vault: reconcile that module's accounting by hand, and treat it as a strong hint to re-check signal (d). Repeated `SliceEscrowed`
 for one asset means that token is failing transfers; tell affected members to `claimEscrowed`.
 
 Threat-model rows: [MO-1](THREAT-MODEL.md), [MO-2](THREAT-MODEL.md), [EE-6](THREAT-MODEL.md).
@@ -348,9 +349,10 @@ Threat-model rows: [MO-1](THREAT-MODEL.md), [MO-2](THREAT-MODEL.md), [EE-6](THRE
 **What it measures.** USDC `Transfer` logs with `from = vault` and `to` = a **registered operator
 address** (`operatorAddressOf(operatorOf(vault))`, plus `EXTRA_OPERATOR_ADDRESSES`).
 
-The invariant ([EE-9](THREAT-MODEL.md) / [MO-4](THREAT-MODEL.md)): performance fees reach the
-operator **only** through the FeeEngine: vault transfers to the engine, engine credits
-`claimableFees[operator]`, operator calls `claimFees`. Exit fees never route to the operator at all;
+The invariant ([EE-9](THREAT-MODEL.md) / [MO-4](THREAT-MODEL.md)): performance fees leave the
+vault **only** to the FeeEngine: the vault transfers the fee to the engine, the engine credits it in
+`claimableFees` (on the v2 FeeEngine in the source, 10% to the treasury and the remainder to the vault
+creator; on the deployed Arc v1 FeeEngine, to the operator), and each recipient calls `claimFees`. Exit fees never route to the operator at all;
 they accrue to remaining members through the share price.
 
 **Operator-as-member is legitimate and is excused.** EE-9 says so explicitly: an operator who is also
@@ -625,9 +627,9 @@ plenty of headroom while the other is already lost. Both are always in `detail.t
 **Headroom.** `detail.thresholds[].depositHeadroomUsdc` estimates how much further **non-operator**
 deposit (native USDC units) would dilute the operator down to exactly that gate's `bps`, holding the
 operator's own shares and the current NAV-per-share fixed, solved from `VaultCore._mintShares`'s own
-formula. Holding NAV-per-share fixed is **not** an approximation: `_mintShares` does
-`navWad += amountWad` and `totalShares += amountWad * totalShares / navWad`, which preserves
-NAV-per-share exactly, so the estimate is exact whether the money lands as one deposit or a thousand
+formula. Holding NAV-per-share fixed is **not** an approximation: `_mintShares` mints
+`amountWad * totalShares / navWad()` (rounded down, using the NAV before the deposit) and then adds
+the deposit to `idleUsdc`, which preserves NAV-per-share up to the rounding floor, so the estimate is exact whether the money lands as one deposit or a thousand
 (the integer floor on `minted` makes it marginally conservative in the safe direction, the crossing
 lands at or after the estimate, never before). What it does not account for: escrowed
 `totalPendingUsdc`, which will activate and dilute on its own, so the room left for *new* money is
@@ -888,7 +890,7 @@ config is immutable, so a drift there is not a
 freeze, it is every price being silently wrong until the vault is evacuated. The swap case is
 legitimate routine Chainlink operation and self-clears on the next sweep once the pin is re-taken.
 Nothing else covers the harm cases: the sane-price band catches a ±2-decimal drift only while the
-live price sits inside the band, and per `Owner Decisions 2026-09-01.md` §1 that window closes for
+live price sits inside the band, and, from live prices at 2026-09-01, that window closes for
 cbBTC at BTC $100,000: above it `feed-identity` is the only detector there is, and `nav-backing`
 cannot substitute because it recomputes through the same mis-scaled `priceWad`. The Monitoring Gap
 Analysis' §3 item 4 PAGE list was written 2026-08-30, before `feed-identity` existed (2026-09-01,

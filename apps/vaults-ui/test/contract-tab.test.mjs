@@ -5,7 +5,7 @@
  * (PR #361) already keeps "confirmed zero" and "unread/failed" apart at the data layer (tested in
  * `apps/web/test/chain-reader.test.mjs`), so this file is not re-testing that split — it is
  * guarding that `ContractTab.tsx` does not quietly re-collapse it on the way to JSX, the exact
- * defect `Findings/2026-09-21-row-6b-collapses-unread-into-zero.md` found in the original spec.
+ * defect a 2026-09-21 review found in the original spec (Row 6b collapsed unread into zero).
  *
  * SOURCE GUARDS, same reason as every sibling wiring test in this app: no JSX/TSX loader in
  * `node --test` (see `quorum-unknown.test.mjs`'s own header for the fuller version of this note).
@@ -48,8 +48,8 @@ test('the unread block is its own independent condition, not an else-branch of t
 test('MUTATION: a version that only checks claimable.length (ignoring unread) renders a real unread balance as a pass', () => {
   // Reconstructed inline, not executed against the component (no TSX loader) — the exact shape
   // card 205 exists to forbid: a caller that consults only `claimable` and never `unread` cannot
-  // tell "you have nothing" from "we could not check", which is the defect Findings/2026-09-21-
-  // row-6b-collapses-unread-into-zero.md found in the ORIGINAL spec for this exact row.
+  // tell "you have nothing" from "we could not check", which is the defect a 2026-09-21
+  // review found in the ORIGINAL spec for this exact row.
   const claimable = /** @type {readonly {asset: string}[]} */ ([]);
   const unreadList = [{ asset: '0xabc', readAt: null }];
   const buggyRendersSomething = claimable.length > 0; // the pre-fix shape: unread is never consulted
