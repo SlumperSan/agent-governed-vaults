@@ -96,6 +96,13 @@
 
 import { randomBytes } from 'node:crypto';
 import { VersionedMessage } from '@solana/web3.js';
+// shortcut: an apps-to-apps import (Node 24 strips the types), as packages/reference-agent/src/screen.mjs
+// does; move sanctions.ts and sdn-addresses.ts to a shared package when a fourth consumer appears.
+import {
+  assertNotSanctioned,
+  SanctionsListStaleError,
+  SanctionsRefusalError,
+} from '../../vaults-ui/src/lib/sanctions.ts';
 
 const HEADER_REQUIRED = 'payment-required';
 const HEADER_SIGNATURE = 'payment-signature';
@@ -491,6 +498,23 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
 
   const localCheck = checkEnvelopeAgainstPrice(price, env, nowMs);
   if (!localCheck.ok) return require402(`payment invalid: ${localCheck.reason}`);
+
+  // OFAC SDN SCREEN ON THE EVM PAYER, BEFORE THE REPLAY KEY IS RESERVED AND BEFORE ANY FACILITATOR
+  // CALL, so a refused payer neither reaches the facilitator nor leaves a key behind that would block
+  // a later valid payment. One choke point covers every facilitator. Branched on `price` (the
+  // server's), never on the envelope, for the reason at `checkEnvelopeAgainstPrice`. Fails closed: a
+  // list older than its freshness ceiling refuses every payment. This screens what this server
+  // accepts; it cannot stop a transfer made directly against USDC or the Protocol's contracts.
+  // SVM payers are not screened here: the vendored list is EVM-only.
+  if (!price.svm) {
+    try {
+      assertNotSanctioned(env.authorization?.from, nowMs);
+    } catch (err) {
+      if (err instanceof SanctionsRefusalError || err instanceof SanctionsListStaleError)
+        return require402('payment refused: payer screening');
+      throw err;
+    }
+  }
 
   // AN SVM ENVELOPE HAS NO `nonce`, so reading one leaves this guard inert on that path. The
   // transaction message is the right key: the payer signs it over a specific blockhash, so two
