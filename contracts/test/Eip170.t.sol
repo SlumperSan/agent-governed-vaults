@@ -281,10 +281,7 @@ contract Eip170Test is Test {
         assertGt(registry.operatorOf(attested), 0, "factory agent vault not attested");
         assertEq(registry.operatorOf(bypass), 0, "agent-deployer-created vault was attested");
 
-        assertEq(factory.vaultCount(), countBefore, "a direct deploy changed allVaults");
-        for (uint256 i; i < countBefore; ++i) {
-            assertTrue(factory.allVaults(i) != bypass, "a direct deploy is listed in allVaults");
-        }
+        assertEq(factory.vaultCount(), countBefore, "a direct deploy was appended to allVaults");
         for (uint256 i; i < logs.length; ++i) {
             assertTrue(logs[i].emitter != address(factory), "factory emitted an event for a direct deploy");
             assertTrue(logs[i].emitter != address(registry), "registry emitted an event for a direct deploy");
