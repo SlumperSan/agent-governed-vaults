@@ -19,6 +19,7 @@ import { createBudget } from './budget.mjs';
 import { createApiClient, discoverySource, perceive } from './perceive.mjs';
 import { plan, partitionDue } from './plan.mjs';
 import { createActor } from './act.mjs';
+import { screenPayer, screenWalletClient } from './screen.mjs';
 import { fromBaseUnits, gateMode, redact, UNPROVEN_OPERATOR_PROFILE } from './config.mjs';
 import { UNPROVEN_OPERATOR_RISK } from './policy.mjs';
 
@@ -59,8 +60,10 @@ export function createAgent({
     enabled: config.api.payments.enabled && payer != null && !chainOnly,
   });
 
-  const client = createApiClient({ config, payer, budget, fetchImpl });
-  const actor = createActor({ mode: gated.mode, config, account, chainReader, log, walletClient });
+  // OFAC screen at both signing choke points (see screen.mjs). A refusal throws inside the send or
+  // the signature, so it lands in the existing failure records and the loop survives it.
+  const client = createApiClient({ config, payer: payer && screenPayer(payer), budget, fetchImpl });
+  const actor = createActor({ mode: gated.mode, config, account, chainReader, log, walletClient: walletClient && screenWalletClient(walletClient) });
 
   /**
    * vault ⇒ NAV/share when the agent first saw itself holding it.
