@@ -88,6 +88,18 @@ test('a refused payer leaves no replay reservation behind', async () => {
   assert.equal(fac.calls, 1);
 });
 
+test('a non-string or non-address `from` is a 402 and leaves no replay reservation', async () => {
+  const seen = new Set();
+  for (const from of [12345, { toLowerCase: 1 }, [LISTED], 'not-an-address', '0x1234', '', 0, false, true]) {
+    const fac = countingFacilitator();
+    const v = await gate({ headers: evmHeader(/** @type {any} */ (from)), price, facilitator: fac, nowMs: FRESH, seenNonces: seen });
+    assert.equal(v.status, 402, JSON.stringify(from));
+    assert.equal(/** @type {any} */ (v).body.error, 'payment invalid: bad-payer');
+    assert.equal(fac.calls, 0);
+    assert.equal(seen.size, 0);
+  }
+});
+
 test('an SVM price is not screened here, even on a stale list or a listed client-written `from`', async () => {
   const svmPrice = {
     asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
