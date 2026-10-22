@@ -25,7 +25,7 @@ state, and disclosure decision below serves this spine.
 
 | # | Moment | What is irreversible | Where in docs |
 | --- | --- | --- | --- |
-| S-1 | **Oracle breaker trips** | Every NAV-reading path reverts: deposits, activation, exits, execution. No hatch, by design. Capital is frozen until sources are fresh. | K-4, SF-2, §11 |
+| S-1 | **Oracle breaker trips** | Every NAV-reading path reverts: deposits, activation, exits, execution. No hatch, by design. Capital is frozen until the feed is fresh. | K-4, SF-2, §11 |
 | S-2 | **Mode-F exit is queued** | Irrevocable; settles later at post-execution NAV; the shares *also* lose voting eligibility at queue time. | §4.4, EE-10 |
 | S-3 | **Observation-window skip opt-in** | Permanent, once per agent per vault, cannot be undone. Buys immediate shares, forfeits the 4-hour cancel option forever. | §5, EE-3 |
 | S-4 | **Forgotten vote reveal** | Committed-but-unrevealed vote is forfeit (counts as abstain). The single highest-severity *human-specific* failure in the product. | §8, §14.4 |
@@ -34,8 +34,8 @@ state, and disclosure decision below serves this spine.
 plain-language statements of what becomes irreversible: never a color-only pill, never a
 one-line toast. Support-escalation and "emergency withdraw" affordances are **prohibited** on the
 frozen state (S-1): they would be lies. The honest message is "nothing moves until the oracle
-recovers," plus what the user *can* still do (read positions/history; possibly cancel a pending
-deposit: see Open Question OQ-1).
+recovers," plus what the user *can* still do (read positions/history; cancel a pending deposit,
+since `cancelPending()` reads no price: see Open Question OQ-1).
 
 ---
 
@@ -115,11 +115,11 @@ existing metered route.
 | Discovery card | vault addr, memberCount, capacityCap, parent/depth, holders | **[P]** via `/vaults/:addr` **[api]** |
 | Discovery card | **NAV, NAVps, operator display name, attested badge** | NAV/NAVps **[C]**; name **[X]** (only `operatorId` **[P]**, `0`=unattested); attested = `operatorId>0` **[P]** |
 | Vault detail · Overview | basket composition & weights, idle USDC, NAV history | idleUsdc **[P]**; **basket composition [C]**; history **[X]** |
-| Vault detail · Fees | per-level exit fee ceilings, HWM 10% perf, stacked totals | stacked math **[P]** (`fees.mjs`); **per-vault exit-fee params [C]** (immutable at creation) |
+| Vault detail · Fees | per-level exit fee ceilings, 10% perf after loss carryforward, stacked totals | stacked math **[P]** (`fees.mjs`); **per-vault exit-fee params [C]** (immutable at creation) |
 | Vault detail · Governance | active proposal, phase, quorum, timelock, mode I/F | **entirely [X]**: no proposal projection exists |
 | Vault detail · Risk | capacity %, oracle status, sub-vault chain, non-transferability | capacity **[P]**; **oracle status [C]**; chain **[P]** |
 | Deposit flow | capacity headroom, window state, indicative shares | headroom **[P]**; indicative NAV **[C]** |
-| Portfolio position | shares held, current value, net-of-fee P&L, HWM carry | shares/holders **[P]**; **value/NAVps [C]**; **HWM carry [X]** (see OQ-3) |
+| Portfolio position | shares held, current value, net-of-fee P&L, loss carryforward | shares/holders **[P]**; **value/NAVps [C]**; **loss carryforward [X]** (see OQ-3) |
 | Portfolio pending | pending deposits in window, activation time, cancel | pendingCount **[P]** (aggregate only); **per-member pending [X]** |
 | Portfolio queued exit | Mode-F queued shares, expected settlement trigger | **[X]** |
 | Governance inbox | proposals across held vaults, phase, **reveal countdown** | **[X]** |
@@ -127,7 +127,7 @@ existing metered route.
 | Operator profile | full vault set incl. wound-down, attested status | vault set **[X]**; attested **[P]** |
 
 > **Mandate for the build team:** ship the **new projections** (proposal state, per-member
-> position, per-member pending, Mode-F queue, HWM carry, operator display registry) as a
+> position, per-member pending, Mode-F queue, loss carryforward, operator display registry) as a
 > precondition. The consumer product cannot be built on the current `projections.mjs` surface
 > alone. See §3 and Open Questions for the specific gaps.
 
@@ -218,8 +218,8 @@ Phase 1  COMMIT  [SIGN]
            Rationale: a wallet-derived salt is recoverable on ANY device from the
            same wallet. Random-and-stored means clearing browser storage, or
            committing on mobile and revealing on desktop, PERMANENTLY loses the vote.
-           (See OQ-2 — confirm the contract hashes support+salt in a way compatible
-           with a derived salt.)
+           (See OQ-2: the contract takes any client-chosen bytes32 salt, so a
+           derived salt is compatible.)
          • [SIGN] submit commit hash. Tally stays hidden.
          • Immediately: schedule reveal reminders (see below).
 
@@ -325,8 +325,9 @@ threat model on a card; never bury a fund-losing risk behind a hover.
 - **Exit-fee decay widget**: the single best fee disclosure available. A small chart/readout:
   "Exit today: 1.00% · in 30 days: 0.50% · after decay: 0.00%," driven by
   `feeMax·max(0,1 − tenure/decay)` (§4.6). Show that the fee **goes to remaining members**.
-- **HWM performance fee**: "10% of realized profit, charged only when you exit in profit, and
-  only above your high-water mark" (§6, §7). If per-member HWM carry is available (OQ-3), show
+- **Performance fee**: "10% of your realized gain at exit, after netting any loss you previously
+  realized under the same operator, charged only when you exit in profit" (§6, §7). If the
+  per-member loss carryforward is available (OQ-3), show
   "you currently owe fee on $X of gains"; if not, show the *rule* and flag the number as
   unavailable. Do not fabricate it.
 - **Stacked sub-vault fees**: reuse the `fees.mjs` model exactly (contract-mirrored): perf
@@ -339,7 +340,7 @@ threat model on a card; never bury a fund-losing risk behind a hover.
 ### Tier 3: Deep (Risk tab + /learn, linked contextually)
 - **Oracle-freeze-traps-exits (K-4/SF-2)**: the headline systemic risk. Plain language:
   "Each asset is priced from ONE Chainlink feed with no fallback. If that feed goes past its
-  heartbeat, prices outside its sane band, or the Base sequencer is down, the vault FREEZES:
+  heartbeat, prices outside its sane band, or the chain's sequencer is down, the vault FREEZES:
   deposits, exits, and rebalances all stop until it recovers. There is no emergency withdrawal, by
   design. Your capital is trapped for the whole of that period, and permanently if the feed is
   retired rather than merely late." (Pre-C-6 this paragraph said "loses enough trusted sources" and
@@ -389,9 +390,11 @@ Design rules:
    permanently (SF-5). The operator profile shows the **full** vault set including closed ones,
    labeled, and a short UI note explains *why* ("operators can't hide their losers"). This is a
    trust feature; make it legible, not just correct.
-6. **Fee routing transparency.** Prominently state that exit fees go to remaining members and
-   performance fees follow HWM: the protocol's operator-can't-skim posture is a selling point
-   (§4.6, EE-9).
+6. **Fee routing transparency.** Prominently state that exit fees stay in the vault and accrue
+   pro rata to the members who remain, and that the performance fee is 10% of net realized gain
+   at exit, after the loss carryforward; the source FeeEngine credits 90% of each collected fee
+   to the vault creator and 10% to the RWAlly treasury (the deployed Arc v1 FeeEngine pays the
+   operator instead) (§4.6, EE-9).
 
 ---
 
@@ -411,16 +414,17 @@ non-negotiable custom states are **oracle-frozen** and **observation-window**.
 - **Trigger:** breaker tripped; NAV-reading paths revert.
 - **Treatment:** a persistent, unmistakable banner on affected vaults and any open deposit/exit
   flow. Deposit/exit/activate/vote-execute CTAs are **disabled with an explanation**, not hidden.
-- **Copy (must be true):** "This vault is FROZEN. Its price oracle has lost too many trusted
-  sources, so all deposits, exits, and rebalances are paused until the sources recover. There is
+- **Copy (must be true):** "This vault is FROZEN. The Chainlink price feed for one of its assets
+  is late, outside its sane price band, or its chain's sequencer is down, so all deposits, exits,
+  and rebalances are paused until that feed is healthy. There is
   no emergency withdrawal: this is a deliberate safety design (it prevents anyone exiting at a
   manipulated price). Your positions and history remain visible below."
-- **Still available:** viewing positions and history; **possibly** cancelling a pending deposit
-  (OQ-1: engineering must confirm `cancelPending()` doesn't read NAV; if it doesn't, this is the
-  *one* action offered in the frozen state and the copy changes materially).
+- **Still available:** viewing positions and history; cancelling a pending deposit
+  (OQ-1: `cancelPending()` reads no price, so this is the *one* action offered in the frozen
+  state).
 - **Prohibited:** any "contact support," "request withdrawal," or "emergency exit" affordance.
-- **Source detail (progressive):** show per-source freshness so a technical user understands
-  *why* it's frozen and roughly when it might clear.
+- **Feed detail (progressive):** show the failing cause (heartbeat, band, sequencer, unlisted or
+  dead feed) so a technical user understands *why* it's frozen and roughly when it might clear.
 
 ### Observation-window state (§5): "your deposit is pending"
 - **Trigger:** first deposit escrowed, shares not yet minted.
@@ -481,18 +485,17 @@ non-negotiable custom states are **oracle-frozen** and **observation-window**.
 
 Ordered by how hard they block the build.
 
-- **OQ-1 (blocks frozen-state design): Does `cancelPending()` revert under a tripped breaker?**
-  §5 says pending deposits are excluded from NAV and cancellable before activation, implying
-  cancel may not read NAV. If it doesn't, "cancel your pending deposit" is the *one* action
-  available in the frozen state and the frozen-state screen changes materially. Two-branch spec;
-  engineering must confirm.
-- **OQ-2 (blocks vote flow): Is a wallet-derived (deterministic) salt compatible with the
-  commit hash?** The anti-forfeit design (§3.2) depends on reconstructing the salt from a wallet
-  signature on any device. Confirm the contract's `commit = hash(support, salt)` accepts a
-  client-chosen salt with no server-stored randomness, and that the derivation message is
-  domain-separated per (vault, proposal).
-- **OQ-3 (blocks net-of-fee P&L): There is no HWM-carry projection.** "What performance fee will
-  I pay?" is unanswerable today: HWM is a per-`(member, operator)` USDC loss carryforward (§7)
+- **OQ-1 (answered): `cancelPending()` does not revert under a tripped breaker.** It reads no
+  price (`VaultCore.cancelPending` only deletes the pending record and pays the escrowed USDC
+  back), so a member can reclaim an unactivated deposit while the vault is frozen, and "cancel
+  your pending deposit" is the *one* money action the frozen-state screen offers.
+- **OQ-2 (answered for the contract): a wallet-derived (deterministic) salt is compatible with
+  the commit hash.** The commitment is `keccak256(abi.encode(pid, voter, support, salt))` with a
+  client-chosen `bytes32` salt supplied at reveal, so the anti-forfeit design (§3.2) works with
+  no server-stored randomness. Still open: domain-separating the derivation message per
+  (vault, proposal).
+- **OQ-3 (blocks net-of-fee P&L): There is no loss-carryforward projection.** "What performance
+  fee will I pay?" is unanswerable today: the carry is a per-`(member, operator)` USDC loss carryforward (§7)
   with no indexer projection behind it. Decide whether v1 shows true net-of-fee returns (needs a
   new projection) or shows gross + the fee *rule* only. This gates whether the portfolio can even
   display net returns.
@@ -547,7 +550,7 @@ Ordered by how hard they block the build.
    truth that exit fees stay in the vault and accrue pro rata to every member who remains —
    never routed to the operator, who shares in them only through its own position.
 7. **The current data layer cannot back this product.** New indexer projections (proposal state,
-   per-member position/pending, Mode-F queue, HWM carry, NAV/basket, operator names) are a
+   per-member position/pending, Mode-F queue, loss carryforward, NAV/basket, operator names) are a
    precondition, and `vaultCount` is currently broken. These are ship-blockers, not polish.
 8. **Net:** a calm, disclosure-forward allocator app for crypto-literate humans that makes
    agent-governance mechanics legible and honest, refusing the dark-pattern shortcuts exactly

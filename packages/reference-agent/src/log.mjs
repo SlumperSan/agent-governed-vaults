@@ -33,7 +33,9 @@ export function createLogger({ write = (l) => console.log(l), json = false, nowS
   /** @type {Array<any>} */
   const records = [];
 
-  function emit(level, phase, msg, detail) {
+  function emit(level, phase, rawMsg, detail) {
+    // The message is redacted too: callers interpolate URLs and error text into it.
+    const msg = redact(rawMsg);
     const rec = { t: nowSec(), level, phase, msg, ...(detail !== undefined ? { detail: redact(detail) } : {}) };
     records.push(rec);
     if (json) {
@@ -47,14 +49,16 @@ export function createLogger({ write = (l) => console.log(l), json = false, nowS
 
   return {
     records: () => records,
-    banner(lines) {
+    banner(rawLines) {
       if (json) return;
+      const lines = rawLines.map((l) => redact(String(l)));
       const width = Math.max(...lines.map((l) => l.length), 40);
       write('┌' + '─'.repeat(width + 2) + '┐');
       for (const l of lines) write('│ ' + l.padEnd(width) + ' │');
       write('└' + '─'.repeat(width + 2) + '┘');
     },
-    section(title) {
+    section(rawTitle) {
+      const title = redact(String(rawTitle));
       if (json) {
         records.push({ t: nowSec(), level: 'info', phase: 'section', msg: title });
         write(JSON.stringify({ t: nowSec(), level: 'info', phase: 'section', msg: title }));
@@ -80,7 +84,7 @@ export function createLogger({ write = (l) => console.log(l), json = false, nowS
         return;
       }
       write(`  ${title}`);
-      for (const c of list) write(`    ${c.ok ? '✓' : '✗'} ${c.name}: ${c.detail}`);
+      for (const c of redact(list)) write(`    ${c.ok ? '✓' : '✗'} ${c.name}: ${c.detail}`);
     },
   };
 }

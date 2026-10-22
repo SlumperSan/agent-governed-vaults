@@ -161,6 +161,8 @@ consistent with the chain.
 ONE underlying feed per asset, so all sources age together and the margin is all-or-nothing
 (+1 → −2, no gradual decay). This drill cannot exercise partial-quorum degradation; mainnet's
 three mechanism-diverse sources (Sprint 11) decay independently.
+*Note added 2026-10-21: no multi-source mainnet oracle is in `contracts/src`; the launch oracle,
+`ChainlinkOracle`, reads exactly one Chainlink feed per asset with no quorum.*
 
 **Freeze safety (SF-2/K-4): upgraded from asserted to executed.** The one member-capital path
 that must survive an oracle freeze is `cancelPending` (escrowed USDC is unpriced, so returning

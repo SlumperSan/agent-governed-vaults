@@ -157,11 +157,11 @@ to 0 and `assetBalance(WETH)` to 1980483895862031 on 2026-09-12, filling **70.96
 `minAmountOut`**, which is NOT the same as the H-4 floor and an earlier draft conflated the two:
 `minAmountOut` was 1966530337330907 and the bare oracle floor 1947059739931591, so the fill sits
 171.66 bps above the floor. The H-4 bound is a minimum on received oracle VALUE
-(`executeRebalance`, `VaultCore.sol:943-947`), not the measured delta. Proposal 1 executed carrying no orders.
+(`executeRebalance`, `VaultCore.sol:957-961`), not the measured delta. Proposal 1 executed carrying no orders.
 Proposal 2 reads `status` 2 (Passed) with `expiresAt` 1789340584, so its governance window is open,
 **but it can never execute**, and an earlier draft of this line said "still executable" and
 contradicted this repository's own address book six files away. `Governance.execute` requires
-`keccak256(payload) == p.actionHash` (`Governance.sol:599`) and the committed payload carries a
+`keccak256(payload) == p.actionHash` (`Governance.sol:694`) and the committed payload carries a
 `SwapOrder.deadline` that `AggregationRouterAdapter` compares against `block.timestamp`. That
 deadline has passed and the payload cannot be re-dated without changing its hash, so the proposal is
 permanently unexecutable and simply waits out its window. That is precisely why vault two exists
@@ -288,8 +288,8 @@ position is `scripts/smoke-test.mjs`, a Base Sepolia runner that defaults to `ba
 and mainnet vault creation is the hand-written `factory.createVault(...)` step in DEPLOYMENT §4.
 So this is the value the operator must type, held to the reference config by
 `scripts/test/config-doc-truth.test.mjs`. The protocol cap is 100 bps; 50 is the value exercised
-end-to-end in the soak, and it leaves headroom for a child vault (stacked cap 50+25=75 ≤ 100 was
-proven live, SOAK-REPORT §2). **Decay-period flag (2026-09-01):** this paragraph previously said
+end-to-end in the soak, and it leaves headroom for a child vault (a stacked exit-fee ceiling of
+50+25=75, under the 250 bps registry cap, was proven live, SOAK-REPORT §2). **Decay-period flag (2026-09-01):** this paragraph previously said
 302,400 s (3.5 days). That figure was never what the 50 bps vault ran: the Sepolia smoke vault
 deployed from `base-sepolia.json` at 604,800 s, and only the 25 bps soak drill vaults
 (`scripts/soak/soak-vaults.json`) used 302,400 s. Finance flagged the contradiction (Member Cost
@@ -382,7 +382,7 @@ language, for a reader who is not an auditor.
 | 4 | ⚠ **RETIRED with the aggregator (C-6), not a live risk.** **One WETH/USDC pool serves TWAP legs of both launch assets** | That pool going quiet withdraws a source from both assets at once | Disclosed in the config rather than hidden. **This got materially safer and materially more likely at once:** a quiet pool now makes the TWAP leg WITHHOLD rather than quote a stale tick as fresh (H-2), so correlated withdrawal is a correlated *freeze* rather than a correlated *wrong price*, and at 5 sources there are two of headroom to absorb it. Pool cardinality 5000 verified on-chain |
 | 5 | ⚠ **RETIRED with the aggregator (C-6), not a live risk.** **Pyth is pull-based** | An unfunded keeper lets the pull leg silently lapse, costing one of the five sources | The 3,600 s staleness bound was chosen *for* this (test-asserted). What changed: lapsing used to demote 2-of-3 to a two-element "median" that was a minimum; it now costs one of two spare sources and the price stays a real median. Keeper funding remains an explicit launch-ops item; canary watches per-source freshness |
 | 6 | ⚠ **RETIRED with the aggregator (C-6), not a live risk.** **TWAP output quantized at $1e-6** | Wrong-but-plausible prices for assets under ~$0.01 | Majors-only baskets at launch; filed as a listing constraint, not a code fix, deliberately (precision trades against overflow headroom) |
-| 7 | **x402 returns on broadcast, not finality** | A reorg un-settles a paid read that was already served (~seconds of exposure) | Pennies per read; an operator needing finality can configure a confirmation wait and pay the latency |
+| 7 | **x402 returns on broadcast, not finality** | A reorg un-settles a paid read that was already served (~seconds of exposure) | Pennies per read; an operator needing finality can configure a confirmation wait and pay the latency. **Note 2026-10-21:** since PR 496 the run-your-own settling facilitator no longer returns on broadcast: it waits for a mined success receipt for its own transaction (one confirmation, bounded at 30 s) before returning, and the API's HTTP client waits 45 s for it. "Not finality" still holds; a deeper reorg can still un-settle a served read |
 | 8 | **Replay defenses are layered, not duplicated** | The API's seen-nonce set is process-local and resets on restart | The chain's `authorizationState` is the authority and survives everything, proven live (nonce burned, resubmission refused). The challenge nonce is advisory, documented as such |
 | 9 | **EE-6/E5 child-escrow asymmetry** | A child persistently escrowing an in-kind slice back to a blacklisted parent turns parent exits into reverts | Known residual from the Sprint-6 review; launch baskets and single-level sub-vault plans keep the surface minimal; a deferred-claim mechanism is the eventual fix |
 | 10 | **Vendored GPL-2.0-or-later / MIT math under an MIT repo** (a BUSL repo until 2026-09-05) | License challenge to the distribution | An owner decision, flagged in the audit handoff as out of scope for the technical audit; not a deployment-mechanics risk. This row was never a go/no-go gate, §1 has no such row, and it is not one now |
