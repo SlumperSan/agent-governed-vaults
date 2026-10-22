@@ -62,17 +62,24 @@ export const MIRROR_DAILY_CAP = 100;
 
 /**
  * Issuance limits (A13 finding A1, mirror cap griefing). The on-chain cap is one first-come counter per
- * destination per UTC day and accepts a 7-day expiry. What these limits do, with the registry's single
- * attestor and this signer as its only issuer:
- * - MIRROR_DAILY_CAP on chain still bounds what can mint on a destination in a day; nothing here
- *   changes that bound.
+ * destination per UTC day (MIRROR_DAILY_CAP, 100) and accepts a 7-day expiry. The registry has a single
+ * attestor, and this signer is its only issuer. What the limits do, at the defaults:
+ * - Minting is bounded on chain only: at most 100 mirrors per destination per UTC day, first come. An
+ *   attestation reserves nothing until it is minted, so the signer may issue more than the day has left;
+ *   an honest `mintMirrored` that lands after the 100th reverts `MirrorCapReached` and can retry the
+ *   next UTC day.
  * - The 1 hour expiry stops attestations being hoarded for days and spent in the first block of a day.
- * - Origins younger than YOUNG_ORIGIN_AGE_SECONDS share a sub-budget below the cap, so taking a
- *   destination's whole day needs origins older than that. This raises the cost of a full-day halt of
- *   mirroring on a destination.
- * - They do not prevent that halt. An attacker with enough aged origins can still take every slot left
- *   in a day, and every honest request that day is then refused. The per-holder limit is friction
- *   only: holders are free addresses.
+ * - An origin mints at most once per destination (`AlreadyMirrored`), so filling a destination's day
+ *   consumes 100 distinct origins on that destination.
+ * - Origins younger than 7 days share at most 50 attestations per destination per day, so at least 50
+ *   of those 100 origins must be 7 days old or more. Each holder gets at most 10 per destination per
+ *   day, so at least 10 holder addresses; holders are free addresses, so that is friction only.
+ * - What a full-day halt of one destination costs, per destination per day: 100 origins never usable
+ *   on that destination again, at least 50 of them aged 7 days, each costing whatever registering it
+ *   cost on its home chain (the owner-set fee, at most 100 USDC and possibly zero), minted before the
+ *   honest traffic that day. The same origins can fill every other destination's day once as well.
+ * - None of this prevents that halt. An attacker holding that stock of origins halts mirroring on a
+ *   destination for the day, and every honest mint after the 100th that day reverts.
  * Each default can be overridden by the env var named beside it.
  */
 /** Refuse an `expiry` further out than this (NatSpec rule 5: about one hour). REGISTRY_ATTEST_MAX_EXPIRY_SECONDS */
@@ -116,10 +123,16 @@ export function signerLimits(env = process.env) {
   if (out.youngOriginDailyBudget >= MIRROR_DAILY_CAP) {
     throw new Error(`REGISTRY_ATTEST_YOUNG_ORIGIN_DAILY_BUDGET must be below MIRROR_DAILY_CAP (${MIRROR_DAILY_CAP})`);
   }
+  if (out.minOriginAgeSeconds >= out.youngOriginAgeSeconds) {
+    throw new Error(
+      'REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS must be below REGISTRY_ATTEST_YOUNG_ORIGIN_AGE_SECONDS: otherwise no signed origin is young and the young-origin budget never applies',
+    );
+  }
   return /** @type {any} */ (out);
 }
 
 const sameAddress = (/** @type {string} */ a, /** @type {string} */ b) => a.toLowerCase() === b.toLowerCase();
+const isAddress = (/** @type {unknown} */ v) => typeof v === 'string' && /^0x[0-9a-fA-F]{40}$/.test(v);
 
 /** A caller-supplied count as a bigint, or null when it is missing or not a non-negative integer. */
 function readCount(/** @type {unknown} */ v) {
@@ -127,19 +140,30 @@ function readCount(/** @type {unknown} */ v) {
   return typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? BigInt(v) : null;
 }
 
+/** A chain id or timestamp as a bigint, or null unless it is a positive safe integer, a positive bigint or a positive `0x` hex string. */
+function readPositive(/** @type {unknown} */ v) {
+  const n = typeof v === 'string' ? (/^0x[0-9a-fA-F]+$/.test(v) ? BigInt(v) : null) : readCount(v);
+  return n != null && n > 0n ? n : null;
+}
+
 /**
  * The signer's refusal rules. Returns a reason string to refuse, or null to sign.
  *
  * `readback` is what the Worker read on the origin chain at the `finalized` block, through that
  * chain's own RPC, at signing time; pass null (or leave a field null) for anything it could not read,
- * and the attestation is refused. Nothing is signed on a value the caller supplied but the origin chain
- * did not confirm (A13 finding A4).
+ * and the attestation is refused. A malformed value refuses the same way: `chainId` must be a positive
+ * safe integer, a positive bigint or a positive `0x` hex string; `ownerOf` and `originOfRegistry` must
+ * be `0x` plus 40 hex digits (the zero address is valid for `originOfRegistry`: a native origin reads
+ * zero); `registeredAtSeconds` must be a non-negative integer (number or bigint) that is neither 0 nor
+ * after `nowSeconds`. Nothing is signed on a value the caller supplied but the origin chain did not
+ * confirm (A13 finding A4). `destinationChainId` and `nowSeconds` must be positive integers in the same
+ * forms as `chainId`, or the request is refused.
  *
  * `ownerCodeHashOrigin` is required: `null` means the owner has no code on the origin chain (an EOA),
  * and `undefined` (absent) means the code could not be read, which refuses.
  *
- * `issuance` counts are this signer's own records for the destination in the current UTC day, plus
- * `mirrorsRemainingToday()` read on the destination registry. `issuedTodayToYoungOrigins` counts only
+ * `issuance` counts are this signer's own records for the destination in the current UTC day.
+ * `issuedTodayToYoungOrigins` counts only
  * attestations whose origin was younger than `youngOriginAgeSeconds` when signed. Every count must be
  * a non-negative integer (number or bigint); a missing, null, NaN or fractional count refuses, so a
  * counter store that cannot be read never signs. The counts only bound anything if every signing
@@ -149,43 +173,50 @@ function readCount(/** @type {unknown} */ v) {
  * throws (a getter doing an RPC read that times out, a chain id that is not a number), this function
  * throws instead of returning. The caller must treat any throw as a refusal and never sign.
  * @param {{
- *   destinationChainId: number|bigint,
+ *   destinationChainId: number|bigint|string,
  *   ourRegistry: string,
- *   nowSeconds: number|bigint,
+ *   nowSeconds: number|bigint|string,
  *   attestation: {originChainId: number|bigint, originRegistry: string, owner: string, expiry: number|bigint},
  *   readback: {
- *     chainId: number|bigint|null,     // eth_chainId answered by the origin RPC
+ *     chainId: number|bigint|string|null, // eth_chainId answered by the origin RPC
  *     ownerOf: string|null,            // ownerOf(originAgentId) on the origin registry
  *     originOfRegistry: string|null,   // originOf(originAgentId).registry on the origin registry
  *     registeredAtSeconds: number|bigint|null, // timestamp of the block that minted the origin identity
  *   } | null,
  *   ownerCodeHashOrigin: string | null | undefined, // keccak of the owner's code on the origin chain ('0x' + 64 hex); null = no code; undefined = unreadable
  *   ownerCodeHashDestination?: string | null,
- *   issuance: {issuedTodayToHolder: number|bigint, issuedTodayToYoungOrigins: number|bigint, outstanding: number|bigint, mirrorsRemainingToday: number|bigint},
+ *   issuance: {issuedTodayToHolder: number|bigint, issuedTodayToYoungOrigins: number|bigint},
  * }} p
  * @param {ReturnType<typeof signerLimits>} [limits]
  * @returns {string | null}
  */
 export function signerRefusal(p, limits = signerLimits()) {
+  const destinationChainId = readPositive(p.destinationChainId);
+  if (destinationChainId == null) return 'destination chain id is not a positive integer';
+  const now = readPositive(p.nowSeconds);
+  if (now == null) return 'nowSeconds is not a positive integer';
+
   const a = p.attestation;
   const originChainId = BigInt(a.originChainId);
   if (originChainId === BigInt(POLYGON_CHAIN_ID)) {
     return 'Polygon (137) is a destination only: no finality-depth rule is documented, so it is never an origin';
   }
-  if (originChainId === BigInt(p.destinationChainId)) {
+  if (originChainId === destinationChainId) {
     return 'destination equals the origin chain: a mirror is minted on a different chain from its origin';
   }
 
   const r = p.readback;
-  if (r == null || r.chainId == null) return 'origin chain id could not be read back from the origin chain';
-  if (BigInt(r.chainId) !== originChainId) {
+  const readChainId = r == null ? null : readPositive(r.chainId);
+  if (readChainId == null) return 'origin chain id could not be read back from the origin chain';
+  if (readChainId !== originChainId) {
     return 'the origin RPC answered a different chain id than the attestation names';
   }
   if (!sameAddress(a.originRegistry, p.ourRegistry)) {
     return 'origin registry is not our registry: the destination refuses it (OriginRegistryNotThis)';
   }
-  if (r.ownerOf == null || r.originOfRegistry == null || r.registeredAtSeconds == null) {
-    return 'origin registry or holder could not be read back on the origin chain';
+  const registeredAt = readCount(r.registeredAtSeconds);
+  if (!isAddress(r.ownerOf) || !isAddress(r.originOfRegistry) || registeredAt == null || registeredAt === 0n || registeredAt > now) {
+    return 'origin holder, registry or mint time could not be read back on the origin chain';
   }
   if (!sameAddress(r.ownerOf, a.owner)) {
     return 'holder read back on the origin chain is not the attested owner';
@@ -198,13 +229,12 @@ export function signerRefusal(p, limits = signerLimits()) {
     return 'owner has code on the origin chain and the destination code hash differs or is absent: one party may not control the address on both chains';
   }
 
-  const now = BigInt(p.nowSeconds);
   const expiry = BigInt(a.expiry);
   if (expiry <= now) return 'expiry is not in the future';
   if (expiry > now + BigInt(limits.maxExpirySeconds)) {
     return `expiry is more than ${limits.maxExpirySeconds}s out: long-lived attestations can be hoarded and dumped at the start of a day`;
   }
-  const originAge = now - BigInt(r.registeredAtSeconds);
+  const originAge = now - registeredAt;
   if (originAge < BigInt(limits.minOriginAgeSeconds)) {
     return `origin identity is younger than ${limits.minOriginAgeSeconds}s (finality buffer)`;
   }
@@ -212,9 +242,7 @@ export function signerRefusal(p, limits = signerLimits()) {
   const s = p.issuance;
   const toHolder = readCount(s?.issuedTodayToHolder);
   const toYoung = readCount(s?.issuedTodayToYoungOrigins);
-  const outstanding = readCount(s?.outstanding);
-  const remaining = readCount(s?.mirrorsRemainingToday);
-  if (toHolder == null || toYoung == null || outstanding == null || remaining == null) {
+  if (toHolder == null || toYoung == null) {
     return 'an issuance count is missing or not a non-negative integer: a counter that cannot be read never signs';
   }
   if (toHolder >= BigInt(limits.perHolderDaily)) {
@@ -222,9 +250,6 @@ export function signerRefusal(p, limits = signerLimits()) {
   }
   if (originAge < BigInt(limits.youngOriginAgeSeconds) && toYoung >= BigInt(limits.youngOriginDailyBudget)) {
     return `young-origin daily budget for this destination (${limits.youngOriginDailyBudget}) is spent: origins younger than ${limits.youngOriginAgeSeconds}s wait`;
-  }
-  if (outstanding >= remaining) {
-    return 'unexpired unminted attestations already cover the destination capacity left today';
   }
   return null;
 }
