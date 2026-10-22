@@ -85,9 +85,9 @@
  *
  * ## SCOPE, ON THE SAME TWO AXES `claims-lede-truth.test.mjs` NAMES
  *
- * STORE: this file walks the repository only. The Obsidian vault holds the counsel pack, the ToS
- * draft and the outreach templates, has no CI, and is a named open item in
- * `Rules/claims-surface-spans-two-stores.md` — not a gap this file closes. FILE TYPE: coverage is
+ * STORE: this file walks the repository only. The maintainers' private notes, kept outside this
+ * repository, hold the counsel pack, the ToS draft and the outreach templates, have no CI, and are
+ * a named open item there — not a gap this file closes. FILE TYPE: coverage is
  * bounded by `PUBLIC_EXT`, and `.ts` is not in it, so the walk reads `apps/site/dist/*.html` and
  * not `apps/site/src/copy.ts`. That is deliberate and it is also why the mutation probe for this
  * file plants its red cases in `copy.ts` and REBUILDS: a mutation that only proves the regex works
@@ -153,7 +153,7 @@
  *   - Guard 1 catches the WIDENED claim. A bare "you can exit" with no universal and no promise word
  *     slips through, and that is accepted for the reason guard 6 of the sibling file accepts it: the
  *     alternative reddens every true scoped sentence about redemption.
- *   - Nothing here reads the Obsidian vault, and nothing here proves a deployed vault's parameters.
+ *   - Nothing here reads the private notes, and nothing here proves a deployed vault's parameters.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

@@ -64,6 +64,21 @@ test('screenWalletClient: on a stale list the agent may settle its own queued ex
   assert.equal(w.sent.length, 1);
 });
 
+// CLEAN is all digits, so upper-casing it changes nothing; this address has letters a to f, so the
+// two spellings really differ and dropping either toLowerCase in the own-exit compare reds.
+test('screenWalletClient: own-exit match ignores address case in both directions on a stale list', async () => {
+  const w = recorder();
+  const s = screenWalletClient(w, STALE);
+  const lower = '0x' + 'abcdef'.repeat(6) + 'abcd';
+  const mixed = '0xAbCdEf' + 'aBcDeF'.repeat(5) + 'AbCd';
+  assert.notEqual(lower, mixed);
+  assert.equal(lower.toLowerCase(), mixed.toLowerCase());
+  const settle = (/** @type {string} */ from, /** @type {string} */ member) => ({ ...req(from, 'settleQueuedExit'), args: [member] });
+  await s.writeContract(settle(mixed, lower));
+  await s.writeContract(settle(lower, mixed));
+  assert.equal(w.sent.length, 2);
+});
+
 test('screenWalletClient: a request with no account address fails closed', () => {
   const w = recorder();
   assert.throws(() => screenWalletClient(w, FRESH).writeContract({ functionName: 'deposit' }), /no account address/);

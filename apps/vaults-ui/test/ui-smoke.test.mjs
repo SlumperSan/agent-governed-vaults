@@ -138,14 +138,14 @@ test('UI smoke harness — deposit, vote, exit against a local Base Sepolia fork
   let usdcBeforeDeposit;
   await t.test('setup: fund throwaway signer on the fork only', () => {
     setEthBalance(fork.rpcUrl, member, `0x${(100n * ONE_ETH).toString(16)}`);
-    dealErc20(fork.rpcUrl, cfg.usdc, member, 20_000_000n); // 20 USDC, well over the smoke deposit
+    dealErc20(fork.rpcUrl, cfg.usdc, member, 200_000_000n); // 200 USDC, twice the smoke deposit (100 USDC, the factory floor)
     usdcBeforeDeposit = BigInt(spawnSyncCast(fork.rpcUrl, ['call', cfg.usdc, 'balanceOf(address)(uint256)', member]).split(' ')[0]);
     // NON-VACUITY: the exit round trip below asserts `usdcAfterExit === usdcBeforeDeposit`. That
     // equality holds trivially if both reads ever collapsed to the same wrong value (e.g. the
     // masked-empty-read shape `spawnSyncCast` now throws on above) — pin the baseline to the exact
     // amount `dealErc20` just funded, so the round-trip assertion is checking a known-real number,
     // not two possibly-equal unknowns.
-    assert.equal(usdcBeforeDeposit, 20_000_000n, 'pre-deposit USDC balance must be exactly what dealErc20 funded');
+    assert.equal(usdcBeforeDeposit, 200_000_000n, 'pre-deposit USDC balance must be exactly what dealErc20 funded');
   });
 
   let deployed;

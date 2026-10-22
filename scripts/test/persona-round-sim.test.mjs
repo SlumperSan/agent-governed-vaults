@@ -1,14 +1,12 @@
 // @ts-check
 /**
- * Proves the seeded round (`Obsidian Vault/Agent-Governed Vaults/Decisions/
- * Seed agent personas 2026-09-23.md`) on a local anvil fork — real `DeployTestnet.s.sol`, real
+ * Proves the seeded round (seeded agent personas, 2026-09-23) on a local anvil fork — real `DeployTestnet.s.sol`, real
  * SafeL2 v1.4.1, real Governance/VaultCore bytecode — the slow/fork suite `node --test` picks up
  * alongside `scripts/test/safe-route-fork.test.mjs`, which this file follows for its fork-plumbing
  * pattern (see `scripts/test/lib/safe-fork-chain.mjs` and this file's own
  * `scripts/test/lib/persona-fork-chain.mjs`).
  *
- * WHY BASE SEPOLIA, NOT ARC (full finding:
- * `Obsidian Vault/Agent-Governed Vaults/Findings/2026-09-23-arc-fork-persona-sim.md`). Arc's own
+ * WHY BASE SEPOLIA, NOT ARC (Arc fork persona simulation, 2026-09-23). Arc's own
  * USDC (`0x3600...0000`) calls a native precompile at `0x1800...0000/0001` that anvil cannot
  * execute — `transfer`/`transferFrom` revert on ANY plain anvil fork of Arc, before anything else
  * in this spec could be exercised. This file forks Base Sepolia instead, exactly as

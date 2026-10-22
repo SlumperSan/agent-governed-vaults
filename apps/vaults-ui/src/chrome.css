@@ -66,8 +66,8 @@
    the same failure, so they were left behind and filed. They are now FIXED on
    apps/site — --blue-control, --blue-control-hover and --line-control, measured
    against every ground the stylesheet paints and guarded by
-   apps/site/test/contrast.test.mjs. See
-   Findings/2026-09-19-site-button-rules-fail-wcag-aa.
+   apps/site/test/contrast.test.mjs (the site button rules failed WCAG AA
+   on 2026-09-19).
 
    THE REASON THEY STAY UNPORTED IS NOW THE ORDINARY ONE, not a defect: this
    surface renders no filled button and no bordered ghost control, and a rule

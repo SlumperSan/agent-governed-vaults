@@ -130,7 +130,7 @@ test('tierOf: a feed-identity ALERT that carries HARM pages; the self-clearing s
   };
   // The two LATCHING alerts: the oracle's cached scale / denomination is now permanently wrong and
   // cannot be repaired, only evacuated. Above BTC $100,000 the sane-price band no longer catches a
-  // -2-decimal drift at all (Owner Decisions 2026-09-01 §1), so this is the ONLY detector.
+  // -2-decimal drift at all (from live prices at 2026-09-01), so this is the ONLY detector.
   assert.equal(tierOf(harmful('decimals')), 'page', 'a mis-scaled feed is member capital wrong-priced — SEV-1');
   assert.equal(tierOf(harmful('denomination')), 'page', 'a non-USD-quoted feed is the same latch by another route');
   // The harmless one: a routine Chainlink aggregator swap, re-pinned and self-cleared next sweep.

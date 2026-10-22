@@ -46,12 +46,19 @@
       "initcodeHash": "0x3c0f163000e4e38559bd28a078085a90b9c41ee3b38744884274732382b8367e",
       "address": "0x9d24cef2bC101CBc02303819ac8f611eA7cbAC23"
     },
+    "AgentVaultDeployer": {
+      "salt": "0x05a61df987df7f99f8faa55694e707f845a842dc8191ba9e5b64c6078da45b35",
+      "saltPreimage": "rwally.protocol.v2.AgentVaultDeployer",
+      "initcodeBytes": 24386,
+      "initcodeHash": "0xa0522b1327b67a982c595558352223bb5733ab0855fe8e71abc0c88368855948",
+      "address": "0x1c82C2a5E60Af005E5eC520D39dB634E1E7bef5b"
+    },
     "VaultFactory": {
       "salt": "0xe1f58806a42a380b2f3c321f838c429518693322bf2171d5c223b66eb7f97058",
       "saltPreimage": "rwally.protocol.v2.VaultFactory",
-      "initcodeBytes": 4473,
-      "initcodeHash": "0xcce83d7ba4d685c004fee026f74b3660a7d8265851f10b4a4e26a520c2083dbc",
-      "address": "0xC4a62CdaDDab141b4a69c00F447b00490c7aF81c"
+      "initcodeBytes": 6140,
+      "initcodeHash": "0xaf837474d462b114418d0e690e09deccb65474c408c21473ae2e3f948581e8cd",
+      "address": "0xe31e43645234Beba6d4efE3b1f0618b2FE5d2547"
     }
   }
 }

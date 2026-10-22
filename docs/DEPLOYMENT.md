@@ -84,8 +84,8 @@ allowlist. So the oracle is deployed **before** the factory:
    not a deployer default:** an aggregator-swap drift of ±2 decimals is caught only while
    `hi/100 < spot < 100·lo`, a window `10,000 / (hi ÷ lo)` wide, so the shipped ratio-1000 bands
    give the *least* coverage the constructor allows (10x: WETH $1,000..$10,000, cbBTC
-   $10,000..$100,000) and a tighter band gives more. Row 14 carries the boundaries and the owner
-   memo `Owner Decisions 2026-09-01` §1 the options; do not retune without that decision recorded.
+   $10,000..$100,000) and a tighter band gives more. Row 14 carries the boundaries and the
+   options; do not retune without a recorded decision.
 3. **Verify it on-chain** (read-only, no key): `node scripts/verify-chainlink-oracle.mjs` — must
    exit 0 (every feed: code, `decimals ≤ 18`, `answer > 0`, fresh within heartbeat; sequencer feed
    present and answering; and the band bounds a 2-decimal drift **at the live price**, which the
@@ -121,7 +121,7 @@ gets queried.
 
 ## 2. Deploy the singletons + factory (with the oracle allowlist)
 
-The six protocol singletons deploy through the Arachnid CREATE2 proxy, then take their per-chain
+The seven protocol singletons deploy through the Arachnid CREATE2 proxy, then take their per-chain
 oracle allowlist and one-shot wiring, via
 [`contracts/script/Deploy.s.sol`](../contracts/script/Deploy.s.sol). The broadcast is pinned to
 `PROTOCOL_INITIALIZER` (§10), so `--account` must resolve to that address. Set `BLESSED_ORACLES` from §1,
@@ -139,20 +139,31 @@ forge script script/Deploy.s.sol:Deploy \
 ```
 
 This deploys `OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer`,
-`VaultFactory`, calls `factory.initialize(BLESSED_ORACLES)`, then performs the **irreversible** wiring:
-`registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`, and
-finally `feeEngine.initialize(FEE_TREASURY)`, which sets the treasury once. The script refuses a
+`AgentVaultDeployer`, `VaultFactory`, calls `factory.initialize(BLESSED_ORACLES)` and
+`factory.initializeAgentPath(agentRegistry, agentVaultDeployer)`, then performs the **irreversible**
+wiring: `registry.wire(factory, feeEngine)` → `subReg.wire(factory)` → `gov.wireSubVaultRegistry(subReg)`,
+and finally `feeEngine.initialize(FEE_TREASURY)`, which sets the treasury once. The script refuses a
 real-chain run with `FEE_TREASURY` unset or zero, and the engine takes no fee until the treasury is set.
 `test/Deploy.t.sol` asserts each wire locks; re-running `registry.wire` or `subReg.wire` reverts
-`AlreadyWired`, re-running `gov.wireSubVaultRegistry` reverts `AlreadyWiredSubRegistry`, and a second
-`initialize` (the factory's or the fee engine's) reverts `AlreadyInitialized`.
+`AlreadyWired`, re-running `gov.wireSubVaultRegistry` reverts `AlreadyWiredSubRegistry`, a second
+`initialize` (the factory's or the fee engine's) reverts `AlreadyInitialized`, and a second
+`initializeAgentPath` reverts `AgentPathAlreadyInitialized`.
+
+The agent ID registry (`RWAllyAgentRegistry`) is **not** one of the seven and the script does not deploy
+it. It has its own vanity salt and record, `contracts/config/agent-registry-create2.json`, and the
+script reads its `address` from there. Deploy and initialize the registry on the chain first, as its own
+step: the script reverts before broadcasting anything if that address has no code, and
+`initializeAgentPath` refuses an address with no code, because the factory pins the registry for good.
+`factory.createAgentVault` reverts `AgentPathNotInitialized` until `initializeAgentPath` has run, and
+`initialized()` does not imply it. `DeployTestnet.s.sol` does not set the agent path, so on a testnet
+brought up with it `createAgentVault` reverts `AgentPathNotInitialized`.
 
 Ordering note (#10): `VaultDeployer` **must** be deployed before `VaultFactory`, which pins it
 immutably in its constructor (under CREATE2 its address is known in advance, so the order is bookkeeping,
 but the factory's initcode embeds that address). It takes no constructor arguments and needs no wiring — it holds
 no authority (see [audit/walkthroughs/VaultDeployer.md](audit/walkthroughs/VaultDeployer.md)).
 
-Record the six addresses printed by the script.
+Record the seven addresses printed by the script, and the agent registry address it read.
 
 ## 3. Execution adapters (per-vault) — and the DEFERRED custom oracle
 
@@ -276,12 +287,14 @@ factory.createVault(VaultFactory.VaultParams({
 > `<5`-member signer quorum regime counts any address with shares > 0 toward its head count, so a
 > cheap minimum deposit lets an attacker buy the regime flip (`minDepositUsdc` to reach 5 members
 > and pass a plurality alone). Dust seats can no longer lock out a member holding over half the
-> eligible stake (`Governance.finalize`, `forStakeMajority`). There is no safe
-> contract-level floor (a fraction-of-stake floor repeats M-6's liveness cliff). **Set
+> eligible stake (`Governance.finalize`, `forStakeMajority`). No contract floor scales with stake
+> or capacity (a fraction-of-stake floor repeats M-6's liveness cliff). The factory's one floor is
+> absolute: `createVault` and `createChildVault` revert `MinDepositBelowFloor` when `minDepositUsdc`
+> is below `MIN_DEPOSIT_FLOOR_USDC`, 100 USDC in 6-decimal base units. **Above that, set
 > `minDepositUsdc` to an economically meaningful value relative to `capacityCapUsdc`** so that
-> manufacturing ~4 dust members costs a materially non-trivial sum. 1 USDC (the testnet smoke value)
-> is NOT acceptable for a real vault; the mainnet reference template uses 100 USDC. See
-> AI-AUDIT-REPORT.md H-8 and THREAT-MODEL.md CM-7.
+> manufacturing ~4 dust members costs a materially non-trivial sum. The mainnet reference template
+> uses the floor itself, 100 USDC; the 1 USDC the deployed Base Sepolia smoke vault carries predates
+> the floor. See AI-AUDIT-REPORT.md H-8 and THREAT-MODEL.md CM-7.
 
 Then the creator registers governance config in a second tx:
 `governance.registerVault(vault, GovConfig{...})` (quorum ≥ 25% floor; a child's quorum must be
@@ -292,7 +305,7 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 
 > **Sub-vaults are DISABLED at launch (Critical C-1 remediation, "root vaults only").** The former
 > manual warning here is now an enforced contract invariant: `Deploy.s.sol` deploys
-> `VaultFactory` through `ProtocolCreate2`, which passes `allowSubVaults = false` (`ProtocolCreate2.sol:37`) — a constructor immutable, so it binds that factory
+> `VaultFactory` through `ProtocolCreate2`, which passes `allowSubVaults = false` (`ProtocolCreate2.sol:45`) — a constructor immutable, so it binds that factory
 > rather than the protocol. On it `createChildVault` reverts `SubVaultsDisabled` and every vault it
 > deploys is wired `subVaultRegistry = address(0)` — intrinsically root-only. This closes C-1
 > ([#33](https://github.com/SlumperSan/agent-governed-vaults/issues/33)) and the sub-vault-only
@@ -629,8 +642,8 @@ diff is mergeable). Run it by hand before cutting a new deployment record, or wh
 
 ## 10. Same-address deployment (CREATE2)
 
-Six protocol singletons are built to have the same address on every chain: `OperatorRegistry`,
-`SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer` and `VaultFactory`. Each is deployed by
+Seven protocol singletons are built to have the same address on every chain: `OperatorRegistry`,
+`SubVaultRegistry`, `FeeEngine`, `Governance`, `VaultDeployer`, `AgentVaultDeployer` and `VaultFactory`. Each is deployed by
 sending `salt || initcode` to Arachnid's deterministic deployment proxy
 (`0x4e59b44847b379578588920cA78FbF26c0B4956C`, 69 bytes of runtime, present on Arc, Base, Arbitrum,
 Ethereum and Polygon). The address is a function of the proxy, a fixed per-contract salt with no chain
@@ -639,20 +652,23 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
 - **What is per chain.** `ChainlinkOracle` and `AggregationRouterAdapter` are not part of the set: their
   whole content is per-chain configuration, so they are deployed per chain with plain CREATE. The one
   per-chain input to a singleton, the oracle allowlist, is set after deployment by
-  `VaultFactory.initialize`.
+  `VaultFactory.initialize`. The agent registry's address is not in the factory's initcode either: the
+  registry's vanity salt is mined at code freeze, so the factory learns it from
+  `VaultFactory.initializeAgentPath`, and the factory keeps one address on every chain whatever that salt
+  turns out to be.
 - **Who may initialise.** `PROTOCOL_INITIALIZER`
   (`0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35`, constant in `contracts/src/lib/ProtocolInitializer.sol`)
-  is the only address that can call `factory.initialize`, `feeEngine.initialize`, `registry.wire`, `subReg.wire`
-  and `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
-  been the proxy. Each call works once. That is five one-shot calls per chain, and `factory.initialize` is the
-  one that decides which oracles a vault may use: the oracle allowlist, where an empty list leaves the C-6 gate off for good. `feeEngine.initialize` sets the treasury address the v2 fee engine credits a share of each performance fee (a zero address is refused, and until it runs the engine takes no fee). The three wires check only the caller and non-zero arguments, so they also choose which factory, fee engine and sub-registry the registries point at. The
+  is the only address that can call `factory.initialize`, `factory.initializeAgentPath`, `feeEngine.initialize`,
+  `registry.wire`, `subReg.wire` and `gov.wireSubVaultRegistry`. It was `msg.sender` at construction before; under CREATE2 that would have
+  been the proxy. Each call works once. That is six one-shot calls per chain, and `factory.initialize` is the
+  one that decides which oracles a vault may use: the oracle allowlist, where an empty list leaves the C-6 gate off for good. `factory.initializeAgentPath` pins the agent registry and the agent vault deployer for good. `feeEngine.initialize` sets the treasury address the v2 fee engine credits a share of each performance fee (a zero address is refused, and until it runs the engine takes no fee). The three wires check only the caller and non-zero arguments, so they also choose which factory, fee engine and sub-registry the registries point at. The
   live Arc set (v1, plain CREATE) is different: its key made only the three wire calls, all three made, and
   its factory fixed the allowlist in its constructor and has no `initialize`.
 - **Order on each chain.** Gate on the proxy having 69 bytes and each predicted address being empty. `ProtocolCreate2.create`
   reverts on an address that already has code, so a half-run or a squatted address is finished by sending
   the remaining creates by hand, after checking the runtime at each existing address against a local
-  build. Deploy the six (any order). Deploy the per-chain oracle and adapter.
-  Send `factory.initialize([oracle])`, then run the initialisation preflight (next bullet). Only when it
+  build. Deploy the seven (any order), with the agent registry already deployed. Deploy the per-chain oracle and
+  adapter. Send `factory.initialize([oracle])` and `factory.initializeAgentPath(agentRegistry, agentVaultDeployer)`, then run the initialisation preflight (next bullet). Only when it
   passes send the three wires and `feeEngine.initialize(treasury)`. An uninitialised factory has its allowlist off; `createVault` and
   `createChildVault` revert `NotInitialized` until `initialize` lands.
 - **Initialisation preflight, per chain, before any wire, vault or announced address.**
@@ -660,7 +676,9 @@ id in it, and the hash of the initcode, so no initcode may take a per-chain valu
   reads, on at least two RPC endpoints per chain: the chain id, code at the manifest's `VaultFactory`,
   `initialized()` and `oracleAllowlistEnforced()` true, `isAllowedOracle(o)` true for every oracle in the
   plan, and that the factory's single `Initialized` event lists exactly the plan's oracles (a mapping
-  cannot be enumerated, so the event is what catches an extra blessed oracle). A read that fails is a
+  cannot be enumerated, so the event is what catches an extra blessed oracle). It also reads
+  `agentPathInitialized()` true, `agentRegistry()` equal to the plan's `agentRegistry` and
+  `agentVaultDeployer()` equal to the manifest's `AgentVaultDeployer`, each with code. A read that fails is a
   failure, not a skip. Exit 1 means do not wire, do not create a vault, do not announce the address.
   `scripts/test/protocol-initialize-preflight.test.mjs` runs it against a fake chain.
 - **Recovery on a wrongly initialised chain is a new salt.** `initialize` works once, so a factory that

@@ -46,7 +46,7 @@
  * fail on the other — it passes, which reads identically to being safe.
  *
  * The project's claim-bearing prose lives in TWO stores. This repo is one. The other is the
- * Obsidian vault, which holds the counsel pack, the ToS draft, the outreach templates, the website
+ * maintainers' private notes, kept outside this repository, which hold the counsel pack, the ToS draft, the outreach templates, the website
  * copy and the go-to-market hooks — by volume the most claim-dense prose in the project, and the
  * half with the highest consequence. It has no CI, and several agent sessions edit it live.
  *
@@ -56,9 +56,8 @@
  * securities memo. Two peers found it by hand. This file structurally could not have.
  *
  * The two names above are a CITATION AND AN INVENTORY, not a live process, and after 2026-09-04
- * they are the only reason the word survives in this file. On that date the owner removed the
- * review-marker workflow outright — "The audit counsel is now becoming an issue with
- * repetitiveness. Remove them entirely so that we can work faster." — so the eighty `apps/site`
+ * they are the only reason the word survives in this file. On that date the review-marker
+ * workflow was removed outright, because the markers were repetitive and slowed work, so the eighty `apps/site`
  * markers are gone, and no test reds if one returns: that rule is held by review. Neither line here was a
  * rule: nothing in this file has ever exempted a marked block from a guard, and there is nothing
  * to delete. They were left standing deliberately, because renaming a document that exists and a
@@ -74,8 +73,8 @@
  * manufactures a green. A vault-side check needs its own design: either explicitly fenced guardrail
  * sections, or the honest acceptance that it emits a READ LIST, not a verdict.
  *
- * So the vault is a NAMED open item, tracked in `Rules/claims-surface-spans-two-stores.md`, and not
- * a silent one. Anyone extending this file: widen the store only together with that design.
+ * So the vault is a NAMED open item, tracked in the maintainers' notes as "the claims surface spans
+ * two stores", and not a silent one. Anyone extending this file: widen the store only together with that design.
  *
  * **SCOPE HAS A SECOND AXIS, AND IT IS THE ONE THAT ACTUALLY BIT.** The paragraphs above draw the
  * boundary at the STORE (repo vs vault) and a reader finishes them believing the repo is covered.
@@ -314,7 +313,7 @@ test('probe: the product-phrase exemption covers the phrase and nothing around i
   };
   // The permitted phrase, in the shapes it actually ships in.
   //
-  // THE SHORT FORM IS THE ONE THAT SHIPS NOW. On 2026-09-09 the owner asked the site to stop
+  // THE SHORT FORM IS THE ONE THAT SHIPS NOW. On 2026-09-09 the site was changed to stop
   // reading as a one-chain site, and the positioning line lost its chain: the hero, the README and
   // the three llms.txt copies all say "RWAlly is the AI agent trading index." The long form stays
   // listed beside it because it is still in the history and a reader who finds it there should not

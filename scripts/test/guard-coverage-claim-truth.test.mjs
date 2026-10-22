@@ -9,7 +9,7 @@
  * `vault-lint.mjs` already use. The repository half (`docs/**`) is walked in every environment,
  * including CI, and NEVER skips — a check that can skip its primary corpus is a check that will,
  * silently, the day someone forgets to fetch it. The vault half
- * (`Findings/`, `Rules/`, `Decisions/` under the Obsidian vault) exists only on the machine this was
+ * (`Findings`, `Rules`, `Decisions` under the local notes root) exists only on the machine this was
  * written on; CI has no vault at all. When it is absent this prints a visible skip line naming the
  * missing path and moves on — it does not fail, and it does not silently return zero findings as if
  * the vault had been read and come back clean.
@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseClaims, evaluateClaims, indexTestFiles, resolveSuite } from '../lib/guard-coverage-claims.mjs';
@@ -29,7 +30,8 @@ const rel = (abs) => path.relative(REPO, abs).split(path.sep).join('/');
  * (`scripts/vault-lint.mjs`'s `DEFAULT_VAULT`). Absent on any machine other than the one this was
  * written on, and always absent in CI.
  */
-const VAULT_ROOT = 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const VAULT_ROOT = process.env.AGV_VAULT_ROOT
+  || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults');
 const VAULT_SUBDIRS = ['Findings', 'Rules', 'Decisions'];
 
 const SKIP_DIRS = new Set([
@@ -164,7 +166,7 @@ test('every "<suite>.test.mjs (enforces|covers|pins|guards) `token`" claim resol
     allProblems.map((p) => `${p.doc}:${p.claim.line}`),
     [],
     'A claim about a guard does not hold.\n' +
-      'Fix the false sentence itself (see `Rules/fix-the-source-not-only-the-consumer.md`) — never\n' +
+      'Fix the false sentence itself, at its source and not only in a consumer — never\n' +
       'annotate it with a correction beside the false claim.\n\n' +
       allProblems
         .map(

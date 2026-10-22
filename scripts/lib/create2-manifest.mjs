@@ -22,8 +22,20 @@ export const MANIFEST_PATH = path.join(ROOT, 'contracts', 'config', 'create2-man
 export const SALT_PREFIX = 'rwally.protocol.v2.';
 export const ALLOW_SUB_VAULTS = false;
 
-/** Deployment order is dependency order: FeeEngine embeds the registry, the factory embeds five. */
-export const CONTRACTS = ['OperatorRegistry', 'SubVaultRegistry', 'FeeEngine', 'Governance', 'VaultDeployer', 'VaultFactory'];
+/**
+ * Deployment order is dependency order: FeeEngine embeds the registry, the factory embeds five.
+ * AgentVaultDeployer embeds nothing and the factory does not embed it (it is wired through
+ * `VaultFactory.initializeAgentPath`), so it sits beside VaultDeployer.
+ */
+export const CONTRACTS = [
+  'OperatorRegistry',
+  'SubVaultRegistry',
+  'FeeEngine',
+  'Governance',
+  'VaultDeployer',
+  'AgentVaultDeployer',
+  'VaultFactory',
+];
 
 /** @param {string} name */
 export function artifactPath(name) {

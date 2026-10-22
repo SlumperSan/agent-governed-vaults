@@ -2,7 +2,7 @@
  * Card 209: scripts/build-rebalance-order.mjs always encoded the contract's ceiling
  * (`MAX_REBALANCE_SLIPPAGE_BPS`, 200 bps / 2%) as the payload's `maxSlippageBps`, with no CLI
  * override -- every real rebalance authorised the worst loss VaultCore would tolerate, whatever
- * the pool depth or order size. CTO decision 2026-09-23: default to a per-order DERIVED value
+ * the pool depth or order size. Decision 2026-09-23: default to a per-order DERIVED value
  * (`ceil(poolFeeBps + measuredExecutionGapBps) + 25 bps`, capped at 100 bps), with an explicit
  * `--max-slippage-bps N` override bounded by the chain ceiling and by the derived minimum.
  *

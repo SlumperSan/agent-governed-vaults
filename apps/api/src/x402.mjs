@@ -95,6 +95,14 @@
  */
 
 import { randomBytes } from 'node:crypto';
+import { VersionedMessage } from '@solana/web3.js';
+// shortcut: an apps-to-apps import (Node 24 strips the types), as packages/reference-agent/src/screen.mjs
+// does; move sanctions.ts and sdn-addresses.ts to a shared package when a fourth consumer appears.
+import {
+  assertNotSanctioned,
+  SanctionsListStaleError,
+  SanctionsRefusalError,
+} from '../../vaults-ui/src/lib/sanctions.ts';
 
 const HEADER_REQUIRED = 'payment-required';
 const HEADER_SIGNATURE = 'payment-signature';
@@ -367,6 +375,78 @@ export function checkEnvelopeAgainstPrice(price, env, nowMs) {
 }
 
 /**
+ * Facilitator refusals that are reached before anything is broadcast, so the payment certainly did
+ * not settle and its replay key may be released for a corrected retry. Taken from the reasons the
+ * in-repo facilitators return (`facilitator.mjs` shape and signer checks, `facilitator-server.mjs`
+ * price checks, `svm-exact.mjs` transaction decoding). Everything else keeps the key reserved:
+ * a transport failure (`*-unreachable`, `*-http-*`, `*-malformed-response`), a settle-leg failure,
+ * `authorization-used`, and any reason not listed here.
+ *
+ * shortcut: a third-party facilitator's `/verify` `invalidReason` is free text this list cannot
+ * recognise, so on `FACILITATOR=standard` a refused payment keeps its key and the client must sign a
+ * fresh nonce (each 402 issues one); upgrade if the facilitator interface gains a settled/unsettled
+ * flag.
+ */
+const DEFINITE_REJECTIONS = new Set([
+  'no-envelope', 'no-authorization', 'nonpositive-value', 'authorization-expired',
+  'signer-mismatch', 'smart-account-needs-rpc', 'smart-account-signature-invalid',
+  'counterfactual-account-not-deployed', 'stub-deny', 'no-challenge-price',
+  'no-challenge', 'challenge-bad-payTo', 'recipient-mismatch', 'asset-mismatch', 'network-mismatch',
+  'underpaid', 'no-price', 'nonpositive-price', 'price-names-no-network', 'unsupported-x402-version',
+  'no-transaction', 'no-instructions', 'no-transfer', 'more-than-one-transfer',
+  'token-instruction-is-not-transferchecked', 'source-is-destination', 'authority-is-fee-payer',
+]);
+const DEFINITE_REJECTION_PREFIX = /^(bad-|wrong-|transaction-|transfer-|expected-two-signers-got:)/;
+
+/** @param {string|undefined} reason */
+function isDefiniteRejection(reason) {
+  return typeof reason === 'string' && (DEFINITE_REJECTIONS.has(reason) || DEFINITE_REJECTION_PREFIX.test(reason));
+}
+
+/**
+ * The replay key of a serialized Solana transaction: the base64 of its MESSAGE bytes, or `null` when
+ * the bytes are not exactly a signature section followed by one canonical message.
+ *
+ * The message is what every signature covers, so two envelopes with the same message are the same
+ * payment. Keying on anything wider let one payment through several times. The base64 text as sent
+ * failed first: `Buffer.from(b64, 'base64')` accepts stripped padding, whitespace and the URL-safe
+ * alphabet (R494 B1). The decoded wire bytes failed next (R494b B2): the facilitator overwrites the
+ * fee payer slot with its own signature, `VersionedTransaction.deserialize` drops trailing bytes, and
+ * the signature count accepts a non-minimal shortvec, so junk in slot 0, extra bytes or `0x82 0x00`
+ * for 2 each made a new key for one broadcast. None of those touch the message.
+ *
+ * Trailing bytes are refused rather than ignored, and so is a message that does not re-serialize to
+ * the bytes it came from: the facilitator signs and broadcasts the re-serialized form, so anything
+ * else is not what it would send.
+ *
+ * @param {string} b64
+ * @returns {string|null}
+ */
+function svmReplayKey(b64) {
+  const raw = Buffer.from(b64, 'base64');
+  // The signature count: a compact-u16 (shortvec), at most three bytes.
+  let count = 0;
+  let i = 0;
+  for (;;) {
+    if (i >= raw.length || i >= 3) return null;
+    const byte = raw[i];
+    count |= (byte & 0x7f) << (7 * i);
+    i += 1;
+    if (!(byte & 0x80)) break;
+  }
+  const messageBytes = raw.subarray(i + 64 * count);
+  if (messageBytes.length === 0) return null;
+  let message;
+  try {
+    message = VersionedMessage.deserialize(messageBytes);
+  } catch {
+    return null;
+  }
+  if (!Buffer.from(message.serialize()).equals(messageBytes)) return null;
+  return messageBytes.toString('base64');
+}
+
+/**
  * Core gate. Framework-agnostic: given a raw request's headers and a price + facilitator, returns
  * either a 402 response spec (challenge) or an "authorized" verdict with the PAYMENT-RESPONSE
  * header to echo. Replay protection is delegated to the facilitator (EIP-3009 nonces are
@@ -419,9 +499,26 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   const localCheck = checkEnvelopeAgainstPrice(price, env, nowMs);
   if (!localCheck.ok) return require402(`payment invalid: ${localCheck.reason}`);
 
+  // OFAC SDN SCREEN ON THE EVM PAYER, BEFORE THE REPLAY KEY IS RESERVED AND BEFORE ANY FACILITATOR
+  // CALL, so a refused payer neither reaches the facilitator nor leaves a key behind that would block
+  // a later valid payment. One choke point covers every facilitator. Branched on `price` (the
+  // server's), never on the envelope, for the reason at `checkEnvelopeAgainstPrice`. Fails closed: a
+  // list older than its freshness ceiling refuses every payment. This screens what this server
+  // accepts; it cannot stop a transfer made directly against USDC or the Protocol's contracts.
+  // SVM payers are not screened here: the vendored list is EVM-only.
+  if (!price.svm) {
+    try {
+      assertNotSanctioned(env.authorization?.from, nowMs);
+    } catch (err) {
+      if (err instanceof SanctionsRefusalError || err instanceof SanctionsListStaleError)
+        return require402('payment refused: payer screening');
+      throw err;
+    }
+  }
+
   // AN SVM ENVELOPE HAS NO `nonce`, so reading one leaves this guard inert on that path. The
-  // transaction bytes are the right key: they carry the payer's signature over a specific blockhash,
-  // so two envelopes with identical bytes ARE the same payment. Solana refuses a duplicate signature
+  // transaction message is the right key: the payer signs it over a specific blockhash, so two
+  // envelopes with the same message ARE the same payment. Solana refuses a duplicate signature
   // within the blockhash's ~2-minute life on its own, which is the real protection; this is the
   // local half, and an inert local half is worse than an absent one because it looks present.
   //
@@ -434,14 +531,30 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   // `env.scheme` branch fixed above, one line beneath the comment explaining why it was a defect.
   // A client-supplied field must never select which server check runs, nor what it runs on.
   const nonce = price.svm ? env.transaction : env.authorization?.nonce;
-  if (seenNonces && nonce) {
-    if (seenNonces.has(nonce)) return require402('payment invalid: replayed-nonce');
+  // THE KEY IS RESERVED BEFORE THE AWAIT, NOT RECORDED AFTER IT. It was checked here and added only
+  // once `verifyAndSettle` returned, so every copy of one payment that arrived during that await
+  // passed the check: three concurrent copies, three 200s, three broadcasts (A16 H1). An EIP-3009
+  // nonce is a bytes32, so `0xAB..` and `0xab..` are the same authorization under the same signature
+  // and must be one key. The SVM key is the transaction MESSAGE, see `svmReplayKey`.
+  let key = nonce;
+  if (price.svm) {
+    key = svmReplayKey(nonce);
+    if (!key) return require402('payment invalid: bad-transaction');
+  } else if (typeof nonce === 'string' && nonce) {
+    key = nonce.toLowerCase();
+  }
+  if (seenNonces && key) {
+    if (seenNonces.has(key)) return require402('payment invalid: replayed-nonce');
+    seenNonces.add(key);
   }
 
+  // A throw from the facilitator leaves the key reserved: the payment may have settled.
   const settled = await facilitator.verifyAndSettle({ price }, env);
-  if (!settled.ok) return require402(`settlement failed: ${settled.reason ?? 'unknown'}`);
+  if (!settled.ok) {
+    if (seenNonces && key && isDefiniteRejection(settled.reason)) seenNonces.delete(key);
+    return require402(`settlement failed: ${settled.reason ?? 'unknown'}`);
+  }
 
-  if (seenNonces && nonce) seenNonces.add(nonce);
   return {
     status: 200,
     headers: {
@@ -467,7 +580,9 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
  * @param {PriceSpec} p.price
  * @param {object} p.env                       the decoded PAYMENT-SIGNATURE envelope
  * @param {{ok:boolean, receiptId?:string}} p.settled
- * @param {string|undefined} p.nonce           the replay key `gate()` recorded
+ * @param {string|undefined} p.nonce           the nonce (or SVM transaction) as the client sent it;
+ *                                             `gate()` keys its replay set on the lower-cased form
+ *                                             (an SVM transaction on its message bytes)
  */
 export function buildSettlementResponse({ price, env, settled, nonce }) {
   const payer = env?.authorization?.from;

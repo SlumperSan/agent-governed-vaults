@@ -19,7 +19,7 @@
  * traced logo's casing lives in its vector paths, not in text, and this guard reads only text.
  * The site's traced wordmark, lockup and comic mark drew "Rwally" and were referenced by nothing;
  * they were deleted on 2026-09-23 rather than redrawn, because pictorial marks and letterforms are
- * banned (Design/mark-elimination-record-2026-09-18). The same comic artwork survives only in
+ * banned (design decision, 2026-09-18). The same comic artwork survives only in
  * `apps/app`, which is retiring into `apps/vaults-ui` and is not what app.rwally.com serves. This
  * guard is about the string, and nothing here should be taken as evidence about the picture.
  *

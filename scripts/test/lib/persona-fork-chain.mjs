@@ -11,8 +11,7 @@
  * per the persona spec's hard constraint 1: "the owner funds and holds every wallet... on the
  * fork, scripts sign with throwaway keys").
  *
- * WHY BASE SEPOLIA, NOT ARC. See `Obsidian Vault/Agent-Governed Vaults/Findings/
- * 2026-09-23-arc-fork-persona-sim.md`: Arc's USDC is backed by a native precompile
+ * WHY BASE SEPOLIA, NOT ARC (Arc fork persona simulation, 2026-09-23): Arc's USDC is backed by a native precompile
  * (`0x1800...0000/0001`) anvil cannot execute, so a transfer/transferFrom of Arc's own USDC
  * reverts on any plain anvil fork of Arc. This file forks Base Sepolia instead — the same real
  * `DeployTestnet.s.sol` / real SafeL2 1.4.1 pattern `safe-fork-chain.mjs` and

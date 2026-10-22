@@ -275,7 +275,7 @@ test("the favicon's literal colours match apps/site/src/tokens.css, not a hand-c
   // canonical). An SVG cannot read a CSS custom property, so the values are copied literally here
   // and this pins them against drift, the same way the connect-src/.env.example test above does.
   //
-  // ONLY --bg AND --blue, DELIBERATELY. The favicon (Threshold, Design/brand-threshold/favicon.svg)
+  // ONLY --bg AND --blue, DELIBERATELY. The favicon (Threshold, the brand source favicon.svg)
   // is the brand ground plus a single-accent fill — no --blue-bright anywhere in it. That is the
   // 2026-09-18 decision's own rule, not an oversight: "two blues collapse into one muddy shape at
   // 16px", so a second blue reappearing here is a regression, not a palette update, and the

@@ -107,7 +107,7 @@ contract SubVaultsTest is Test {
             basketAssets: basket,
             oracle: IOracleAggregator(address(oracle)),
             capacityCapUsdc: 1_000_000_000 * USDC_1,
-            minDepositUsdc: 10 * USDC_1,
+            minDepositUsdc: 100 * USDC_1,
             exitFeeMaxBps: exitFeeBps,
             exitFeeDecayPeriod: exitFeeBps == 0 ? 0 : 30 days,
             allowedAdapters: new address[](0)
@@ -377,14 +377,33 @@ contract SubVaultsTest is Test {
     /// @dev A fresh parent/child pair (parent min deposit 1 unit) where alice holds almost all of the
     /// parent and bob holds 0.5 USDC of it, with every USDC allocated to the child. The child's shares
     /// are minted 1:1 (1 USDC is 1e18 share-wei), so bob's slice of the parent is 0.5e18 child
-    /// share-wei, below the floor.
+    /// share-wei, below the floor. The factory refuses a minimum below MIN_DEPOSIT_FLOOR_USDC, so this
+    /// parent is built through the permissionless VaultDeployer directly (same constructor tuple as
+    /// the factory's `_deploy`, unattested); the child still comes from `createChildVault`.
     function _pairWithAMinority() internal returns (VaultCore p, VaultCore c, address bob) {
         address[] memory b = new address[](1);
         b[0] = address(weth);
-        VaultFactory.VaultParams memory pp = _params(b, 50);
-        pp.minDepositUsdc = 1;
         vm.prank(operator);
-        p = VaultCore(factory.createVault(pp));
+        p = VaultCore(
+            factory.vaultDeployer()
+                .deploy(
+                    abi.encode(
+                        address(usdc),
+                        b,
+                        operator,
+                        registry,
+                        gov,
+                        fees,
+                        oracle,
+                        1_000_000_000 * USDC_1,
+                        uint256(1),
+                        uint256(50),
+                        uint256(30 days),
+                        new address[](0),
+                        address(subReg)
+                    )
+                )
+        );
         vm.prank(operator);
         c = VaultCore(factory.createChildVault(_params(b, 50), address(p)));
 

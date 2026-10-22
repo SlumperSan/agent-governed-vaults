@@ -265,7 +265,7 @@ export interface PoolTickRead {
  * Everything `@atlas/size-impact`'s `sizeForecast` needs for BOTH the deposit and the exit walk,
  * in one read pass. `ok: false` covers every way the pool cannot be identified or its core state
  * cannot be read — the caller must render the qualitative-only notice in that case, never a
- * stale or fallback figure (see Decisions/Deposit size warning is notice-only 2026-09-18.md).
+ * stale or fallback figure (the deposit size warning is notice-only).
  * A discriminated union rather than independently-nullable fields (unlike `ExitGateInputs`
  * above): every field here comes from the SAME pool-core read, so there is no partial-failure
  * shape to preserve — either all of it resolved or none of it did.

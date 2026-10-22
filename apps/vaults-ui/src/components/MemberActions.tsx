@@ -498,8 +498,8 @@ export function MemberActions({ vault }: Props) {
         })
       : null;
   // DEPOSIT is a FORECAST, never a quote — "a deposit like this would move price by roughly X%
-  // today", never "your deposit will do X" — per Decisions/Deposit size warning is notice-only
-  // 2026-09-18.md. An IMMEDIATE exit is a genuine quote ("this exit would move..."); a QUEUED
+  // today", never "your deposit will do X" — the deposit size
+  // warning is notice-only (decided 2026-09-18). An IMMEDIATE exit is a genuine quote ("this exit would move..."); a QUEUED
   // exit (this vault's Mode F, see `pendingExecution` above) takes the deposit's forecast wording
   // and re-renders after settlement with what actually happened — the settlement side of that is
   // the existing `preview`/`pendingExecution` machinery above, unchanged by this notice.
@@ -526,8 +526,8 @@ export function MemberActions({ vault }: Props) {
         ? <>a {kind === 'deposit' ? 'deposit' : 'exit'} like this would move the cirBTC/USDC pool&rsquo;s price by roughly{' '}
             <strong>{pct}%</strong> today &mdash; realised later, at a depth not yet knowable, since liquidity and spot both drift.</>
         : <>this exit would move the cirBTC/USDC pool&rsquo;s price by roughly <strong>{pct}%</strong> right now, in this transaction.</>;
-    // Escalating in prominence by size, per Decisions/Deposit size warning is notice-only
-    // 2026-09-18.md — never a gate, so this is the ONLY mitigation and its prominence is
+    // Escalating in prominence by size; the deposit size warning is notice-only
+    // (decided 2026-09-18) — never a gate, so this is the ONLY mitigation and its prominence is
     // load-bearing. Only classes styles.css actually defines: `dim` (calm/info) below 1%,
     // default `note` tone from 1%, `tag-warn` (the same strong tone the frozen/queued-exit
     // notices above already use) from 3%.
@@ -583,8 +583,8 @@ export function MemberActions({ vault }: Props) {
         </button>
       </div>
       {/* Above the fold, never collapsible, never a gate — the notice is the entire mitigation
-          for depth risk here (no deposit cap), so its prominence is load-bearing. See
-          Decisions/Deposit size warning is notice-only 2026-09-18.md. */}
+          for depth risk here (no deposit cap), so its prominence is load-bearing. The
+          deposit size warning is notice-only by the 2026-09-18 decision. */}
       {sizeImpactNotice(depositForecast, 'deposit')}
       <p className="note dim">
         Two signatures: an ERC-20 approve, then <code>deposit(amountUsdc)</code>. A first-time deposit escrows for a

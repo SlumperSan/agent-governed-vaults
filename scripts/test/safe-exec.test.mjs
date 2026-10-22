@@ -10,7 +10,7 @@
  * ACCEPT the resulting signature) lives in scripts/test/safe-route-fork.test.mjs, on a local anvil
  * fork — this file is the fast, deterministic complement: does the module itself compute the right
  * shapes, and does it refuse before signing when the RPC and the local recompute disagree (2026-09-23
- * MAJOR-1, `Obsidian Vault/Agent-Governed Vaults/Verdicts/2026-09-23-security-safe-signing-path.md`).
+ * MAJOR-1 of the Safe signing path security review).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

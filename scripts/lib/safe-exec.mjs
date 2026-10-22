@@ -11,7 +11,7 @@
  * after the owner raises its threshold, works identically because nothing here assumes otherwise.
  *
  * WHY `getTransactionHash` IS RECOMPUTED LOCALLY, NOT TRUSTED FROM THE CHAIN ALONE (2026-09-23,
- * MAJOR-1, `Obsidian Vault/Agent-Governed Vaults/Verdicts/2026-09-23-security-safe-signing-path.md`).
+ * MAJOR-1 of the 2026-09-23 security review of the Safe signing path).
  * An earlier version of this file read `getTransactionHash` off the RPC and signed those 32 bytes
  * directly with `cast wallet sign --no-hash`. Nothing tied the signed bytes to `plan`: a malicious or
  * compromised RPC could answer `getTransactionHash` with the hash of a SafeTx of ITS choosing (e.g.
@@ -354,8 +354,8 @@ export function execTransactionArgs(plan, packedSignatures) {
  * is exactly the dashboard Sign queue's shape (MetaMask submits the transaction with `from` equal
  * to the Safe owner) and needs no private key held anywhere outside the owner's own wallet.
  *
- * WHY THIS DOES NOT REOPEN MAJOR-1 (`Obsidian Vault/Agent-Governed Vaults/Verdicts/
- * 2026-09-23-security-safe-signing-path.md`, `scripts/lib/safe-exec.mjs`'s own file-header fix on
+ * WHY THIS DOES NOT REOPEN MAJOR-1 (the 2026-09-23 Safe signing path review,
+ * `scripts/lib/safe-exec.mjs`'s own file-header fix on
  * branch `fix/safe-exec-local-eip712`). MAJOR-1 is about a SIGNED HASH whose preimage the signer
  * never saw — a malicious RPC could return the hash of a different SafeTx and collect a valid
  * signature over it. There is no signed hash here at all: `Safe.execTransaction` computes

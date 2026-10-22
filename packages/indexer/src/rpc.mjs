@@ -148,7 +148,7 @@ export function createChainSource({
       if (!addr[label]) continue;
       const evts = await logsFor(c, addr[label], CONTRACT_ABIS[label], from, to);
       for (const e of evts) {
-        if (e.name === 'VaultCreated' && ADDRESS_RE.test(e.vault)) vaults.add(e.vault);
+        if ((e.name === 'VaultCreated' || e.name === 'AgentVaultCreated') && ADDRESS_RE.test(e.vault)) vaults.add(e.vault);
         out.push(e);
       }
     }

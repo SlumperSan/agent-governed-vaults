@@ -52,11 +52,11 @@ test('each address is keccak256(0xff ++ proxy ++ salt ++ initcodeHash)[12:], com
   }
 });
 
-test('six distinct addresses, six distinct salts', () => {
+test('seven distinct addresses, seven distinct salts', () => {
   const c = Object.values(manifest.contracts);
-  assert.equal(c.length, 6);
-  assert.equal(new Set(c.map((x) => x.address)).size, 6);
-  assert.equal(new Set(c.map((x) => x.salt)).size, 6);
+  assert.equal(c.length, 7);
+  assert.equal(new Set(c.map((x) => x.address)).size, 7);
+  assert.equal(new Set(c.map((x) => x.salt)).size, 7);
 });
 
 test('foundry.toml carries the metadata settings the manifest depends on, and says so in the manifest', () => {

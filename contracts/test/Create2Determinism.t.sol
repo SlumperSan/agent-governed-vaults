@@ -75,6 +75,12 @@ contract Create2DeterminismTest is Test {
             s.vaultDeployer
         );
         _check(
+            "AgentVaultDeployer",
+            ProtocolCreate2.SALT_AGENT_VAULT_DEPLOYER,
+            ProtocolCreate2.initcodeAgentVaultDeployer(),
+            s.agentVaultDeployer
+        );
+        _check(
             "VaultFactory",
             ProtocolCreate2.SALT_VAULT_FACTORY,
             ProtocolCreate2.initcodeVaultFactory(s),
@@ -89,26 +95,38 @@ contract Create2DeterminismTest is Test {
         ProtocolCreate2.Set memory base = ProtocolCreate2.predict();
         bytes32 hFactory = keccak256(ProtocolCreate2.initcodeVaultFactory(base));
         bytes32 hDeployer = keccak256(ProtocolCreate2.initcodeVaultDeployer());
+        bytes32 hAgentDeployer = keccak256(ProtocolCreate2.initcodeAgentVaultDeployer());
         bytes32 hGov = keccak256(ProtocolCreate2.initcodeGovernance());
         for (uint256 i; i < ids.length; ++i) {
             vm.chainId(ids[i]);
             ProtocolCreate2.Set memory s = ProtocolCreate2.predict();
             assertEq(keccak256(ProtocolCreate2.initcodeVaultFactory(s)), hFactory, "factory initcode");
             assertEq(keccak256(ProtocolCreate2.initcodeVaultDeployer()), hDeployer, "deployer initcode");
+            assertEq(
+                keccak256(ProtocolCreate2.initcodeAgentVaultDeployer()),
+                hAgentDeployer,
+                "agent deployer initcode"
+            );
             assertEq(keccak256(ProtocolCreate2.initcodeGovernance()), hGov, "governance initcode");
             assertEq(s.operatorRegistry, base.operatorRegistry, "registry address");
             assertEq(s.vaultFactory, base.vaultFactory, "factory address");
         }
     }
 
-    /// @notice The six addresses are distinct, so no two salts collide into one slot.
+    /// @notice The seven addresses are distinct, so no two salts collide into one slot.
     function test_addressesAreDistinct() public view {
         ProtocolCreate2.Set memory s = ProtocolCreate2.predict();
-        address[6] memory a = [
-            s.operatorRegistry, s.subVaultRegistry, s.feeEngine, s.governance, s.vaultDeployer, s.vaultFactory
+        address[7] memory a = [
+            s.operatorRegistry,
+            s.subVaultRegistry,
+            s.feeEngine,
+            s.governance,
+            s.vaultDeployer,
+            s.agentVaultDeployer,
+            s.vaultFactory
         ];
-        for (uint256 i; i < 6; ++i) {
-            for (uint256 j = i + 1; j < 6; ++j) {
+        for (uint256 i; i < 7; ++i) {
+            for (uint256 j = i + 1; j < 7; ++j) {
                 assertTrue(a[i] != a[j], "distinct");
             }
         }

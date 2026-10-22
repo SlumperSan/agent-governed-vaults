@@ -1,9 +1,9 @@
 // @ts-check
 /**
- * Pure computation for `scripts/chairman-scorecard.mjs` (card 188, Chairman directive 10).
+ * Pure computation for `scripts/chairman-scorecard.mjs` (card 188).
  *
  * TWO OF THE SEVEN REQUESTED NUMBERS ARE NOT HERE, ON PURPOSE, AND SAY SO AT THE CALL SITE.
- * Directive 10 asks for "weekly plan %, hours to reset, projected exhaustion" and "messages per
+ * Card 188 asks for "weekly plan %, hours to reset, projected exhaustion" and "messages per
  * live session". Both come from `get_usage` and `list_sessions` -- tools that belong to a live
  * Claude session's own harness, not to anything a standalone `node` process run from a terminal
  * can reach. There is no file on disk and no network endpoint this script can call for either one.

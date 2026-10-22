@@ -33,6 +33,11 @@ const bytes32 = (name, indexed = false) => ({ name, type: 'bytes32', indexed });
 export const CONTRACT_ABIS = Object.freeze({
   factory: [
     ev('VaultCreated', [addr('vault', true), addr('creator', true), addr('usdc'), u256('capacityCapUsdc')]),
+    // Emitted INSTEAD of VaultCreated by createAgentVault; shape read from PR 483 (VaultFactory.sol).
+    ev('AgentVaultCreated', [
+      addr('vault', true), addr('creator', true), addr('usdc'), u256('capacityCapUsdc'),
+      addr('identityRegistry'), { name: 'kind', type: 'uint8', indexed: false },
+    ]),
   ],
   operatorRegistry: [
     ev('OperatorRegistered', [u256('opId', true), addr('operator', true)]),

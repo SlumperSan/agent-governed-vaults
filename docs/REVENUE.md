@@ -348,14 +348,14 @@ That leaves **three** gaps between a paid request and a listing, all of them rec
 are no longer queued behind a transport fix: they are now the only thing standing between a settled
 payment and a catalog entry.
 
-1. **The challenge carries no bazaar extension.** `apps/api/src/x402.mjs:234` emits `extensions: {}`,
+1. **The challenge carries no bazaar extension.** `apps/api/src/x402.mjs:242` emits `extensions: {}`,
    with a comment recording that none are implemented. A payment could settle in full and catalog
    nothing, because step 1 of the mechanism above never happened.
 2. **The catalog key would be empty.** The decoded challenge carries `"resource":{"url":""}`;
-   `apps/api/src/x402.mjs:215-216` defaults `resource.url` to the empty string when the call site
+   `apps/api/src/x402.mjs:223-224` defaults `resource.url` to the empty string when the call site
    supplies no resource, and the edge route supplies none. `PaymentPayload.resource` is what the
    facilitator catalogs the entry under.
-3. **The `accepts[]` entry carries no `extra`.** `apps/api/src/x402.mjs:231` includes `extra` only
+3. **The `accepts[]` entry carries no `extra`.** `apps/api/src/x402.mjs:239` includes `extra` only
    when the caller supplies `price.extra`, and the decoded challenge shows none. Measured above:
    with `extra` omitted, PayAI answers `invalid_exact_evm_missing_eip712_domain`. A client that does
    not independently read the USDC EIP-712 domain off the token has nothing to sign against, and

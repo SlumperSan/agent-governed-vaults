@@ -29,12 +29,12 @@ interface Props {
 
 /**
  * Card 127 / #182 (P-O15) — the checkable rows that distinguish this vault from a fund with a
- * manager: `Decisions/contract-tab-requirements-2026-09-19.md` is the row-to-read map, and
- * `Decisions/app-workspace-copy-2026-09-18.md` §4 is where every word below comes from. Card 205
+ * manager: each row maps to one on-chain read (requirements of 2026-09-19), and every word below
+ * comes from §4 of the app workspace copy of 2026-09-18. Card 205
  * is Row 6b's tri-state: `apps/web/src/chain-reader.mjs`'s `assembleClaimableEscrow` (PR #361)
  * already keeps "confirmed zero" and "unread/failed" apart at the data layer — this component's
  * only job is to not collapse them back together on the way to the screen, which is exactly the
- * defect `Findings/2026-09-21-row-6b-collapses-unread-into-zero.md` found in the ORIGINAL spec.
+ * defect a 2026-09-21 review found in the ORIGINAL spec (Row 6b collapsed unread into zero).
  *
  * READ-ONLY, ON PURPOSE. This tab renders facts; it signs nothing. `EscrowClaims.tsx` already owns
  * the claim button for Row 6b's balances (`sendClaimEscrowed`, a member-funds write) — this
@@ -45,8 +45,8 @@ interface Props {
  * THE PAIRING RULE, STRUCTURALLY. Every row's live line is its own `{cond ? <p>…</p> : null}` —
  * never an `??`/ternary that could fall back to a fixture, a zero, or the word "unknown" standing
  * in for a value. A read that has not resolved yet and a read that failed both render NOTHING for
- * that row's live line (the static claim still renders, unconditionally) — `Findings/2026-09-21-
- * row-6b-collapses-unread-into-zero.md` is why Row 6b alone gets a THIRD rendering instead of this
+ * that row's live line (the static claim still renders, unconditionally). That same collapse of unread into zero
+ * is why Row 6b alone gets a THIRD rendering instead of this
  * two-state pair: its existence on the page is the read, so "not yet / failed" has to be its own
  * visible line rather than an absent one, or a member with a real balance and a flaky RPC call sees
  * literally nothing where their money is.
@@ -56,11 +56,11 @@ interface Props {
  * member with a stuck claim already has, before the general reassurance the rest of the tab gives.
  *
  * WHY "cirBTC" IS LITERAL TEXT. Rows 5 and 6's static copy names cirBTC specifically because the
- * v1 basket holds exactly one asset (`Decisions/Arc basket is cirBTC only 2026-09-18`) — the same
+ * v1 basket holds exactly one asset (cirBTC only, decided 2026-09-18) — the same
  * literal-copy hazard `test/btc-exposure-disclosure.test.mjs` already guards for
  * `MemberActions.tsx`. `test/contract-tab.test.mjs` carries the same pin for this file.
  *
- * COPY SOURCE: `Decisions/app-workspace-copy-2026-09-18.md` (Product), including Row 3's correction
+ * COPY SOURCE: the app workspace copy of 2026-09-18 (Product), including Row 3's correction
  * and the Row 6 confirmed-state and Row 6b unread lines Product answered on #434 (2026-09-24). Row 3
  * no longer says nothing can halt deposits or exits: `navWad` reverts on a stale feed, and deposits
  * and exits revert with it, as the exit screen already says (#388). Row 6 says "its issuer", never

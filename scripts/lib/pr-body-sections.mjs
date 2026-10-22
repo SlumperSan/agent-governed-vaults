@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Card 190 / Chairman directive 13. Extract and grade the two PR-body sections a `feat/` PR must
+ * Card 190. Extract and grade the two PR-body sections a `feat/` PR must
  * carry: `## Buy / borrow / build` and `## Standards`. The skeleton both `/dept-engineering` and
  * `/dept-security` post into a new PR body looks like this:
  *

@@ -110,8 +110,8 @@ export const PAGE_SIGNALS = new Set([
  * existed (2026-09-01, PR #103), so it never ruled on these. Routing all three to LOG would leave
  * the two LATCHING ones — the ones that mean member capital is wrong-priced right now — waiting for
  * the weekly ops review. They are not redundantly covered elsewhere either: `ChainlinkOracle`'s
- * sane-price band catches a ±2-decimal drift only while the live price sits inside it, and per
- * `Owner Decisions 2026-09-01.md` §1 that window CLOSES for cbBTC at BTC $100,000 (+29.5% from
+ * sane-price band catches a ±2-decimal drift only while the live price sits inside it, and, from
+ * live prices at 2026-09-01, that window CLOSES for cbBTC at BTC $100,000 (+29.5% from
  * 2026-09-01). Above that price `feed-identity` is the only detector there is, and nav-backing
  * cannot substitute because it recomputes through the same mis-scaled `priceWad`.
  *

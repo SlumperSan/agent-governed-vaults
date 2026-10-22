@@ -89,13 +89,13 @@ write copy, tests or reviews on the strength of that older list.
 If two pages carry a passage byte-identically before your edit, keep them byte-identical after. No
 guard enforces this today, so diff the built pages yourself.
 
-**The per-claim review markers are gone and must not come back.** Owner decision, 2026-09-04: *"The
-audit counsel is now becoming an issue with repetitiveness. Remove them entirely so that we can work
-faster."* Eighty HTML comments annotating individual claims were deleted from the seven pages (the
-rendered prose was byte-identical before and after). `apps/site/test/site.test.mjs` no longer carries
-the test that redded on the marker string, so this rule is held by review and by the owner's
-decision, not by a guard. Do not reintroduce a per-claim annotation scheme in any spelling. Everything else in this file still binds: the truth obligation was in the guards, never in
-the comments, and the owner is who decides a claim.
+**The per-claim review markers are gone and must not come back.** Decision, 2026-09-04: the markers
+were removed because they were repetitive and slowed work. Eighty HTML comments annotating
+individual claims were deleted from the seven pages (the rendered prose was byte-identical before
+and after). `apps/site/test/site.test.mjs` no longer carries the test that redded on the marker
+string, so this rule is held by review and by that decision, not by a guard. Do not reintroduce a
+per-claim annotation scheme in any spelling. Everything else in this file still binds: the truth
+obligation was in the guards, never in the comments, and the maintainers decide a claim.
 
 ## Banned shapes (the guard matches SHAPE, not phrasing)
 

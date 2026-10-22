@@ -87,6 +87,21 @@ test('dynamic discovery: a vault created and used in the SAME batch is fully cap
   assert.deepEqual([...src.knownVaults], [V_LOWER]);
 });
 
+test('an AgentVaultCreated factory log adds the vault to the vault-event query', async () => {
+  const logs = [
+    L(FACTORY, 'AgentVaultCreated', 10, 0, {
+      vault: V_CHECKSUM, creator: OPERATOR, usdc: ('0x' + 'b'.repeat(40)), capacityCapUsdc: 6_000_000n,
+      identityRegistry: OPREG, kind: 1,
+    }),
+    L(V_LOWER, 'DepositActivated', 12, 0, { member: MEMBER, amountUsdc: 100n, sharesMinted: 100n }),
+  ];
+  const src = createChainSource({ client: fakeClient(logs, 20), addresses: ADDRESSES });
+  const events = await src.fetchEvents(1, 20);
+  assert.ok(events.some((e) => e.name === 'AgentVaultCreated' && e.vault === V_LOWER));
+  assert.ok(events.some((e) => e.name === 'DepositActivated' && e.vault === V_LOWER), 'the agent vault must be polled for its own events');
+  assert.deepEqual([...src.knownVaults], [V_LOWER]);
+});
+
 test('folds through the daemon into a single, correct vault + leaderboard', async () => {
   const path = join(tmpdir(), `rpc-${process.pid}-${Date.now()}.json`);
   try {
