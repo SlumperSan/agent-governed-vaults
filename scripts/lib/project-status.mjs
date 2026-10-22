@@ -12,6 +12,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -785,7 +786,8 @@ export function collect(opts = {}) {
   // The `Claude/` segment was missing here, so every vault read silently returned nothing and the
   // Department panel looked empty rather than broken. Verified against the filesystem, not typed
   // from memory.
-  const vaultRoot = opts.vault ?? 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+  const vaultRoot = opts.vault ?? (process.env.AGV_VAULT_ROOT
+    || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults'));
 
   let prs = [];
   let issues = [];

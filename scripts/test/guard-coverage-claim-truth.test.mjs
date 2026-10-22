@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseClaims, evaluateClaims, indexTestFiles, resolveSuite } from '../lib/guard-coverage-claims.mjs';
@@ -29,7 +30,8 @@ const rel = (abs) => path.relative(REPO, abs).split(path.sep).join('/');
  * (`scripts/vault-lint.mjs`'s `DEFAULT_VAULT`). Absent on any machine other than the one this was
  * written on, and always absent in CI.
  */
-const VAULT_ROOT = 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const VAULT_ROOT = process.env.AGV_VAULT_ROOT
+  || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults');
 const VAULT_SUBDIRS = ['Findings', 'Rules', 'Decisions'];
 
 const SKIP_DIRS = new Set([

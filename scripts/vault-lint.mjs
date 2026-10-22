@@ -16,9 +16,12 @@
  * way a Windows-only script no-ops on a runner that is not Windows.
  */
 import { existsSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { lintVault } from './lib/vault-lint.mjs';
 
-const DEFAULT_VAULT = 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const DEFAULT_VAULT = process.env.AGV_VAULT_ROOT
+  || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults');
 
 function parseArgs(argv) {
   const idx = argv.indexOf('--vault');

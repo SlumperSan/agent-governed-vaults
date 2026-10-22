@@ -18,6 +18,7 @@
 import { createServer } from 'node:http';
 import { Worker } from 'node:worker_threads';
 import { readFileSync, writeFileSync, renameSync, appendFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { runLaunchChecks } from './lib/launch-checks.mjs';
 import { buildSignQueueResponse, hostGateRefusal, originGateRefusal, recordSentHash } from './lib/sign-queue-server.mjs';
@@ -48,7 +49,8 @@ const TTL_MS = 800;
  * AGV_DASHBOARD_VAULT_ROOT exists for the tests only: they run this server against a temp folder so
  * no test can ever write to the real vault.
  */
-const VAULT_ROOT = process.env.AGV_DASHBOARD_VAULT_ROOT || 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const VAULT_ROOT = process.env.AGV_DASHBOARD_VAULT_ROOT
+  || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults');
 const TASKS_DIR = path.join(VAULT_ROOT, 'Tasks');
 /** Answers waiting to be relayed to the department that asked. One JSON object per line. */
 const OUTBOX = path.join(TASKS_DIR, '_outbox.jsonl');

@@ -14,6 +14,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseVerdicts } from './lib/verdicts.mjs';
@@ -23,7 +24,8 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..');
-const VAULT = 'C:/Users/Micha/Desktop/Claude/Obsidian Vault/Agent-Governed Vaults';
+const VAULT = process.env.AGV_VAULT_ROOT
+  || path.join(os.homedir(), 'Desktop', 'Claude', 'Obsidian Vault', 'Agent-Governed Vaults');
 
 /** @returns {{ok: true, data: any} | {ok: false, err: string}} */
 function gh(args) {
