@@ -91,7 +91,9 @@ This deploys, in one broadcast:
 
 1. the six protocol singletons (`OperatorRegistry`, `SubVaultRegistry`, `FeeEngine`,
    `Governance`, `VaultDeployer`, `VaultFactory`) with their **irreversible** one-shot wiring —
-   identical to `Deploy.s.sol`. `VaultDeployer` precedes the factory, which pins it immutably
+   the same as `Deploy.s.sol` except that it deploys no `AgentVaultDeployer` and does not call
+   `factory.initializeAgentPath`, so `createAgentVault` reverts `AgentPathNotInitialized` on a testnet
+   brought up this way. `VaultDeployer` precedes the factory, which pins it immutably
    (#10); it takes no arguments and needs no wiring;
 2. one **`ChainlinkOracle`** — the C-6 launch oracle — built from the committed
    `chainlinkOracle` block of

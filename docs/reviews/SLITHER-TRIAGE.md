@@ -285,6 +285,18 @@ Two new baseline rows, both `timestamp`, both by design.
 
 The signature check uses `ecrecover` through the existing `_recover` (high `s` and bad `v` refused) and a gas- and returndata-bounded `staticcall` through `BoundedCall` for an ERC-1271 attestor; Slither raises nothing on either.
 
+## AgentVaultDeployer and createAgentVault (2026-10-21)
+
+Eight baseline rows changed (seven added, one count raised from 2 to 3). `createAgentVault` is `createVault` plus one registry check, one attestation and a different event, and `AgentVaultDeployer` is `VaultDeployer` with `AgentVaultCore`'s creation code, so the rows repeat reviewed dispositions.
+
+| Detector | Disposition |
+| --- | --- |
+| `assembly` on `AgentVaultDeployer._writeChunk`, `_readChunk`, `deploy` | **By design.** The same SSTORE2 chunk header, `extcodecopy` read and `CREATE` as `VaultDeployer`, for the same reason: the creation code has to leave the factory's runtime to stay under EIP-170. `Eip170::test_agentDeployerCreationCodeIsTheCompiledAgentVaultCore` asserts the stored bytes. |
+| `too-many-digits` on `AgentVaultDeployer.constructor` | **False positive.** Slither renders the embedded creation code as a numeric literal; the same disposition as `VaultDeployer.constructor`. |
+| `missing-inheritance` on `AgentVaultDeployer` | **Cosmetic.** The single `deploy(bytes) returns (address)` selector matches the interface the factory calls it through. |
+| `reentrancy-benign`, `reentrancy-events` on `VaultFactory.createAgentVault` | **Benign.** Same argument as `createVault`: the factory's only state is the append-only `allVaults`, `AgentVaultCreated` is emitted innermost-first, and a nested attempt to register the still-constructing vault fails because it has no code yet. The registry attestation runs before the push, and a reentrant creation can only add its own entry. |
+| `calls-loop` on `VaultFactory._requireOracleCoversBasket` (count 2 to 3) | **Same reviewed loop, one more call stack.** `createAgentVault` calls the helper `createVault` and `createChildVault` already call; the basket is capped at `MAX_BASKET_ASSETS`. |
+
 ## Running it
 
 ```bash

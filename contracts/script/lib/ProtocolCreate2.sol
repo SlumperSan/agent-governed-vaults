@@ -7,8 +7,9 @@ import {FeeEngine} from "../../src/FeeEngine.sol";
 import {Governance} from "../../src/Governance.sol";
 import {VaultFactory} from "../../src/VaultFactory.sol";
 import {VaultDeployer} from "../../src/VaultDeployer.sol";
+import {AgentVaultDeployer} from "../../src/AgentVaultDeployer.sol";
 
-/// @title ProtocolCreate2 — the same-address deployment recipe for the six protocol singletons
+/// @title ProtocolCreate2: the same-address deployment recipe for the seven protocol singletons
 /// @notice One definition of each singleton's salt and initcode, shared by `Deploy.s.sol`, the
 /// determinism tests and the Arc fork test, so the recipe a test proves is the recipe the script runs.
 /// `contracts/config/create2-manifest.json` records the resulting initcode hashes and addresses;
@@ -17,6 +18,12 @@ import {VaultDeployer} from "../../src/VaultDeployer.sol";
 /// Every salt is fixed per contract and carries NO chain id: the address of a singleton is a function
 /// of (proxy, salt, keccak256(initcode)) only, and no initcode takes a per-chain value. The per-chain
 /// inputs (the oracle allowlist) arrive afterwards through `VaultFactory.initialize`.
+///
+/// The agent ID registry (RWAllyAgentRegistry) is NOT here either: it has its own vanity salt, mined
+/// only when its bytecode is frozen, and its own record in `contracts/config/agent-registry-create2.json`.
+/// The factory learns its address from `VaultFactory.initializeAgentPath`, not from its initcode, which is
+/// why that salt can change without moving the factory. AgentVaultDeployer is here and is likewise not in
+/// the factory's initcode.
 ///
 /// ChainlinkOracle and the router adapter are NOT here by design: their whole content is per-chain
 /// configuration, so they are deployed per chain with plain CREATE.
@@ -31,6 +38,7 @@ library ProtocolCreate2 {
     bytes32 internal constant SALT_FEE_ENGINE = keccak256("rwally.protocol.v2.FeeEngine");
     bytes32 internal constant SALT_GOVERNANCE = keccak256("rwally.protocol.v2.Governance");
     bytes32 internal constant SALT_VAULT_DEPLOYER = keccak256("rwally.protocol.v2.VaultDeployer");
+    bytes32 internal constant SALT_AGENT_VAULT_DEPLOYER = keccak256("rwally.protocol.v2.AgentVaultDeployer");
     bytes32 internal constant SALT_VAULT_FACTORY = keccak256("rwally.protocol.v2.VaultFactory");
 
     /// @dev C-1: root vaults only at launch. Part of the VaultFactory initcode, so it is part of its address.
@@ -42,6 +50,7 @@ library ProtocolCreate2 {
         address feeEngine;
         address governance;
         address vaultDeployer;
+        address agentVaultDeployer;
         address vaultFactory;
     }
 
@@ -74,6 +83,10 @@ library ProtocolCreate2 {
         return type(VaultDeployer).creationCode;
     }
 
+    function initcodeAgentVaultDeployer() internal pure returns (bytes memory) {
+        return type(AgentVaultDeployer).creationCode;
+    }
+
     function initcodeVaultFactory(Set memory s) internal pure returns (bytes memory) {
         return abi.encodePacked(
             type(VaultFactory).creationCode,
@@ -88,14 +101,15 @@ library ProtocolCreate2 {
         );
     }
 
-    /// @notice All six predicted addresses. Order of derivation is the dependency order: the factory's
-    /// initcode embeds the other five, FeeEngine's embeds the OperatorRegistry.
+    /// @notice All seven predicted addresses. Order of derivation is the dependency order: the factory's
+    /// initcode embeds five of the others (not AgentVaultDeployer), FeeEngine's embeds the OperatorRegistry.
     function predict() internal pure returns (Set memory s) {
         s.operatorRegistry = addressOf(SALT_OPERATOR_REGISTRY, initcodeOperatorRegistry());
         s.subVaultRegistry = addressOf(SALT_SUB_VAULT_REGISTRY, initcodeSubVaultRegistry());
         s.feeEngine = addressOf(SALT_FEE_ENGINE, initcodeFeeEngine(s.operatorRegistry));
         s.governance = addressOf(SALT_GOVERNANCE, initcodeGovernance());
         s.vaultDeployer = addressOf(SALT_VAULT_DEPLOYER, initcodeVaultDeployer());
+        s.agentVaultDeployer = addressOf(SALT_AGENT_VAULT_DEPLOYER, initcodeAgentVaultDeployer());
         s.vaultFactory = addressOf(SALT_VAULT_FACTORY, initcodeVaultFactory(s));
     }
 
@@ -113,7 +127,7 @@ library ProtocolCreate2 {
         );
     }
 
-    /// @notice Deploy all six through the proxy. The caller supplies the transaction sender.
+    /// @notice Deploy all seven through the proxy. The caller supplies the transaction sender.
     function createAll() internal returns (Set memory s) {
         s = predict();
         create(SALT_OPERATOR_REGISTRY, initcodeOperatorRegistry());
@@ -121,6 +135,7 @@ library ProtocolCreate2 {
         create(SALT_FEE_ENGINE, initcodeFeeEngine(s.operatorRegistry));
         create(SALT_GOVERNANCE, initcodeGovernance());
         create(SALT_VAULT_DEPLOYER, initcodeVaultDeployer());
+        create(SALT_AGENT_VAULT_DEPLOYER, initcodeAgentVaultDeployer());
         create(SALT_VAULT_FACTORY, initcodeVaultFactory(s));
     }
 }

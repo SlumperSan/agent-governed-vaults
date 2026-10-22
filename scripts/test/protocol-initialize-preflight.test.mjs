@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encodeAbiParameters } from 'viem';
-import { checkChain, checkPlan, parseBool } from '../lib/protocol-initialize-preflight.mjs';
+import { checkChain, checkPlan, parseAddressWord, parseBool } from '../lib/protocol-initialize-preflight.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -29,23 +29,33 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const SEL_INITIALIZED = '0x158ef93e';
 const SEL_ENFORCED = '0x1330525a';
 const SEL_IS_ALLOWED = '0x785d97a8';
+const SEL_AGENT_PATH = '0x45e06dfc';
+const SEL_AGENT_REGISTRY = '0x0d1cfcae';
+const SEL_AGENT_DEPLOYER = '0x79bb13e4';
 const TOPIC = '0xe58d4b3592c74e580b584cc31679cad3eefea91577f47aabd1764352d4b4901b';
 
 const FACTORY = '0xab00000000000000000000000000000000000001';
 const ORACLE_A = '0x1100000000000000000000000000000000000001';
 const ORACLE_B = '0x2200000000000000000000000000000000000002';
 const FAKE_ORACLE = '0x6666000000000000000000000000000000000666';
-const MANIFEST = { contracts: { VaultFactory: { address: FACTORY } } };
+const AGENT_REGISTRY = '0x3300000000000000000000000000000000000003';
+const OTHER_REGISTRY = '0x4400000000000000000000000000000000000004';
+const AGENT_DEPLOYER = '0x5500000000000000000000000000000000000005';
+const MANIFEST = { contracts: { VaultFactory: { address: FACTORY }, AgentVaultDeployer: { address: AGENT_DEPLOYER } } };
 
 const word = (b) => `0x${'0'.repeat(63)}${b ? 1 : 0}`;
 const listData = (addrs) => encodeAbiParameters([{ type: 'address[]' }], [addrs]);
+const addrWord = (a) => `0x${'0'.repeat(24)}${a.toLowerCase().replace(/^0x/, '')}`;
 
-/** A healthy chain: factory deployed and initialised with [ORACLE_A, ORACLE_B], both with code. */
+/** A healthy chain: factory deployed and initialised with [ORACLE_A, ORACLE_B], both with code, and the agent path pinned. */
 function healthy(over = {}) {
   return {
     chainId: 8453,
-    code: new Set([FACTORY.toLowerCase(), ORACLE_A, ORACLE_B]),
+    code: new Set([FACTORY.toLowerCase(), ORACLE_A, ORACLE_B, AGENT_REGISTRY, AGENT_DEPLOYER]),
     initialized: true,
+    agentPath: true,
+    agentRegistry: AGENT_REGISTRY,
+    agentDeployer: AGENT_DEPLOYER,
     enforced: true,
     allowed: new Set([ORACLE_A, ORACLE_B]),
     logs: [{ data: listData([ORACLE_A, ORACLE_B]) }],
@@ -71,6 +81,9 @@ function rpc(s, method, params) {
       assert.equal(to.toLowerCase(), FACTORY.toLowerCase(), 'every call must go to the manifest factory');
       if (data === SEL_INITIALIZED) return { result: word(s.initialized) };
       if (data === SEL_ENFORCED) return { result: word(s.enforced) };
+      if (data === SEL_AGENT_PATH) return { result: word(s.agentPath) };
+      if (data === SEL_AGENT_REGISTRY) return { result: addrWord(s.agentRegistry) };
+      if (data === SEL_AGENT_DEPLOYER) return { result: addrWord(s.agentDeployer) };
       if (data.startsWith(SEL_IS_ALLOWED)) {
         const arg = `0x${data.slice(SEL_IS_ALLOWED.length + 24)}`.toLowerCase();
         return { result: word(s.allowed.has(arg)) };
@@ -93,9 +106,9 @@ const fakeFetch = (byUrl) => async (url, init) => {
 
 const URL_1 = 'http://rpc-one.test';
 const URL_2 = 'http://rpc-two.test';
-const PLAN = (over = {}) => ({ chainId: 8453, rpcs: [URL_1, URL_2], oracles: [ORACLE_A, ORACLE_B], ...over });
+const PLAN = (over = {}) => ({ chainId: 8453, rpcs: [URL_1, URL_2], oracles: [ORACLE_A, ORACLE_B], agentRegistry: AGENT_REGISTRY, ...over });
 const run = (states, planOver) =>
-  checkChain({ fetchImpl: fakeFetch({ [URL_1]: states[0], [URL_2]: states[1] ?? states[0] }), name: 'base', plan: PLAN(planOver), factory: FACTORY });
+  checkChain({ fetchImpl: fakeFetch({ [URL_1]: states[0], [URL_2]: states[1] ?? states[0] }), name: 'base', plan: PLAN(planOver), factory: FACTORY, agentVaultDeployer: AGENT_DEPLOYER });
 
 test('a factory initialised exactly as planned passes on every endpoint', async () => {
   assert.deepEqual(await run([healthy()]), []);
@@ -160,7 +173,7 @@ test('a read that fails is a failure, never a skip', async () => {
     assert.ok(p.length > 0, `${method} unavailable must not pass`);
   }
   // an endpoint that is simply unreachable
-  const p = await checkChain({ fetchImpl: fakeFetch({ [URL_1]: healthy() }), name: 'base', plan: PLAN(), factory: FACTORY });
+  const p = await checkChain({ fetchImpl: fakeFetch({ [URL_1]: healthy() }), name: 'base', plan: PLAN(), factory: FACTORY, agentVaultDeployer: AGENT_DEPLOYER });
   assert.ok(p.some((m) => m.includes(URL_2) && /could not read eth_chainId/.test(m)), p.join('\n'));
 });
 
@@ -189,9 +202,48 @@ test('plan shape: an empty oracle list, one endpoint, a bad or duplicate oracle 
     [{ oracles: [ORACLE_A, ORACLE_A.toUpperCase().replace('0X', '0x')] }, /listed twice/],
     [{ oracles: ['0x0000000000000000000000000000000000000000'] }, /zero address/],
     [{ chainId: 0 }, /chainId/],
+    [{ agentRegistry: undefined }, /agentRegistry must be/],
+    [{ agentRegistry: '0x1234' }, /agentRegistry must be/],
+    [{ agentRegistry: '0x0000000000000000000000000000000000000000' }, /zero address is not an agent registry/],
   ]) {
-    const p = await checkChain({ fetchImpl: never, name: 'x', plan: PLAN(over), factory: FACTORY });
+    const p = await checkChain({ fetchImpl: never, name: 'x', plan: PLAN(over), factory: FACTORY, agentVaultDeployer: AGENT_DEPLOYER });
     assert.ok(p.some((m) => re.test(m)), `${JSON.stringify(over)} -> ${p.join('|')}`);
+  }
+});
+
+test('an agent path that was never initialised fails', async () => {
+  const p = await run([healthy({ agentPath: false })]);
+  assert.ok(p.some((m) => /agentPathInitialized\(\) is false, expected true/.test(m)), p.join('\n'));
+});
+
+test('a factory that pinned a different agent registry than the plan fails, even though it carries code', async () => {
+  const s = healthy({ agentRegistry: OTHER_REGISTRY });
+  s.code.add(OTHER_REGISTRY);
+  const p = await run([s]);
+  assert.ok(p.some((m) => m.includes(`agentRegistry() is ${OTHER_REGISTRY}, expected ${AGENT_REGISTRY}`)), p.join('\n'));
+});
+
+test('a factory that pinned a different agent deployer than the manifest names fails', async () => {
+  const other = '0x6600000000000000000000000000000000000006';
+  const s = healthy({ agentDeployer: other });
+  s.code.add(other);
+  const p = await run([s]);
+  assert.ok(p.some((m) => m.includes(`agentVaultDeployer() is ${other}, expected ${AGENT_DEPLOYER}`)), p.join('\n'));
+});
+
+test('a pinned agent registry or deployer with no code on the chain fails', async () => {
+  const noReg = healthy();
+  noReg.code.delete(AGENT_REGISTRY);
+  assert.ok((await run([noReg])).some((m) => m.includes(`${AGENT_REGISTRY} carries no code`)));
+  const noDep = healthy();
+  noDep.code.delete(AGENT_DEPLOYER);
+  assert.ok((await run([noDep])).some((m) => m.includes(`${AGENT_DEPLOYER} carries no code`)));
+});
+
+test('an agent registry word that is not a clean address is not read as one', () => {
+  assert.equal(parseAddressWord(addrWord(AGENT_REGISTRY)), AGENT_REGISTRY);
+  for (const bad of ['0x', `0x${'1'.repeat(64)}`, `0x${'0'.repeat(63)}`, undefined, 7]) {
+    assert.equal(parseAddressWord(bad), null, String(bad));
   }
 });
 
@@ -205,6 +257,10 @@ test('checkPlan: no chain, an unknown --chain and a manifest without a factory a
   assert.equal(unknown.ok, false);
   assert.match(unknown.problems.join(' | '), /nope: no plan entry/);
   assert.equal((await checkPlan({ fetchImpl: f, plan: { chains: { base: PLAN() } }, manifest: {} })).ok, false);
+  // A manifest that names the factory but not the agent deployer cannot judge the agent path: a refusal, not a skip.
+  const noAgent = await checkPlan({ fetchImpl: live, plan: { chains: { base: PLAN() } }, manifest: { contracts: { VaultFactory: { address: FACTORY } } } });
+  assert.equal(noAgent.ok, false);
+  assert.match(noAgent.problems.join(' | '), /no AgentVaultDeployer address/);
 });
 
 test('checkPlan: every chain is judged, one bad chain fails the plan', async () => {
@@ -269,7 +325,8 @@ test('CLI: exit 0 on a healthy fake chain, exit 1 on a wrongly initialised one, 
   }
 });
 
-test('the real manifest names a VaultFactory the preflight will query', () => {
+test('the real manifest names a VaultFactory and an AgentVaultDeployer the preflight will query', () => {
   const m = JSON.parse(readFileSync(path.join(REPO, 'contracts', 'config', 'create2-manifest.json'), 'utf8'));
   assert.match(m.contracts.VaultFactory.address, /^0x[0-9a-fA-F]{40}$/);
+  assert.match(m.contracts.AgentVaultDeployer.address, /^0x[0-9a-fA-F]{40}$/);
 });

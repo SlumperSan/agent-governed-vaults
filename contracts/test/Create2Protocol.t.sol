@@ -11,6 +11,7 @@ import {FeeEngine} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
+import {AgentVaultDeployer} from "../src/AgentVaultDeployer.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {IOracleAggregator} from "../src/interfaces/IOracleAggregator.sol";
 import {MockERC20, MockOracle} from "./mocks/Mocks.sol";
@@ -29,6 +30,7 @@ contract Create2ProtocolTest is Create2ProxyFixture {
     VaultFactory factory;
     FeeEngine fees;
     VaultDeployer vaultDeployer;
+    AgentVaultDeployer agentVaultDeployer;
 
     MockERC20 usdc;
     MockERC20 weth;
@@ -55,6 +57,7 @@ contract Create2ProtocolTest is Create2ProxyFixture {
         fees = FeeEngine(s.feeEngine);
         gov = Governance(s.governance);
         vaultDeployer = VaultDeployer(s.vaultDeployer);
+        agentVaultDeployer = AgentVaultDeployer(s.agentVaultDeployer);
         factory = VaultFactory(s.vaultFactory);
     }
 
@@ -297,6 +300,7 @@ contract Create2ProtocolTest is Create2ProxyFixture {
         assertEq(address(fees), p.feeEngine);
         assertEq(address(gov), p.governance);
         assertEq(address(vaultDeployer), p.vaultDeployer);
+        assertEq(address(agentVaultDeployer), p.agentVaultDeployer);
         assertEq(address(factory), p.vaultFactory);
         assertGt(address(factory).code.length, 0, "factory has code");
         assertEq(address(factory.vaultDeployer()), p.vaultDeployer, "factory pins the predicted deployer");

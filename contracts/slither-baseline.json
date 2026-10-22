@@ -1,6 +1,18 @@
 {
   "$schema": "card 134 -- see contracts/scripts/slither_baseline_check.py",
   "entries": {
+    "assembly::AgentVaultDeployer._readChunk": {
+      "count": 1,
+      "reason": "By design -- the same SSTORE2 chunk write, CREATE and extcodecopy read as VaultDeployer, in AgentVaultDeployer, which relocates type(AgentVaultCore).creationCode out of the factory runtime for the same reason (EIP-170). SLITHER-TRIAGE.md 'AgentVaultDeployer and createAgentVault (2026-10-21)'."
+    },
+    "assembly::AgentVaultDeployer._writeChunk": {
+      "count": 1,
+      "reason": "By design -- the same SSTORE2 chunk write, CREATE and extcodecopy read as VaultDeployer, in AgentVaultDeployer, which relocates type(AgentVaultCore).creationCode out of the factory runtime for the same reason (EIP-170). SLITHER-TRIAGE.md 'AgentVaultDeployer and createAgentVault (2026-10-21)'."
+    },
+    "assembly::AgentVaultDeployer.deploy": {
+      "count": 1,
+      "reason": "By design -- the same SSTORE2 chunk write, CREATE and extcodecopy read as VaultDeployer, in AgentVaultDeployer, which relocates type(AgentVaultCore).creationCode out of the factory runtime for the same reason (EIP-170). SLITHER-TRIAGE.md 'AgentVaultDeployer and createAgentVault (2026-10-21)'."
+    },
     "assembly::BoundedCall.boundedCall": {
       "count": 1,
       "reason": "By design -- SafeTransferLib's M-11 remediation (bounded returndata-copy ERC-20 calls, replacing the unbounded .call() a returndata bomb could OOG) and BoundedCall/VaultDeployer's gas-bounded module calls and SSTORE2 codegen, all reviewed opcode-by-opcode. SLITHER-TRIAGE.md 'assembly'; _call2/_call3 are M-11's internal helpers behind safeTransfer/safeTransferFrom/safeApprove, same pattern as the already-reviewed tryTransfer -- reconciled 2026-09-24."
@@ -94,8 +106,8 @@
       "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:156) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:154) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
     },
     "calls-loop::VaultFactory._requireOracleCoversBasket": {
-      "count": 2,
-      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:156) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:154) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled."
+      "count": 3,
+      "reason": "Accepted for the basket loop (MAX_BASKET_ASSETS=10, VaultCore.sol:156) and the child-vault loop (MAX_CHILDREN=8, VaultCore.sol:154) -- read 2026-09-24 to correct this row's earlier '=10' figure for both, which was the basket cap misapplied to the child cap too. SLITHER-TRIAGE.md 'calls-loop, costly-loop, cache-array-length, cyclomatic-complexity' -- M-5 (unbounded COST at full sub-vault fan-out) is dormant at launch: root-only vaults, C-1 gate, sub-vaults disabled. Count 3 since createAgentVault, which calls the same helper (same loop, third call stack)."
     },
     "calls-loop::VaultFactory.createChildVault": {
       "count": 1,
@@ -164,6 +176,10 @@
     "low-level-calls::RWAllyAgentRegistry._requireContractSignature": {
       "count": 2,
       "reason": "By design. The ERC-1271 verification staticcall to the wallet being designated, as the ERC-8004 reference registry does, and the ERC-6492 factory call that deploys a counterfactual smart account first: the caller must already be the identity's holder, the factory may not be the registry or the fee token, the returned magic value and length are checked, and any other outcome reverts with InvalidWalletSignature. SLITHER-TRIAGE.md 'AgentVaultCore and RWAllyAgentRegistry'."
+    },
+    "missing-inheritance::AgentVaultDeployer": {
+      "count": 1,
+      "reason": "Cosmetic -- interface-shaped contracts that do not formally `is` the interface; ABIs match and are exercised across the interface by the factory-path tests. SLITHER-TRIAGE.md 'missing-inheritance'."
     },
     "missing-inheritance::OperatorRegistry": {
       "count": 1,
@@ -245,6 +261,10 @@
       "count": 1,
       "reason": "Covered by VaultCore's nonReentrant mutex. SLITHER-TRIAGE.md 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
     },
+    "reentrancy-benign::VaultFactory.createAgentVault": {
+      "count": 1,
+      "reason": "Same reasoning as createVault above (append-only allVaults, innermost-first emission, no-code-yet guard); the AgentVaultCreated event takes the place of VaultCreated. SLITHER-TRIAGE.md 'AgentVaultDeployer and createAgentVault (2026-10-21)'."
+    },
     "reentrancy-benign::VaultFactory.createChildVault": {
       "count": 1,
       "reason": "No mutex, but the factory's only state is the append-only allVaults array; nesting only interleaves push order, VaultCreated is emitted innermost-first matching indexer sort order, and a nested attempt to register the still-constructing outer vault fails (no code yet). SLITHER-TRIAGE.md 'Sprint 10 correction' under 'reentrancy-no-eth, reentrancy-events, reentrancy-benign'."
@@ -264,6 +284,10 @@
     "reentrancy-events::RWAllyAgentRegistry.setAgentWallet": {
       "count": 1,
       "reason": "Benign, same reasoning as reentrancy-benign::RWAllyAgentRegistry.setAgentWallet above: MetadataSet is emitted after the factory call, and a reentrant call can only emit its own events first."
+    },
+    "reentrancy-events::VaultFactory.createAgentVault": {
+      "count": 1,
+      "reason": "Same append-only-state reasoning as reentrancy-benign::VaultFactory.createAgentVault above."
     },
     "reentrancy-events::VaultFactory.createChildVault": {
       "count": 1,
@@ -424,6 +448,10 @@
     "timestamp::VaultCore.requestExit": {
       "count": 1,
       "reason": "Accepted (K-4 / by design) -- block.timestamp is the protocol's only clock (commitment C-2); governance/staleness windows are minutes-to-days, far outside miner tolerance. SLITHER-TRIAGE.md 'timestamp'; the one real per-row defect this class ever hid (T-1, Governance commit-vs-reveal TTL) was found, fixed and regression-tested (AuditStandingDefaultTtlVsCommit.t.sol)."
+    },
+    "too-many-digits::AgentVaultDeployer.constructor": {
+      "count": 1,
+      "reason": "False positive -- a compiler-embedded creation-code blob and a left-aligned 4-byte selector padded to a word, neither a literal anyone typed. SLITHER-TRIAGE.md 'too-many-digits'."
     },
     "too-many-digits::SafeTransferLib.tryTransfer": {
       "count": 1,

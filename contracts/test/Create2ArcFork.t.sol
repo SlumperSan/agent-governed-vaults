@@ -61,7 +61,7 @@ contract Create2ArcForkTest is Test {
         );
         assertEq(p.vaultFactory.code.length, 0, "v2 VaultFactory address is empty on Arc before deploy");
 
-        // Anyone may send the six deployments: the proxy does not care who pays.
+        // Anyone may send the seven deployments: the proxy does not care who pays.
         vm.startPrank(makeAddr("anyone"));
         ProtocolCreate2.Set memory s = ProtocolCreate2.createAll();
         vm.stopPrank();

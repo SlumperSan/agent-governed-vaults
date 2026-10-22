@@ -2,8 +2,8 @@
 pragma solidity 0.8.26;
 
 // The single sender of every post-deploy call on a protocol singleton: the one-shot wiring
-// of OperatorRegistry, SubVaultRegistry and Governance, `VaultFactory.initialize` and
-// `FeeEngine.initialize`.
+// of OperatorRegistry, SubVaultRegistry and Governance, `VaultFactory.initialize`,
+// `VaultFactory.initializeAgentPath`, `FeeEngine.initialize` and `RWAllyAgentRegistry.initialize`.
 // Why a constant and not `msg.sender` captured in a constructor. The protocol singletons are
 // deployed through the shared CREATE2 proxy (0x4e59b44847b379578588920ca78fbf26c0b4956c) so that
 // each one has the same address on every chain. Inside a constructor `msg.sender` is then the

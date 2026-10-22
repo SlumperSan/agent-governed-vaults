@@ -7,37 +7,48 @@ import {OperatorRegistry} from "../src/OperatorRegistry.sol";
 import {SubVaultRegistry} from "../src/SubVaultRegistry.sol";
 import {FeeEngine} from "../src/FeeEngine.sol";
 import {Governance} from "../src/Governance.sol";
-import {VaultFactory} from "../src/VaultFactory.sol";
+import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
+import {AgentVaultDeployer} from "../src/AgentVaultDeployer.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 import {ProtocolCreate2} from "./lib/ProtocolCreate2.sol";
 import {TreasuryConfig} from "./lib/TreasuryConfig.sol";
 
 /// @title Deploy — canonical protocol bring-up (same addresses on every chain)
-/// @notice Deploys the six singletons through the Arachnid CREATE2 proxy with fixed salts (see
+/// @notice Deploys the seven singletons through the Arachnid CREATE2 proxy with fixed salts (see
 /// `lib/ProtocolCreate2.sol`), so each one lands at the same address on every chain, then sets the
 /// per-chain oracle allowlist and performs the one-shot wiring. Every post-deploy call is sent by
 /// PROTOCOL_INITIALIZER, and the broadcast is pinned to that address: any other signer cannot
 /// complete this script. The wiring calls (`registry.wire`, `subReg.wire`,
-/// `gov.wireSubVaultRegistry`) and `factory.initialize` are each permanently locked after their
-/// first call, which is what makes the registry/factory trust anchor credible (CM-5, SF-4).
+/// `gov.wireSubVaultRegistry`), `factory.initialize` and `factory.initializeAgentPath` are each
+/// permanently locked after their first call, which is what makes the registry/factory trust anchor
+/// credible (CM-5, SF-4).
 ///
-/// Order (the six deploys can land in any order, because every address is a function of salt and
+/// Order (the seven deploys can land in any order, because every address is a function of salt and
 /// initcode alone; this is the order the script uses):
 ///   1. OperatorRegistry + SubVaultRegistry — no dependencies.
 ///   2. FeeEngine — its initcode embeds the OperatorRegistry address.
 ///   3. Governance — no constructor deps; sub-vault registry wired post-deploy.
 ///   4. VaultDeployer — no dependencies, but the factory pins it. It carries VaultCore's creation
 ///      code, which is why the factory itself no longer does and fits under EIP-170 (#10).
-///   5. VaultFactory — its initcode embeds registry + governance + feeEngine + subRegistry +
-///      vaultDeployer. It creates nothing until step 6.
-///   6. `factory.initialize(BLESSED_ORACLES)`, THEN the wiring: registry.wire(factory, feeEngine);
-///      subReg.wire(factory); gov.wireSubVaultRegistry(subReg). The factory is initialised before the
-///      registry is pointed at it, so an uninitialised factory (oracle allowlist off) is never wired.
-///   7. `feeEngine.initialize(FEE_TREASURY)` (fee model A1): the per-chain treasury that receives 10% of
-///      every performance fee. Until it lands the engine takes no fee, so the order against steps 1 to 6
+///   5. AgentVaultDeployer — no dependencies; it carries AgentVaultCore's creation code. The factory
+///      learns its address in step 7, not from its initcode.
+///   6. VaultFactory — its initcode embeds registry + governance + feeEngine + subRegistry +
+///      vaultDeployer. It creates nothing until step 7.
+///   7. `factory.initialize(BLESSED_ORACLES)`, `factory.initializeAgentPath(agentRegistry,
+///      agentVaultDeployer)`, THEN the wiring: registry.wire(factory, feeEngine); subReg.wire(factory);
+///      gov.wireSubVaultRegistry(subReg). The factory is initialised before the registry is pointed at
+///      it, so an uninitialised factory (oracle allowlist off) is never wired.
+///   8. `feeEngine.initialize(FEE_TREASURY)` (fee model A1): the per-chain treasury that receives 10% of
+///      every performance fee. Until it lands the engine takes no fee, so the order against steps 1 to 7
 ///      does not matter; it is one-shot and refuses the zero address. FEE_TREASURY is required on any
 ///      real chain (see `lib/TreasuryConfig.sol`).
+///
+/// The agent ID registry is NOT deployed here. Its address is the `address` field of
+/// `contracts/config/agent-registry-create2.json` (the registry has its own vanity salt, mined at code
+/// freeze), and it must already carry code on the chain when this script runs: deploy and initialize
+/// the registry first, as its own step. `initializeAgentPath` refuses an address with no code, and this
+/// script refuses before sending anything.
 ///
 /// Oracles and execution adapters are NOT protocol singletons — each chain has its own (DeployChainlinkOracle
 /// deploys the oracle), and each vault creator supplies theirs at createVault time, so this script deploys
@@ -53,6 +64,7 @@ contract Deploy is Script {
             FeeEngine feeEngine,
             Governance governance,
             VaultDeployer vaultDeployer,
+            AgentVaultDeployer agentVaultDeployer,
             VaultFactory factory
         )
     {
@@ -75,6 +87,15 @@ contract Deploy is Script {
         // Read and refused BEFORE anything is sent: the treasury is set once and never changes.
         address treasury = TreasuryConfig.read(vm);
 
+        // The agent ID registry's recorded address (see the notes above). Read and refused BEFORE anything
+        // is sent: the factory pins this address for good, and a codeless one would strand the agent path.
+        address agentRegistry =
+            vm.parseJsonAddress(vm.readFile("config/agent-registry-create2.json"), ".address");
+        require(
+            agentRegistry.code.length > 0,
+            "Deploy: the agent registry at config/agent-registry-create2.json has no code on this chain; deploy it first"
+        );
+
         vm.startBroadcast(PROTOCOL_INITIALIZER);
 
         ProtocolCreate2.Set memory s = ProtocolCreate2.createAll();
@@ -83,11 +104,13 @@ contract Deploy is Script {
         feeEngine = FeeEngine(s.feeEngine);
         governance = Governance(s.governance);
         vaultDeployer = VaultDeployer(s.vaultDeployer);
+        agentVaultDeployer = AgentVaultDeployer(s.agentVaultDeployer);
         factory = VaultFactory(s.vaultFactory);
 
         // Initialise the factory FIRST: an uninitialised factory has its C-6 oracle allowlist off, and it
         // must never be the one the registry is wired to.
         factory.initialize(blessedOracles);
+        factory.initializeAgentPath(agentRegistry, IVaultDeployer(address(agentVaultDeployer)));
 
         // One-shot wiring — irreversible after this transaction.
         registry.wire(address(factory), address(feeEngine));
@@ -101,6 +124,10 @@ contract Deploy is Script {
 
         require(factory.initialized(), "Deploy: factory not initialised");
         require(
+            factory.agentPathInitialized() && factory.agentRegistry() == agentRegistry,
+            "Deploy: agent path not initialised"
+        );
+        require(
             registry.initialized() && subReg.initialized() && governance.initialized(), "Deploy: not wired"
         );
         require(feeEngine.treasury() == treasury, "Deploy: fee treasury not set");
@@ -110,6 +137,8 @@ contract Deploy is Script {
         console2.log("FeeEngine       ", address(feeEngine));
         console2.log("Governance      ", address(governance));
         console2.log("VaultDeployer   ", address(vaultDeployer));
+        console2.log("AgentVaultDeployer", address(agentVaultDeployer));
+        console2.log("AgentRegistry   ", agentRegistry);
         console2.log("VaultFactory    ", address(factory));
         console2.log("FeeTreasury     ", treasury);
     }

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // @ts-check
 /**
- * Preflight for a chain's `VaultFactory.initialize`: run it after the initialize transaction lands
- * and BEFORE the three wires, before any vault is created and before any address is announced.
+ * Preflight for a chain's `VaultFactory.initialize` and `VaultFactory.initializeAgentPath`: run it
+ * after both transactions land and BEFORE the three wires, before any vault is created and before any address is announced.
  *
  *     node scripts/protocol-initialize-preflight.mjs --plan <plan.json> [--chain <name>] [--manifest <path>]
  *
@@ -11,10 +11,12 @@
  *     { "chains": { "<name>": { "chainId": 8453,
  *                               "rpcs": ["https://first-endpoint", "https://second-endpoint"],
  *                               "oracles": ["0x<ChainlinkOracle on that chain>"],
+ *                               "agentRegistry": "0x<the RWAllyAgentRegistry on that chain>",
  *                               "fromBlock": "0x<factory deploy block, optional>" } } }
  *
  * Exit 0 only when every endpoint of every chain read back `initialized()`, an enforced allowlist,
- * every plan oracle allowed, and an `Initialized` event listing exactly the plan's oracles. Any other
+ * every plan oracle allowed, an `Initialized` event listing exactly the plan's oracles, and the
+ * agent path pinned to the plan's registry and the manifest's AgentVaultDeployer. Any other
  * outcome, including a read that never completed, exits 1. A chain that fails is recovered with a new
  * salt, not a repair (docs/DEPLOYMENT.md section 10). It signs and sends nothing.
  */

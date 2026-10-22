@@ -34,24 +34,24 @@ test('the v1 builder is RETIRED: build() refuses, so it can never emit items aga
 
 const createSrc = readFileSync(path.join(ROOT, 'contracts', 'script', 'lib', 'ProtocolCreate2.sol'), 'utf8');
 
-test("Deploy.s.sol brings the six singletons up through ProtocolCreate2, pinned to PROTOCOL_INITIALIZER", () => {
+test("Deploy.s.sol brings the seven singletons up through ProtocolCreate2, pinned to PROTOCOL_INITIALIZER", () => {
   const body = deploySrc.slice(deploySrc.indexOf('function run()'));
   assert.match(body, /vm\.startBroadcast\(PROTOCOL_INITIALIZER\)/, 'the broadcast must be pinned to PROTOCOL_INITIALIZER');
   assert.doesNotMatch(body, /vm\.startBroadcast\(\)/, 'an unpinned broadcast would let any signer start the script');
   assert.match(body, /ProtocolCreate2\.createAll\(\)/);
-  assert.doesNotMatch(body, /=\s*new\s+(OperatorRegistry|SubVaultRegistry|FeeEngine|Governance|VaultDeployer|VaultFactory)\(/, 'a plain CREATE would not land at the CREATE2 address');
+  assert.doesNotMatch(body, /=\s*new\s+(OperatorRegistry|SubVaultRegistry|FeeEngine|Governance|VaultDeployer|AgentVaultDeployer|VaultFactory)\(/, 'a plain CREATE would not land at the CREATE2 address');
 });
 
-test('ProtocolCreate2.createAll deploys the six in this EXACT order', () => {
+test('ProtocolCreate2.createAll deploys the seven in this EXACT order', () => {
   const fn = createSrc.slice(createSrc.indexOf('function createAll()'));
   const order = [...fn.matchAll(/create\(SALT_(\w+),/g)].map((m) => m[1]);
-  assert.deepEqual(order, ['OPERATOR_REGISTRY', 'SUB_VAULT_REGISTRY', 'FEE_ENGINE', 'GOVERNANCE', 'VAULT_DEPLOYER', 'VAULT_FACTORY']);
+  assert.deepEqual(order, ['OPERATOR_REGISTRY', 'SUB_VAULT_REGISTRY', 'FEE_ENGINE', 'GOVERNANCE', 'VAULT_DEPLOYER', 'AGENT_VAULT_DEPLOYER', 'VAULT_FACTORY']);
 });
 
-test("the factory is initialised BEFORE the registry is wired to it, then the three wires run in order", () => {
+test("the factory is initialised (oracles, then the agent path) BEFORE the registry is wired to it, then the three wires run in order", () => {
   const body = deploySrc.slice(deploySrc.indexOf('function run()'));
-  const calls = [...body.matchAll(/(factory\.initialize|registry\.wire|subReg\.wire|governance\.wireSubVaultRegistry)\(/g)].map((m) => m[1]);
-  assert.deepEqual(calls, ['factory.initialize', 'registry.wire', 'subReg.wire', 'governance.wireSubVaultRegistry'],
+  const calls = [...body.matchAll(/(factory\.initialize|factory\.initializeAgentPath|registry\.wire|subReg\.wire|governance\.wireSubVaultRegistry)\(/g)].map((m) => m[1]);
+  assert.deepEqual(calls, ['factory.initialize', 'factory.initializeAgentPath', 'registry.wire', 'subReg.wire', 'governance.wireSubVaultRegistry'],
     'an uninitialised factory (oracle allowlist off) must never be the one a registry is wired to');
 });
 
@@ -65,6 +65,17 @@ test('the CREATE2 factory is built root-only: ALLOW_SUB_VAULTS is false in the r
 test("Deploy.s.sol refuses an EMPTY BLESSED_ORACLES allowlist off the local chain", () => {
   assert.match(deploySrc, /blessedOracles\.length > 0/);
   assert.match(deploySrc, /factory\.initialize\(blessedOracles\)/);
+});
+
+test("Deploy.s.sol takes the agent registry from its recorded address and refuses before broadcasting when it has no code", () => {
+  const body = deploySrc.slice(deploySrc.indexOf('function run()'));
+  assert.match(body, /config\/agent-registry-create2\.json/);
+  assert.match(body, /agentRegistry\.code\.length > 0/);
+  assert.ok(
+    body.indexOf('agentRegistry.code.length > 0') < body.indexOf('vm.startBroadcast('),
+    'the registry code check must run before anything is broadcast',
+  );
+  assert.match(body, /factory\.initializeAgentPath\(agentRegistry,/);
 });
 
 test('DeployChainlinkOracle.s.sol\'s constructor arg order is (assets, feeds, heartbeats, minWad, maxWad, usdc, sequencer) — the builder\'s ChainlinkOracle initcode must encode the same order', () => {
