@@ -18,6 +18,7 @@
  * @property {string} vault
  * @property {string} creator
  * @property {string} usdc
+ * @property {'regular'|'agent'|'unknown'} kind  // which factory event created it (see VAULT_KINDS)
  * @property {number} operatorId
  * @property {bigint} totalShares
  * @property {bigint} idleUsdc
@@ -61,7 +62,7 @@
  * never silently drift from the indexer (the class of bug the consumer-UX review caught).
  */
 export const HANDLED_EVENTS = Object.freeze([
-  'VaultCreated', 'VaultAttested', 'ChildRegistered', 'OperatorRegistered',
+  'VaultCreated', 'AgentVaultCreated', 'VaultAttested', 'ChildRegistered', 'OperatorRegistered',
   'RealizationRecorded', 'FeeRecorded', 'DepositPending', 'PendingCancelled',
   'DepositActivated', 'ExitSettled', 'Proposed', 'Revealed', 'DefaultApplied',
   'DelegatedRevealed', 'Finalized', 'Executed', 'ProposalExpired',
@@ -113,6 +114,15 @@ function bumpEventStat(state, e) {
   state.eventStats.set(e.name, s);
 }
 
+/**
+ * Vault kinds a filter may name. A regular vault is the one a plain `VaultCreated` announced; an
+ * agent vault is the one `AgentVaultCreated` announced, whose `kind` field is VAULT_KIND_AGENT (1)
+ * in VaultFactory (read from PR 483, not yet on protocol/main). 'unknown' is a kind number this
+ * indexer does not know: it is stored so the vault is still listed, but cannot be filtered for.
+ */
+export const VAULT_KINDS = Object.freeze(['regular', 'agent']);
+const VAULT_KIND_AGENT = 1;
+
 export function emptyState() {
   return {
     /** @type {Map<string, VaultState>} */ vaults: new Map(),
@@ -160,6 +170,7 @@ export function newVault(vault) {
     vault,
     creator: '0x',
     usdc: '0x',
+    kind: 'regular',
     operatorId: 0,
     totalShares: 0n,
     idleUsdc: 0n,
@@ -264,6 +275,15 @@ export function apply(state, e) {
       v.creator = a.creator;
       v.usdc = a.usdc;
       v.capacityCapUsdc = big(a.capacityCapUsdc ?? 0);
+      v.kind = 'regular';
+      break;
+    }
+    case 'AgentVaultCreated': {
+      const v = ensureVault(state, e.args.vault);
+      v.creator = a.creator;
+      v.usdc = a.usdc;
+      v.capacityCapUsdc = big(a.capacityCapUsdc ?? 0);
+      v.kind = Number(a.kind) === VAULT_KIND_AGENT ? 'agent' : 'unknown';
       break;
     }
     case 'VaultAttested': {
@@ -510,10 +530,18 @@ export function vaultView(state, vault) {
   };
 }
 
-/** Summary list of all known vaults — the discovery surface for agents. */
-export function listVaults(state) {
-  return [...state.vaults.values()].map((v) => ({
+/**
+ * Summary list of all known vaults — the discovery surface for agents. `kind` narrows it to one
+ * of VAULT_KINDS; omitted = unfiltered. A kind outside VAULT_KINDS throws rather than returning an
+ * empty list, which a caller would read as "there are none".
+ * @param {ReturnType<typeof emptyState>} state
+ * @param {{kind?: string}} [opts]
+ */
+export function listVaults(state, { kind } = {}) {
+  if (kind !== undefined && !VAULT_KINDS.includes(kind)) throw new Error(`unknown vault kind: ${kind}`);
+  return [...state.vaults.values()].filter((v) => kind === undefined || v.kind === kind).map((v) => ({
     vault: v.vault,
+    kind: v.kind,
     operatorId: v.operatorId,
     memberCount: v.memberCount,
     depth: v.depth,
