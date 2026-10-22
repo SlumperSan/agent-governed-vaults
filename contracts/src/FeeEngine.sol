@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {IFeeEngine} from "./interfaces/IFeeEngine.sol";
+import {IERC20Balance} from "./interfaces/IERC20Balance.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
 import {PROTOCOL_INITIALIZER} from "./lib/ProtocolInitializer.sol";
 
@@ -17,10 +18,6 @@ interface IVaultUsdc {
     function claimEscrowed(address asset) external;
     function claimable(address member, address asset) external view returns (uint256);
     function creator() external view returns (address);
-}
-
-interface IERC20Balance {
-    function balanceOf(address) external view returns (uint256);
 }
 
 /// @title FeeEngine — 10% performance fee on realized gain net of the registry loss carryforward

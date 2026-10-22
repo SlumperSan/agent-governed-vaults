@@ -66,7 +66,6 @@ contract OperatorRegistry is IOperatorRegistry {
     error OnlyFeeEngine();
     error OnlyAttestedVault();
     error AlreadyOperator();
-    error NotOperator();
 
     /// @notice True once `wire` has run. An unwired registry attests nothing: `attestVault` is
     /// factory-only and the factory is unset until then.

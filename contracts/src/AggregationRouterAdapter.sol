@@ -2,11 +2,8 @@
 pragma solidity 0.8.26;
 
 import {IExecutionAdapter} from "./interfaces/IExecutionAdapter.sol";
+import {IERC20Balance} from "./interfaces/IERC20Balance.sol";
 import {SafeTransferLib} from "./lib/SafeTransferLib.sol";
-
-interface IERC20Balance {
-    function balanceOf(address) external view returns (uint256);
-}
 
 /// @title AggregationRouterAdapter — Base DEX-aggregation execution (0x/1inch-style)
 /// @notice Sprint 4 adapter (EX-1..EX-3). Hardened against the arbitrary-calldata exploit
