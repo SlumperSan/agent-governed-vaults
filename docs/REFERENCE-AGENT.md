@@ -429,7 +429,7 @@ unchanged and remains the default. Recovery always tries both schemes, the confi
 a commit still reveals after a switch or after a restart without `saltVersion`
 (`packages/reference-agent/src/salt.mjs`).
 
-The commitment matches `revealVote` (`Governance.sol:409`) exactly:
+The commitment matches `revealVote` (`Governance.sol:411`) exactly:
 
 ```
 keccak256(abi.encode(pid, msg.sender, support, salt))

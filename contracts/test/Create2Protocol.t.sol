@@ -486,6 +486,42 @@ contract Create2ProtocolTest is Create2ProxyFixture {
         assertTrue(gov.initialized(), "wired by the good call");
     }
 
+    /// @notice Each one-shot wire leaves an event, so an indexer can see bring-up happen without
+    /// reading storage. `OperatorRegistry.wire` always did; the other two were found silent by the
+    /// 2026-10-21 static analysis pass (docs/audits/2026-10-21-static-analysis.md, TP-2).
+    function test_everyWireEmitsItsTarget() public {
+        _deploySet();
+        vm.startPrank(PROTOCOL_INITIALIZER);
+
+        vm.expectEmit(true, false, false, false, address(registry));
+        emit OperatorRegistry.FactorySet(address(factory));
+        vm.expectEmit(true, false, false, false, address(registry));
+        emit OperatorRegistry.FeeEngineSet(address(fees));
+        registry.wire(address(factory), address(fees));
+
+        vm.expectEmit(true, false, false, false, address(subReg));
+        emit SubVaultRegistry.FactorySet(address(factory));
+        subReg.wire(address(factory));
+
+        vm.expectEmit(true, false, false, false, address(gov));
+        emit Governance.SubVaultRegistrySet(address(subReg));
+        gov.wireSubVaultRegistry(address(subReg));
+
+        vm.stopPrank();
+    }
+
+    /// @notice VaultCore's defensive clamp on the performance fee is the same rate FeeEngine charges.
+    /// It used to be the literal `gain / 10`, which nothing tied to `PERF_FEE_BPS`.
+    function test_vaultFeeCapMatchesTheFeeEngineRate() public {
+        _deploySet();
+        vm.prank(PROTOCOL_INITIALIZER);
+        factory.initialize(_oneOracle(address(blessed)));
+        _wireAll();
+        vm.prank(creator);
+        VaultCore vault = VaultCore(factory.createVault(_params(address(blessed))));
+        assertEq(vault.PERF_FEE_CAP_BPS(), fees.PERF_FEE_BPS(), "clamp rate == engine rate");
+    }
+
     /// @notice Bring-up order in `Deploy.s.sol`: `initialize` runs before the registry is wired, so an
     /// initialised factory with an unwired registry is a real state. `createVault` must revert there
     /// (the registry's `attestVault` is factory-only and the factory is unset), not register an

@@ -54,6 +54,9 @@ contract VaultCore {
     uint256 public constant OBSERVATION_WINDOW = 4 hours;
     uint256 public constant CREATOR_MIN_STAKE_BPS = 500; // 5%
     uint256 public constant EXIT_FEE_CAP_BPS = 100; // 1% protocol cap
+    // Ceiling on the performance fee taken from a realized gain. Equal to FeeEngine.PERF_FEE_BPS,
+    // asserted by test; it is the clamp that holds if the fee module misbehaves.
+    uint256 public constant PERF_FEE_CAP_BPS = 1_000;
 
     /// @notice Exit-fee share-price ratchet defence. `_checkPositionFloor` reverts `PositionBelowFloor`
     /// when the exiter's remainder is nonzero and below this many share-wei, on the immediate path
@@ -745,7 +748,7 @@ contract VaultCore {
             if (feeOk) perfFee = feeWord;
             else emit ModuleCallFailed("feeEngine.onRealize", member);
             // Defensive clamp: never trust the module beyond its contract (≤ 10% of gain).
-            uint256 cap = gain / 10;
+            uint256 cap = gain * PERF_FEE_CAP_BPS / BPS;
             if (perfFee > cap) perfFee = cap;
             _recordRealization(member, gain, 0);
         } else {

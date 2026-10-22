@@ -579,7 +579,7 @@ actually reads**, which is not the same book for both:
    per vault, and can even be 0, see M-6 below), which gates the operator's own next `propose()`
    call. Measured as `votingEligibleShares(creator) * 10000 / totalVotingEligibleShares()`, because
    that is what `Governance.propose` compares (`pastVotingEligibleShares` /
-   `pastTotalVotingEligibleShares`, `Governance.sol:334-335`). **Voting-eligible** is
+   `pastTotalVotingEligibleShares`, `Governance.sol:336-337`). **Voting-eligible** is
    `sharesOf - queuedExitShares`, with a registered parent vault counted as 0.
 2. VaultCore's `CREATOR_MIN_STAKE_BPS` (a protocol **constant**, 500 bps everywhere), which gates the
    operator's own voluntary **exit** while non-creator members remain (`_checkCreatorGate`). Only
@@ -638,7 +638,7 @@ smaller by that much; and NAV moving from trading between a pending deposit and 
 
 **The capacity trap, and it is wider than "the vault is full".** Restoring the fraction to a gate
 needs a deposit of at least `detail.thresholds[].topUpDeficitUsdc`; `_deposit` rejects anything below
-`minDepositUsdc` (`VaultCore.sol:107`) and anything that pushes `navUsdc + totalPendingUsdc` past
+`minDepositUsdc` (`VaultCore.sol:110`) and anything that pushes `navUsdc + totalPendingUsdc` past
 `capacityCapUsdc` (`_deposit`, `VaultCore.sol:437`). So `detail.noTopUpPath` is true whenever
 `max(deficit, minDeposit) > cap - committed`, which is the "**the top-up must lead the fill, not
 chase it**" point of no return in `Business/Finance/Operator Capital Requirement.md`, not the much

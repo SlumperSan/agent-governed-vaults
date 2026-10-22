@@ -48,6 +48,8 @@ contract Governance is IGovernance {
     /// the CREATE2 address) is the same on every chain.
     address public constant deployer = PROTOCOL_INITIALIZER;
 
+    event SubVaultRegistrySet(address indexed registry);
+
     error OnlyDeployer();
     error AlreadyWiredSubRegistry();
     error ZeroSubRegistry();
@@ -66,6 +68,7 @@ contract Governance is IGovernance {
         require(subVaultRegistry == address(0), AlreadyWiredSubRegistry());
         require(r != address(0), ZeroSubRegistry());
         subVaultRegistry = r;
+        emit SubVaultRegistrySet(r);
     }
 
     uint256 internal constant BPS = 10_000;
@@ -202,7 +205,6 @@ contract Governance is IGovernance {
     error NotVaultCreator();
     error BadGovConfig();
     error ProposalActive();
-    error NoActiveProposal();
     error BelowProposalThreshold();
     error Cooldown();
     error WrongPhase();

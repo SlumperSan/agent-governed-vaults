@@ -21,9 +21,9 @@
     "SubVaultRegistry": {
       "salt": "0xd53a1a127f54f7f27bc0b631e0cf27e44c9449e95f0ec3ea4e39810e81b3e2db",
       "saltPreimage": "rwally.protocol.v2.SubVaultRegistry",
-      "initcodeBytes": 1585,
-      "initcodeHash": "0xaae1a2761a5b4f05f7ac57f2922dd4890a66b1c816fa8a30ea7ffa827a5ffc05",
-      "address": "0x1C85cF7122BEF88b4DdF2d5Ef0C5e8549348e5b0"
+      "initcodeBytes": 1623,
+      "initcodeHash": "0xf9ebed9852dafbd38bdd487d57d256c858944aec26387c4b77f853a0b5be6177",
+      "address": "0x2FeCBdf44271A8B04A480F2b155Da70Bd457342c"
     },
     "FeeEngine": {
       "salt": "0xd8f1679f02d6606921c26b6b023169bd156839cb2c0f6bf534797a144277614c",
@@ -35,23 +35,23 @@
     "Governance": {
       "salt": "0x63443617e577b0fe15d184bf775497e0df7226d6de04e69a3a0e8616861cd98e",
       "saltPreimage": "rwally.protocol.v2.Governance",
-      "initcodeBytes": 12249,
-      "initcodeHash": "0x858b4bd5092a6260eddd0f664fcd383290c0baab4fb91d7fa6ff63ab25d962b7",
-      "address": "0x9b943eB263f0E2ad46b07003aC2455Ba2e6cfC11"
+      "initcodeBytes": 12286,
+      "initcodeHash": "0x0a6ebebfc71d38a686d0f5dfb96f9ded0fb5a084048bba287099c40f2229439c",
+      "address": "0xfbbD7a5EAc638E7Ee6B607Fb175cD8c8ab4a276E"
     },
     "VaultDeployer": {
       "salt": "0x4da370845b1209e6d554c694ba2509b1774fd6a747163c88a467823a3477f13f",
       "saltPreimage": "rwally.protocol.v2.VaultDeployer",
-      "initcodeBytes": 24078,
-      "initcodeHash": "0x3c0f163000e4e38559bd28a078085a90b9c41ee3b38744884274732382b8367e",
-      "address": "0x9d24cef2bC101CBc02303819ac8f611eA7cbAC23"
+      "initcodeBytes": 24179,
+      "initcodeHash": "0x5cf8a66c3197c4c0047f0f808778c1af72135c797c21553db3888cd6ea2a4015",
+      "address": "0xe936c888b38dd75f823A3cFc159a16deefB35f2E"
     },
     "VaultFactory": {
       "salt": "0xe1f58806a42a380b2f3c321f838c429518693322bf2171d5c223b66eb7f97058",
       "saltPreimage": "rwally.protocol.v2.VaultFactory",
       "initcodeBytes": 4473,
-      "initcodeHash": "0xcce83d7ba4d685c004fee026f74b3660a7d8265851f10b4a4e26a520c2083dbc",
-      "address": "0xC4a62CdaDDab141b4a69c00F447b00490c7aF81c"
+      "initcodeHash": "0x42de26455107654af947beba6f0b7b2035849437c8691626b5f60074e1ee968c",
+      "address": "0x37E90004b9cE91aA4A6Dfc7EAEA282404cf519C6"
     }
   }
 }

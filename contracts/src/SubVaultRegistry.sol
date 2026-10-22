@@ -31,6 +31,7 @@ contract SubVaultRegistry {
     mapping(address => uint256) public depthOf; // root = 0
 
     event ChildRegistered(address indexed parent, address indexed child, uint256 depth);
+    event FactorySet(address indexed factory);
 
     error OnlyDeployer();
     error ZeroAddress();
@@ -54,6 +55,7 @@ contract SubVaultRegistry {
         require(factory == address(0), AlreadyWired());
         require(factory_ != address(0), ZeroAddress());
         factory = factory_;
+        emit FactorySet(factory_);
     }
 
     /// @notice Register a freshly deployed child under `parent`. Factory-only, creation-time
