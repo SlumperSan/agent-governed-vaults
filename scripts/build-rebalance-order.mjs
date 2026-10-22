@@ -131,10 +131,17 @@ export function rebalanceDecodeSig() {
 }
 
 function cast(...args) {
-  return execFileSync('cast', [...args, '--rpc-url', RPC], {
-    encoding: 'utf8',
-    maxBuffer: 1 << 24,
-  }).trim();
+  try {
+    return execFileSync('cast', [...args, '--rpc-url', RPC], {
+      encoding: 'utf8',
+      maxBuffer: 1 << 24,
+    }).trim();
+  } catch (e) {
+    // The failure's message and stderr carry the RPC URL, key included; redact at the source.
+    if (e && typeof e.message === 'string') e.message = redactUrls(e.message);
+    if (e && e.stderr != null) e.stderr = redactUrls(String(e.stderr));
+    throw e;
+  }
 }
 
 /**

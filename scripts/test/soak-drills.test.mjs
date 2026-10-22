@@ -2394,3 +2394,28 @@ test('lib.mjs ROOT resolves a checkout whose path contains a space to a real dir
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
+
+// ───────── cast() never carries a key-bearing RPC URL into its thrown message ─────────
+
+test('lib.mjs cast() redacts the RPC URL key from the message it throws when cast fails', () => {
+  // Drills call `cast(['chain-id', '--rpc-url', RPC])`, so the first three args ARE the URL and the
+  // old message `cast chain-id --rpc-url <url> failed: ...` reached the uncaught-exception stack.
+  // CAST=node makes the call fail without a real `cast`: node cannot open a file named `chain-id`.
+  const KEY = 'Zk3vKeyShapedSecret0123456789abcdef';
+  const url = `https://base-sepolia.g.alchemy.com/v2/${KEY}`;
+  const target = pathToFileURL(fileURLToPath(new URL('../soak/lib.mjs', import.meta.url))).href;
+  const src = `
+    const m = await import(${JSON.stringify(target)});
+    try { m.cast(['chain-id', '--rpc-url', m.RPC]); console.log(JSON.stringify({ threw: false })); }
+    catch (e) { console.log(JSON.stringify({ threw: true, message: e.message })); }
+  `;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', src], {
+    encoding: 'utf8',
+    env: { ...process.env, SOAK_RPC: url, CAST: process.execPath },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout.trim().split('\n').pop());
+  assert.equal(out.threw, true, 'the cast call must fail for this probe to mean anything');
+  assert.ok(out.message.includes('base-sepolia.g.alchemy.com'), `host should survive: ${out.message}`);
+  assert.ok(!out.message.includes(KEY), `thrown message leaks the RPC key: ${out.message}`);
+});

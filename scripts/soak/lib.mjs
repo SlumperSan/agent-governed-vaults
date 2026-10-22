@@ -133,11 +133,13 @@ export function cast(args, { interactive = false } = {}) {
   });
   // Tee stderr to the terminal on an attended run — see the caveat above: this happens once,
   // after `cast` exits, not while it runs.
-  if (passThrough && result.stderr) process.stderr.write(result.stderr);
+  // The args and stderr carry the RPC URL (`--rpc-url <key-bearing url>`), so both go through
+  // `redactUrls` here, once, rather than at every caller that prints the thrown message.
+  if (passThrough && result.stderr) process.stderr.write(redactUrls(String(result.stderr)));
   if (result.error) throw result.error; // e.g. the `cast` binary itself was not found (ENOENT)
   if (result.status !== 0) {
     const detail = result.stderr ? String(result.stderr).trim() : `exited with status ${result.status}`;
-    throw new Error(`cast ${args.slice(0, 3).join(' ')} failed: ${detail}`);
+    throw new Error(redactUrls(`cast ${args.slice(0, 3).join(' ')} failed: ${detail}`));
   }
   return String(result.stdout).trim();
 }
@@ -1000,7 +1002,7 @@ export function assertLogsServed(factory, fromBlock, { chunk = 10_000, maxChunks
     }
   }
 
-  fail(`RPC ${RPC} SERVED NO LOG FOR A RANGE THAT PROVABLY CONTAINS ONE. The factory's own `
+  fail(`RPC ${redactUrls(RPC)} SERVED NO LOG FOR A RANGE THAT PROVABLY CONTAINS ONE. The factory's own `
     + `allVaults[0] is ${first}, so the VaultCreated announcing it exists at or after block `
     + `${fromBlock} — and ${scanned} window(s) of ${chunk} blocks from there returned nothing that `
     + `names it. This endpoint is pruning history, or refusing these ranges. Either way every `

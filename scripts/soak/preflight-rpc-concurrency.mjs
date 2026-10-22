@@ -102,7 +102,7 @@ export async function measureRpcConcurrency({
   const otherFailures = [];
   for (const r of settled) {
     if (r.status === 'fulfilled') continue;
-    const msg = String(r.reason?.stderr || r.reason?.message || r.reason).trim();
+    const msg = redactUrls(String(r.reason?.stderr || r.reason?.message || r.reason).trim());
     if (RATE_LIMIT_RE.test(msg)) rateLimited.push(msg);
     else otherFailures.push(msg);
   }

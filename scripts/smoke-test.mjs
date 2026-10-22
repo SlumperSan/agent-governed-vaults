@@ -98,7 +98,7 @@ function cast(args, { interactive = false } = {}) {
       windowsHide: true,
     }).trim();
   } catch (e) {
-    const detail = e.stderr ? String(e.stderr).trim() : e.message;
+    const detail = redactUrls(e.stderr ? String(e.stderr).trim() : e.message);
     // `detail` rides on the error so a catch site can classify cast's own words (revert vs
     // transport, packages/canary/src/call-error.mjs) without the prefix below in front of them.
     throw Object.assign(new Error(`cast ${args.slice(0, 3).join(' ')} … failed: ${detail}`), { detail });

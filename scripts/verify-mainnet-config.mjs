@@ -95,7 +95,7 @@ function cast(args, { attempts = 5 } = {}) {
       sleepSync(THROTTLE_MS);
       return out;
     } catch (e) {
-      const detail = String(e.stderr ?? e.message);
+      const detail = redactUrls(String(e.stderr ?? e.message));
       lastErr = detail;
       // A genuine contract-level failure — surface it now, never retry it.
       if (!isTransport(detail)) throw new Error(detail.split('\n')[0].slice(0, 200));
