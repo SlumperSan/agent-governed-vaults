@@ -82,6 +82,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { redactUrls } from '../packages/reference-agent/src/config.mjs';
 import { classifyCallError } from '../packages/canary/src/call-error.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -196,7 +197,15 @@ const notice = (name, detail) => results.push({ name, ok: true, drift: true, det
 const unreadable = (name, detail) => results.push({ name, ok: false, transport: true, detail: String(detail) });
 
 function cast(args) {
-  return execFileSync(CAST, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  try {
+    return execFileSync(CAST, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (e) {
+    // The failure's message ("Command failed: cast ... --rpc-url <url>") and stderr carry the RPC
+    // URL, key included; redact at the source so no print site below can leak it.
+    if (e && typeof e.message === 'string') e.message = redactUrls(e.message);
+    if (e && e.stderr != null) e.stderr = redactUrls(String(e.stderr));
+    throw e;
+  }
 }
 
 /** The flattened error text `classifyCallError` expects: `cast`'s stderr, falling back to the message. */
@@ -491,7 +500,8 @@ export function bandBoundsTwoDecimalDrift(priceWad, min, max) {
  * @param {{configChainId:number|string, rpcChainId:number|null, rpc:string, configPath:string}} a
  * @returns {{ok:boolean, message:string}}
  */
-export function chainBindingVerdict({ configChainId, rpcChainId, rpc, configPath }) {
+export function chainBindingVerdict({ configChainId, rpcChainId, rpc: rawRpc, configPath }) {
+  const rpc = redactUrls(rawRpc); // the messages below are printed; the URL carries the provider key
   const want = Number(configChainId);
   if (!Number.isInteger(want) || want <= 0) {
     return {

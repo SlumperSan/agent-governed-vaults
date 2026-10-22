@@ -40,6 +40,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT, RPC, log, cast, callU, readProposal, chainNow, proposalPreflightVerdict } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 /**
  * Read `activeProposalOf(vault)` and score it. Separated from `main()` so a test can call it with
@@ -60,7 +61,7 @@ function main() {
   const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
   const vault = soak.smokeVault.address;
 
-  log(`governance preflight: vault=${vault} governance=${dep.governance} rpc=${RPC}`);
+  log(`governance preflight: vault=${vault} governance=${dep.governance} rpc=${redactUrls(RPC)}`);
 
   const now = chainNow();
   const { pid, verdict } = checkVault(vault, { governance: dep.governance, now });
@@ -77,7 +78,9 @@ function main() {
       || '--account <your-account> --password-file <your-password-file>';
     console.error(`\nRemedy — this is "${verdict.remedyFn}", external and callable by ANY funded`
       + ` account, not just the deployer's:\n`);
-    console.error(`  cast send ${dep.governance} "${verdict.remedyFn}" ${pid} --rpc-url ${RPC} ${signerArgs}\n`);
+    // A URL with a path (an Alchemy key) is not printed; the operator substitutes their own.
+    const rpcArg = redactUrls(RPC) === RPC ? RPC : '<your-rpc-url>';
+    console.error(`  cast send ${dep.governance} "${verdict.remedyFn}" ${pid} --rpc-url ${rpcArg} ${signerArgs}\n`);
   } else {
     console.error('');
   }

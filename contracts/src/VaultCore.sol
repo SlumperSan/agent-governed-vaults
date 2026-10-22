@@ -456,8 +456,8 @@ contract VaultCore {
         }
     }
 
-    /// @notice Activate a pending deposit after the observation window. Shares mint at
-    /// activation-time NAV (forward pricing on entry, §4.3). Callable by anyone.
+    /// @notice Activate a matured pending deposit; shares mint at activation-time NAV (§4.3).
+    /// Callable by anyone; it takes no slippage bound (`minSharesOut` is immediate-path only, EE-13).
     /// @param member the depositor whose pending deposit matured
     function activate(address member) external nonReentrant {
         PendingDeposit memory p = pendingDeposit[member];

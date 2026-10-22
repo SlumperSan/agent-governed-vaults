@@ -92,6 +92,7 @@ import {
   EXACT_INPUT_SINGLE,
   EXACT_INPUT_SINGLE_SIG,
 } from '../packages/chain-config/src/rebalance-order.mjs';
+import { redactUrls } from '../packages/reference-agent/src/config.mjs';
 
 // The pure half moved to packages/chain-config/src/rebalance-order.mjs so the reference agent can
 // import it (the Dockerfile does not copy scripts/). Re-exported unchanged: every importer of this
@@ -130,10 +131,17 @@ export function rebalanceDecodeSig() {
 }
 
 function cast(...args) {
-  return execFileSync('cast', [...args, '--rpc-url', RPC], {
-    encoding: 'utf8',
-    maxBuffer: 1 << 24,
-  }).trim();
+  try {
+    return execFileSync('cast', [...args, '--rpc-url', RPC], {
+      encoding: 'utf8',
+      maxBuffer: 1 << 24,
+    }).trim();
+  } catch (e) {
+    // The failure's message and stderr carry the RPC URL, key included; redact at the source.
+    if (e && typeof e.message === 'string') e.message = redactUrls(e.message);
+    if (e && e.stderr != null) e.stderr = redactUrls(String(e.stderr));
+    throw e;
+  }
 }
 
 /**
@@ -190,7 +198,7 @@ async function main() {
 
   if (amountIn <= 0n) fail('--amount-in must be positive');
 
-  console.log(`RPC       ${RPC}`);
+  console.log(`RPC       ${redactUrls(RPC)}`);
   console.log(`chainId   ${cast('chain-id')}`);
   console.log(`block     ${big(cast('block-number'))}`);
   console.log(`vault     ${vault}\n`);

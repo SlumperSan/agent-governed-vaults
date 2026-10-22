@@ -51,6 +51,7 @@ import {
 } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
 import { apiGet } from './api-client.mjs';
+import { redactUrls } from '../../packages/reference-agent/src/config.mjs';
 
 const dep = loadDeployment(deploymentPath(ROOT));
 const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
@@ -78,7 +79,7 @@ const ALLOCATE_USDC = String(C.allocateUsdc ?? 2_000_000n);
 // ────────────────────────────────── phases ──────────────────────────────────
 
 function preflight() {
-  log(`rpc=${RPC}  parent=${PARENT}`);
+  log(`rpc=${redactUrls(RPC)}  parent=${PARENT}`);
   assertLiveChainId(dep, Number(cast(['chain-id', '--rpc-url', RPC])));
 
   if (!state.signer) {

@@ -57,6 +57,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { redactUrls } from '../packages/reference-agent/src/config.mjs';
 import {
   checkDeploymentCurrency,
   compareVaultCoreChunks,
@@ -197,7 +198,7 @@ if (ONCHAIN) {
         ),
       };
     } catch (err) {
-      onchain[name] = { skipped: `rpc read failed: ${err instanceof Error ? err.message : String(err)}` };
+      onchain[name] = { skipped: `rpc read failed: ${redactUrls(err instanceof Error ? err.message : String(err))}` };
     }
   }
 }

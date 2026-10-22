@@ -71,8 +71,8 @@ import {
   readProposal, votableNow,
 } from './lib.mjs';
 import { assertLiveChainId, deploymentPath, loadDeployment } from './deployment.mjs';
-import { loadAccountFromKeystore, redact } from '../lib/keystore.mjs';
-import { resolveAgentRunConfig, policyFor, TESTNET_CHAIN_IDS, EXECUTE_ENV_VAR } from './agent-policy.mjs';
+import { loadAccountFromKeystore } from '../lib/keystore.mjs';
+import { resolveAgentRunConfig, policyFor, recordingLogger, TESTNET_CHAIN_IDS, EXECUTE_ENV_VAR } from './agent-policy.mjs';
 
 const dep = loadDeployment(deploymentPath(ROOT));
 const soak = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'soak', 'soak-vaults.json'), 'utf8'));
@@ -124,12 +124,7 @@ async function buildAgent(phase, cfgIn, account, walletClient, entryMarks = {}) 
 
   const events = [];
   const logger = createLogger({ json: false });
-  const wrapped = {
-    ...logger,
-    info: (m, d) => { events.push({ level: 'info', msg: m, detail: redact(d) }); logger.info(m, d); },
-    warn: (m, d) => { events.push({ level: 'warn', msg: m, detail: redact(d) }); logger.warn(m, d); },
-    error: (m, d) => { events.push({ level: 'error', msg: m, detail: redact(d) }); logger.error(m, d); },
-  };
+  const wrapped = recordingLogger(logger, events);
 
   const chainReader = createChainReader({
     rpcUrl: config.chain.rpcUrl, chainId: config.chain.chainId, chainName: config.chain.chainName,
