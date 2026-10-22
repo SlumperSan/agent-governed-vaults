@@ -3,7 +3,7 @@
 /**
  * `node scripts/vault-lint.mjs [--vault <path>]`
  *
- * Card 189, advisory in `npm run gate` for one week then blocking (Chairman directive 6). See
+ * Card 189, advisory in `npm run gate` for one week then blocking. See
  * `scripts/lib/vault-lint.mjs` for the three checks and why they are scoped as narrowly as they are.
  *
  * EXIT CODES: 0 clean (or the vault is absent from this environment -- see below), 1 a fail was

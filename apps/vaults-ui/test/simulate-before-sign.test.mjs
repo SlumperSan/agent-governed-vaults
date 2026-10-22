@@ -7,7 +7,7 @@
  * WHY SOURCE GUARDS, NOT A LIVE ANVIL/MOCK-WALLET RUN. Same constraint as the sibling wiring-guard
  * files: `apps/vaults-ui` has no JSX/TSX loader wired into `node --test`, and `chain-actions.ts`'s
  * `@chain/*` imports only resolve through vite's own aliasing. The frontend security pass that
- * FOUND this defect (`Findings/2026-09-19-frontend-security-pass-EXECUTED.md`) exercised the real
+ * FOUND this defect (2026-09-19) exercised the real
  * function against a real deployed vault with a mocked EIP-1193 provider and logged the actual RPC
  * call order — that is real evidence this fix closes the gap it found, but it was a one-off pass,
  * not committed CI infrastructure, and this file does not attempt to rebuild an anvil-backed

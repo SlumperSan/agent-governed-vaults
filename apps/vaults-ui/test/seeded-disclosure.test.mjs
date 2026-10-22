@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Seeded-address disclosure (Decisions/Seed agent personas 2026-09-23.md, card 210) —
+ * Seeded-address disclosure (seed agent personas of 2026-09-23, card 210) —
  * `apps/web/test/seeded.test.mjs` already pins the pure math (5 holders, 2 seeded => the
  * organic bound is 3, under `SIGNER_REGIME_BELOW`, so `organicStakeWeightedClaim` is `false`).
  * This file pins the OTHER half: that `ProposalPanel.tsx` actually renders nothing unless that

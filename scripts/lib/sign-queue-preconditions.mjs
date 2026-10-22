@@ -262,7 +262,7 @@ export async function personaActivatePreconditionRefusal(fetchImpl, { vault, fro
 }
 
 /**
- * Card 210 (Decisions/Seed agent personas 2026-09-23.md): every persona-routed item must name an
+ * Card 210 (seeded agent personas, 2026-09-23): every persona-routed item must name an
  * EOA that is actually disclosed, under the matching persona, in `docs/seeded-addresses.json`
  * (PR #391) — refuses with a clear message when that file is not present in this checkout rather
  * than silently skipping the check. Deliberately synchronous (a filesystem read, not a chain read)
@@ -357,7 +357,7 @@ const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 const normIntentAddr = (a) => (typeof a === 'string' && ADDR_RE.test(a.trim()) ? a.trim().toLowerCase() : null);
 
 /**
- * The #329 lesson applied to persona deposits (Chairman, via the CEO, 2026-09-24): check the
+ * The #329 lesson applied to persona deposits (2026-09-24): check the
  * transaction the owner will ACTUALLY sign against a DECLARED intent the builder did not write.
  * Every other persona gate reads the builder's own side-fields (`item.vault`, `item.amountUsdcRaw`),
  * so a builder that encoded different bytes than those fields would pass all of them — the same

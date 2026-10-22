@@ -51,7 +51,7 @@
  * `GOVERNANCE` in the environment overrides the address read from `vault.governance()`.
  *
  * `--max-slippage-bps N` overrides the DEFAULT DERIVED `maxSlippageBps` encoded into the payload
- * (see the CTO-decision comment near the derivation, card 209, below). The default is never the
+ * (see the derivation comment below, card 209). The default is never the
  * contract's ceiling: it computes `ceil(poolFeeBps + measuredExecutionGapBps) + 25 bps` from this
  * order's own pool and oracle reads, and refuses above a 100 bps cap unless `N` is passed
  * explicitly. `N` must be `1..MAX_REBALANCE_SLIPPAGE_BPS`, read from chain, and above that this
@@ -214,7 +214,7 @@ async function main() {
   // ---- the contract's ceiling, and any explicit override, validated against it EARLY ----------
   // MAX_REBALANCE_SLIPPAGE_BPS is the RAIL VaultCore enforces (`BadSlippageBound()` outside
   // `(0, ceilingBps]`), read off chain rather than restated. It is not this script's default --
-  // see the CTO-decision comment below, where the actual value used (`chosenSlipBps`) is derived.
+  // see the derivation comment below, where the actual value used (`chosenSlipBps`) is derived.
   const ceilingBps = big(call(vault, 'MAX_REBALANCE_SLIPPAGE_BPS()(uint256)'));
   console.log(`MAX_REBALANCE_SLIPPAGE_BPS (ceiling)  ${ceilingBps}\n`);
 
@@ -422,7 +422,7 @@ async function main() {
   // settlement token, which the constructor permits.
   const usdcScalar = big(call(vault, 'usdcScalar()(uint256)'));
 
-  // ---- CTO DECISION 2026-09-23 (card 209): derive maxSlippageBps, never default to the ceiling --
+  // ---- DECISION 2026-09-23 (card 209): derive maxSlippageBps, never default to the ceiling --
   //
   // Security, reviewing PR #375 (card 207), found that this script always encoded the contract's
   // ceiling `MAX_REBALANCE_SLIPPAGE_BPS` (200 bps / 2%) as the payload's `maxSlippageBps`, with no

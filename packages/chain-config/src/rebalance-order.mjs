@@ -65,7 +65,7 @@ export function validateOverrideRange(overrideBps, ceilingBps) {
   return { ok: true };
 }
 
-// The fixed buffer and default cap from the CTO decision (card 209; the rationale is the comment in
+// The fixed buffer and default cap from the card 209 design decision (the rationale is the comment in
 // main() of scripts/build-rebalance-order.mjs) -- exported so a test reads the
 // same constants this module enforces rather than hand-duplicating "25" and "100" and silently
 // drifting from them.
@@ -73,7 +73,7 @@ export const DERIVED_BUFFER_BPS = 25n;
 export const DERIVED_CAP_BPS = 100n;
 
 /**
- * Card 209's maxSlippageBps derivation (see the CTO-decision comment in scripts/build-rebalance-order.mjs main() for the
+ * Card 209's maxSlippageBps derivation (see the rationale comment in scripts/build-rebalance-order.mjs main() for the
  * full rationale), isolated into a PURE function -- no chain call, no process.exit -- so every
  * refusal branch is unit- and mutation-testable directly against plain bigint inputs instead of
  * through a simulated chain: scripts/test/build-rebalance-order-slippage.test.mjs.

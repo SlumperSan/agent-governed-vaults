@@ -159,7 +159,7 @@ export async function advanceSentItems(queue, fetchImpl, queuePath = QUEUE_PATH)
 }
 
 /**
- * Card 210: once a persona-deposit item confirms `done`, record the reads the owner asked for so
+ * Card 210: once a persona-deposit item confirms `done`, record the specified reads so
  * shares/NAV can be verified after it lands without a separate manual pass: `sharesOf(holder)`,
  * `totalShares()`, `navWad()`, `idleUsdc()` and the holder's own USDC balance. `postCheckPlan` is
  * set on ALL THREE persona-deposit items (approve, deposit, activate), not only deposit/activate,

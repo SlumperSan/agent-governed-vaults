@@ -227,7 +227,7 @@ const STEPS = [
     cmd: process.execPath,
     args: [path.join(REPO, 'scripts/vault-lint.mjs')],
     cwd: REPO,
-    // ADVISORY for one week from 2026-09-19, then blocking (card 189, Chairman directive 6). The
+    // ADVISORY for one week from 2026-09-19, then blocking (card 189). The
     // vault is a local machine path outside this repo and outside CI's reach -- the script itself
     // exits 0 with a notice when the vault is simply absent from this environment, which is why
     // this step is safe to run unconditionally rather than gated on a path check here.

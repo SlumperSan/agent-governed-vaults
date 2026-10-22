@@ -115,7 +115,7 @@ export class SanctionsListStaleError extends Error {
  *
  * EXCEPT a member taking their own money OUT (`STALE_LIST_EXEMPT_FUNCTIONS`: requestExit,
  * claimEscrowed). Those are still checked against the bundled list, so a listed address is still
- * refused, but a stale list does not block them. The CTO decided this on 2026-09-24. Freezing
+ * refused, but a stale list does not block them. This was decided on 2026-09-24. Freezing
  * every member's exit in this UI because the team's monthly list refresh slipped is a
  * self-inflicted withdrawal freeze. It also buys no control, because `requestExit` and
  * `claimEscrowed` are callable on the contract directly and this check is front-end only.

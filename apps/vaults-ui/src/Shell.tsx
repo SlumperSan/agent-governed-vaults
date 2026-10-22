@@ -3,8 +3,7 @@ import { DISCLAIMERS_URL, FOOTER_LINKS, NAV, SITE_URL } from './nav';
 /**
  * The Threshold mark, inline, ported from `apps/site/src/Shell.tsx`'s own `BrandMark` — same
  * geometry, same reasoning: three courses, the middle one open at the centre, copied verbatim from
- * Design/brand-threshold/mark.svg (owner-approved 2026-09-18,
- * Agent-Governed Vaults/Decisions/the-mark-is-threshold-2026-09-18.md), viewBox cropped to the
+ * the brand source mark.svg (approved 2026-09-18), viewBox cropped to the
  * mark's own bounding box rather than the source file's padded 64x64 canvas. Inline rather than an
  * `<img src>` because this app's CSP ships `img-src 'self'` with no `data:`.
  */

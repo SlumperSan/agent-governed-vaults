@@ -84,8 +84,8 @@ allowlist. So the oracle is deployed **before** the factory:
    not a deployer default:** an aggregator-swap drift of ±2 decimals is caught only while
    `hi/100 < spot < 100·lo`, a window `10,000 / (hi ÷ lo)` wide, so the shipped ratio-1000 bands
    give the *least* coverage the constructor allows (10x: WETH $1,000..$10,000, cbBTC
-   $10,000..$100,000) and a tighter band gives more. Row 14 carries the boundaries and the owner
-   memo `Owner Decisions 2026-09-01` §1 the options; do not retune without that decision recorded.
+   $10,000..$100,000) and a tighter band gives more. Row 14 carries the boundaries and the
+   options; do not retune without a recorded decision.
 3. **Verify it on-chain** (read-only, no key): `node scripts/verify-chainlink-oracle.mjs` — must
    exit 0 (every feed: code, `decimals ≤ 18`, `answer > 0`, fresh within heartbeat; sequencer feed
    present and answering; and the band bounds a 2-decimal drift **at the live price**, which the

@@ -99,7 +99,7 @@ export {
 } from '@atlas/size-impact';
 export type { MaterialEdge, SizeForecast } from '@atlas/size-impact';
 
-// Seeded-address awareness (Decisions/Seed agent personas 2026-09-23.md, card 210) — labels a
+// Seeded-address awareness (seed agent personas of 2026-09-23, card 210) — labels a
 // disclosed address and gates any "organically stake-weighted" governance claim. See
 // apps/web/src/seeded.mjs's own header for why quorum math itself is never touched here.
 export { seededEntryFor, isSeeded, organicMemberBound, organicStakeWeightedClaim } from '@atlas/seeded';

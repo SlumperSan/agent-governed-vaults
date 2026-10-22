@@ -224,7 +224,7 @@ function teamOf(branch) {
 // ---------------------------------------------------------------- departments (the vault)
 
 /**
- * Department output, read from the Obsidian vault. This is the only part of the board that looks
+ * Department output, read from the local notes vault. This is the only part of the board that looks
  * OUTSIDE the repo, because department deliverables are notes, not code.
  */
 function departments(vaultRoot) {
@@ -342,7 +342,7 @@ function frontmatter(text) {
  * The content calendar, read from `GTM/Calendar/*.md` in the vault.
  *
  * One file per planned post. Marketing writes them; this only reads. Same design rule as the board:
- * the vault is the store, nothing here writes back, and a file edited in Obsidian appears on the
+ * the vault is the store, nothing here writes back, and a file edited by hand appears on the
  * next poll.
  *
  * A file missing `date` is REPORTED rather than skipped. A calendar that silently drops an undated
@@ -408,7 +408,7 @@ export function readCalendar(vaultRoot) {
 }
 
 /**
- * The task board, read from `Tasks/*.md` in the Obsidian vault.
+ * The task board, read from `Tasks/*.md` in the local notes vault.
  *
  * WHY THE VAULT AND NOT A DATABASE. Department sessions cannot see each other; the vault is the
  * only thing they all write to, and they already write files there reliably. A task is therefore a

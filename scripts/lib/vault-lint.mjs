@@ -2,7 +2,7 @@
 /**
  * `Tasks/*.md` corruption checks — card 135's post-mortem, made mechanical.
  *
- * WHAT THIS IS NOT. Directive 6 (`Chairman-directives-2026-09-19.md`) asked for a broader vault
+ * WHAT THIS IS NOT. Directive 6 (2026-09-19) asked for a broader vault
  * lint: every note has `type`/`date`/`summary`, every `Rules/*.md` is indexed in `RULES.md`, every
  * `[[wikilink]]` resolves, alongside the closed vocabularies. This file is card 189's narrower,
  * MEASURED scope only: the three corruption checks that found card 135, plus the `owner` free-text

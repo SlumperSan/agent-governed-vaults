@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * `docs/seeded-addresses.json` — the public disclosure list for owner-funded persona wallets
- * (Decisions/Seed agent personas 2026-09-23.md, Tasks/seeded-persona-activity.md card 210).
+ * (seeded agent personas, 2026-09-23, card 210).
  *
  * The shipped file has an EMPTY `addresses` array (no wallet exists yet), so a test that only
  * reads the real file would pass vacuously and prove nothing about the schema. This file therefore

@@ -1,8 +1,8 @@
 // @ts-check
 /**
- * Card 218 (CPO, 2026-09-24): "Deposit USDC" reads as capital-stable, but the basket is cirBTC,
+ * Card 218 (product review, 2026-09-24): "Deposit USDC" reads as capital-stable, but the basket is cirBTC,
  * so a member's shares move with Bitcoin's price. The Deposit section must say so, UNCONDITIONALLY,
- * before the first deposit. Wording is the CMO's (Tasks/cpo-deposit-states-btc-exposure.md).
+ * before the first deposit. Wording is marketing's.
  *
  * SOURCE GUARDS, same shape as exit-freeze-gate.test.mjs (P-O13): no JSX/TSX loader in
  * `node --test`, so the component source is read and the disclosure's position and wrapping are

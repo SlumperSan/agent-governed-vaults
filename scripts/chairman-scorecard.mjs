@@ -3,14 +3,14 @@
 /**
  * `node scripts/chairman-scorecard.mjs [--file]`
  *
- * Card 188, Chairman directive 10. One command, printing what a digest claims so the digest can
+ * Card 188. One command, printing what a digest claims so the digest can
  * be checked against it rather than trusted. **Every number here is computed from `gh`, `git` or
  * the filesystem, none passed in** -- see `scripts/lib/chairman-scorecard.mjs`'s header for the
- * two directive-10 numbers that structurally cannot be (weekly plan %, messages per session) and
+ * two requested numbers that structurally cannot be (weekly plan %, messages per session) and
  * why this script says so explicitly instead of omitting or faking them.
  *
- * `--file` writes the report to `Findings/<date>-chairman-scorecard.md` in the vault, in addition
- * to stdout -- the card's own closes-when condition.
+ * `--file` also writes the report to a dated scorecard file under the local notes root, in
+ * addition to stdout -- the card's own closes-when condition.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -49,7 +49,7 @@ function main() {
 
   out.push(`# Chairman scorecard — ${now.toISOString()}`, '');
 
-  // ── The two directive-10 numbers this script cannot reach. Stated every run, not omitted. ──
+  // ── The two requested numbers this script cannot reach. Stated every run, not omitted. ──
   out.push(section('Weekly plan % / hours to reset / projected exhaustion', [
     'NOT COMPUTABLE FROM A STANDALONE SCRIPT — `get_usage` is a live Claude session tool with no',
     'file or network path a `node` process can reach. Run `get_usage` in a live session for this.',

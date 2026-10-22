@@ -10,9 +10,9 @@
  *   node scripts/check-doc-claims.mjs --ref origin/main   # which ref defines "merged"
  *   node scripts/check-doc-claims.mjs --root "<dir>"      # point it at any document tree
  *
- * `--root` is the reason this is a CLI and not only a test: the Obsidian vault makes the same two
- * kinds of claim about this repository and is not in it. `npm run gate` checks `docs/`; a human
- * runs this against the vault.
+ * `--root` is the reason this is a CLI and not only a test: notes kept outside this
+ * repository make the same two kinds of claim about it. `npm run gate` checks `docs/`; a human
+ * runs this against those notes.
  */
 import { readdirSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';

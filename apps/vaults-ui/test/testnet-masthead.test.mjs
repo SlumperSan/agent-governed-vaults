@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Chairman directive: `app.rwally.com`'s masthead must carry a truthful, unconditional statement
+ * Requirement: `app.rwally.com`'s masthead must carry a truthful, unconditional statement
  * of what chain it reads and whether real funds are at stake. On Base Sepolia that was, verbatim,
  * "Reading Base Sepolia testnet. No vault holds real funds yet." RWAlly's v1 vault (cirBTC Vault,
  * 0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6) went live on Arc mainnet (chain 5042) on 2026-09-24
@@ -14,7 +14,7 @@
  *
  * UNCONDITIONAL, ON PURPOSE. `App.tsx`'s masthead already had one line gated on
  * `fetched.kind === 'ready' && fetched.freshness['rpcUrl']` — the exact disclosure-that-vanishes
- * shape this repo has found five times this week (`Rules/a-disclosure-that-vanishes-is-a-claim.md`):
+ * shape this repo has found five times this week (a disclosure that vanishes is a claim):
  * a read that can fail is a disclosure that can vanish, and its absence reads as an unqualified,
  * unlabelled mainnet. This guard asserts the string is present in the masthead's own JSX source
  * with NO conditional wrapping it — not behind `fetched.kind`, not behind a ternary, not behind
@@ -88,7 +88,7 @@ function checkChainClaim(headerSrc, chainId) {
 test('the masthead carries the mainnet disclosure verbatim', () => {
   assert.ok(
     mastheadSource().includes(MASTHEAD_TEXT),
-    'the exact Chairman-directed mainnet string is missing from the masthead',
+    'the exact required mainnet string is missing from the masthead',
   );
 });
 

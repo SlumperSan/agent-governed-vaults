@@ -196,8 +196,8 @@ export function validateGhPayloads(prData, runsData, behindBy) {
  * Who may speak to the gate. The repo is PUBLIC, and a REVIEW-ROSTER or REVIEW-VERDICT token names
  * its reviewer in its own text, so without this any GitHub account could post a hidden
  * `<!-- REVIEW-VERDICT reviewer=Security verdict=ACCEPT -->` after a real REJECT, or re-roster the
- * PR to itself, and the gate would go CLEAR (Security, Findings/2026-09-24-merge-gate-counts-anyones-
- * comments.md). GitHub's `authorAssociation` is set by GitHub, not by the commenter.
+ * PR to itself, and the gate would go CLEAR (security finding, 2026-09-24: the merge gate counted
+ * anyone's comments). GitHub's `authorAssociation` is set by GitHub, not by the commenter.
  */
 export const TRUSTED_ASSOCIATIONS = Object.freeze(['OWNER', 'MEMBER', 'COLLABORATOR']);
 

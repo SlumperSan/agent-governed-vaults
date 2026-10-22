@@ -124,7 +124,7 @@ test('.env.example: VITE_VAULT_NAME is set to "cirBTC Vault" against the real Ar
   // at a generic Base Sepolia smoke-test fixture, and setting a real display name against it would
   // have been a false claim shipped into every developer's local build — this test asserted the
   // name was ABSENT for exactly that reason. .env.example now points at RWAlly's real v1 mainnet
-  // vault (card #67, `Decisions/Vault name is cirBTC Vault 2026-09-19`), so the same false-claim
+  // vault (card #67, named cirBTC Vault on 2026-09-19), so the same false-claim
   // risk runs the other way: leaving the name unset here would render `shortAddress` instead of the
   // name the owner decided on. `test/csp.test.mjs` additionally asserts this string reaches the
   // built bundle, not just this file.
