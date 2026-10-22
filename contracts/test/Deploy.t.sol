@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {Create2ProxyFixture} from "./helpers/Create2ProxyFixture.sol";
 import {ProtocolCreate2} from "../script/lib/ProtocolCreate2.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
@@ -129,6 +130,27 @@ contract DeployTest is Create2ProxyFixture {
         vm.prank(PROTOCOL_INITIALIZER);
         vm.expectRevert(FeeEngine.AlreadyInitialized.selector);
         feeEngine.initialize(address(0xBEEF));
+    }
+
+    /// @notice A15 A3: the treasury lands BEFORE `registry.wire`, so there is no block in which a vault
+    /// can be created while the engine takes no fee. Read from the emitted order, not the source.
+    function test_deploySetsTheTreasuryBeforeTheRegistryIsWired() public {
+        Deploy d = new Deploy();
+        vm.recordLogs();
+        (OperatorRegistry registry,, FeeEngine feeEngine,,,,) = d.run();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 treasurySet = type(uint256).max;
+        uint256 factorySet = type(uint256).max;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(feeEngine) && logs[i].topics[0] == FeeEngine.Initialized.selector) {
+                treasurySet = i;
+            }
+            if (logs[i].emitter == address(registry) && logs[i].topics[0] == OperatorRegistry.FactorySet.selector) {
+                factorySet = i;
+            }
+        }
+        assertLt(factorySet, logs.length, "registry.wire emitted no FactorySet");
+        assertLt(treasurySet, factorySet, "feeEngine.initialize must land before registry.wire");
     }
 
     /// @notice On any real chain the treasury must be supplied: with `FEE_TREASURY` unset the read

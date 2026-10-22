@@ -1,1 +1,1 @@
-{ "chains": { "ethereum-dryrun": { "chainId": 1, "rpcs": ["http://127.0.0.1:8545", "http://localhost:8545"], "oracles": ["ORACLE_ADDR"], "agentRegistry": "AGENT_REGISTRY", "fromBlock": "0x0" } } }
+{ "chains": { "ethereum-dryrun": { "chainId": 1, "rpcs": ["http://127.0.0.1:8545", "http://localhost:8545"], "oracles": ["ORACLE_ADDR"], "agentRegistry": "AGENT_REGISTRY", "fromBlock": "FROM_BLOCK_HEX" } } }

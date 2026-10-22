@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Ethereum v2 deploy dry run on a LOCAL anvil at chain id 1 (Osaka rules). No real key is used and
-# nothing is sent anywhere but 127.0.0.1. See docs/audits/2026-10-21-deploy-dry-run.md.
+# nothing is sent anywhere but 127.0.0.1 (in fork mode anvil also READS mainnet state from FORK_URL).
+# See docs/audits/2026-10-21-deploy-dry-run.md.
 #
 # Needs forge, cast and anvil on PATH (Foundry 1.7.1 was used) and a `forge build` of contracts/.
 # Optional env:
+#   FORK_URL=<rpc>         fork Ethereum mainnet (anvil --fork-url) instead of a fresh chain: the real
+#                          proxy, feeds and tokens are used and no stand-ins are etched. Default: a
+#                          plain anvil chain with stand-ins, as before.
+#   FORK_BLOCK=<n>         pin the fork block (default: the endpoint's latest)
 #   SOLC=<path>            a solc binary for forge --use (with --offline) when forge cannot fetch one
 #   SAFE_ARTIFACTS=<dir>   build/artifacts/contracts of `npm i @safe-global/safe-contracts@1.4.1-build.0`;
 #                          step 8 (real 2 of 3 Safe) is skipped, and says so, without it
@@ -12,6 +17,7 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$HERE/../../.." && pwd)
 WORK=${WORK:-$(mktemp -d)}; mkdir -p "$WORK"
 R=http://127.0.0.1:8545; export R
+FORK_URL=${FORK_URL:-}
 FORGE_ARGS=(); [ -n "${SOLC:-}" ] && FORGE_ARGS=(--use "$SOLC" --offline)
 # Broadcast records go to WORK, never to contracts/broadcast/<script>/1/, so a rehearsal at chain id
 # 1 leaves nothing a real mainnet run could later mistake for its own (forge --resume reads there).
@@ -26,9 +32,26 @@ FEE_TREASURY=${FEE_TREASURY:-0x000000000000000000000000000000000000fEE1}; export
 step() { echo; echo "######## $1"; }
 cleanup() { [ -f "$WORK/anvil.pid" ] && kill "$(cat "$WORK/anvil.pid")" 2>/dev/null; rm -rf "$REPO"/contracts/cache/*.s.sol/1; }
 trap cleanup EXIT
-anvil --chain-id 1 --port 8545 --hardfork osaka --timestamp 1792000000 > "$WORK/anvil.log" 2>&1 & echo $! > "$WORK/anvil.pid"
-sleep 3
+if [ -n "$FORK_URL" ]; then
+  # The fork keeps mainnet's chain id (1), its clock and its state; FROM_BLOCK keeps every log query
+  # on the local side of the fork, so no range is ever asked of the public endpoint.
+  anvil --fork-url "$FORK_URL" ${FORK_BLOCK:+--fork-block-number $FORK_BLOCK} --chain-id 1 --port 8545 --hardfork osaka > "$WORK/anvil.log" 2>&1 & echo $! > "$WORK/anvil.pid"
+  sleep 8
+  FROM_BLOCK=$(cast block-number -r $R); export FROM_BLOCK
+  echo "MODE fork of Ethereum mainnet at block $FROM_BLOCK (endpoint host: $(echo "$FORK_URL" | sed -E 's#^[a-z]+://([^/]+).*#\1#'))"
+  # The anvil test keys are public; on mainnet some of their addresses carry EIP-7702 delegations set by
+  # sweeper bots. Clear any such code locally so the throwaway sender and Safe owners are plain accounts.
+  for a in 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC 0x90F79bf6EB2c4f870365E785982E1f101E93b906; do
+    cast rpc anvil_setCode $a 0x -r $R >/dev/null; cast rpc anvil_setBalance $a 0x8AC7230489E80000 -r $R >/dev/null
+  done
+else
+  anvil --chain-id 1 --port 8545 --hardfork osaka --timestamp 1792000000 > "$WORK/anvil.log" 2>&1 & echo $! > "$WORK/anvil.pid"
+  sleep 3
+  FROM_BLOCK=0; export FROM_BLOCK
+  echo "MODE plain anvil at chain id 1 (no fork; mainnet feeds and tokens are stand-ins)"
+fi
 
+if [ -z "$FORK_URL" ]; then
 step "stand-ins: compile"
 mkdir -p "$WORK/standins/src"
 cat > "$WORK/standins/src/StandIns.sol" <<'SOL'
@@ -53,14 +76,24 @@ contract TokenStandIn {
 }
 SOL
 (cd "$WORK/standins" && forge build --root . --contracts src --out out --evm-version cancun "${FORGE_ARGS[@]}" >/dev/null) || { echo "stand-in build failed"; exit 1; }
+fi
 
 step "0. chain and proxy"
 echo "chainId $(cast chain-id -r $R)  hardfork $(cast rpc anvil_nodeInfo -r $R | jq -r .hardFork)"
 echo "Arachnid proxy runtime $(cast code 0x4e59b44847b379578588920cA78FbF26c0B4956C -r $R)"
 echo "PROTOCOL_INITIALIZER code bytes $(( ($(cast code $PI -r $R | wc -c) - 3) / 2 ))  nonce $(cast nonce $PI -r $R)"
 for c in OperatorRegistry SubVaultRegistry FeeEngine Governance VaultDeployer AgentVaultDeployer VaultFactory; do a=$(jq -r ".contracts.$c.address" "$REPO/contracts/config/create2-manifest.json"); echo "predicted $c $a code bytes $(( ($(cast code $a -r $R | wc -c) - 3) / 2 ))"; done
+a=$(jq -r .address "$REPO/contracts/config/agent-registry-create2.json"); echo "recorded RWAllyAgentRegistry $a code bytes $(( ($(cast code $a -r $R | wc -c) - 3) / 2 ))"
 
-step "1. stage stand-ins at mainnet feed and token addresses (no mainnet RPC was reachable)"
+if [ -n "$FORK_URL" ]; then
+step "1. real mainnet feeds and tokens (fork: nothing is etched)"
+for f in $FETH $FBTC; do
+  rd=$(cast call $f 'latestRoundData()(uint80,int256,uint256,uint256,uint80)' -r $R | awk '{print $1}' | paste -sd' ')
+  echo "feed $f $(cast call $f 'description()(string)' -r $R) decimals $(cast call $f 'decimals()(uint8)' -r $R) answer $(echo $rd | cut -d' ' -f2) updatedAt $(echo $rd | cut -d' ' -f4) (block time $(cast block latest -f timestamp -r $R)) code bytes $(( ($(cast code $f -r $R | wc -c) - 3) / 2 ))"
+done
+for t in $WETH $WBTC $USDC; do echo "token $t decimals $(cast call $t 'decimals()(uint8)' -r $R)"; done
+else
+step "1. stage stand-ins at mainnet feed and token addresses (plain anvil; set FORK_URL to use the real ones)"
 FEED=$(jq -r .deployedBytecode.object "$WORK/standins/out/StandIns.sol/FeedStandIn.json"); TOK=$(jq -r .deployedBytecode.object "$WORK/standins/out/StandIns.sol/TokenStandIn.json")
 for a in $FETH $FBTC; do cast rpc anvil_setCode $a $FEED -r $R >/dev/null; done
 for a in $WETH $WBTC $USDC; do cast rpc anvil_setCode $a $TOK -r $R >/dev/null; done
@@ -68,6 +101,7 @@ cast send $FETH "init(string,uint8,int256)" "ETH / USD" 8 250000000000 --private
 cast send $FBTC "init(string,uint8,int256)" "BTC / USD" 8 8000000000000 --private-key $K0 -r $R >/dev/null
 cast send $WETH "init(uint8)" 18 --private-key $K0 -r $R >/dev/null; cast send $WBTC "init(uint8)" 8 --private-key $K0 -r $R >/dev/null; cast send $USDC "init(uint8)" 6 --private-key $K0 -r $R >/dev/null
 echo "ETH/USD $(cast call $FETH 'description()(string)' -r $R) answer 2500e8; BTC/USD $(cast call $FBTC 'description()(string)' -r $R) answer 80000e8; token decimals 18/8/6"
+fi
 
 cd "$REPO/contracts"
 export ORACLE_ASSETS=$WETH,$WBTC ORACLE_FEEDS=$FETH,$FBTC ORACLE_HEARTBEATS=3600,3600 ORACLE_USDC=$USDC
@@ -78,20 +112,32 @@ export ORACLE_MIN_WAD=250000000000000000000,5000000000000000000000 ORACLE_MAX_WA
 forge script script/DeployChainlinkOracle.s.sol:DeployChainlinkOracle "${FORGE_ARGS[@]}" --rpc-url $R --private-key $K0 --broadcast 2>&1 | grep -E "feed OK|ChainlinkOracle |sequencer|COMPLETE|Error"
 ORA=$(jq -r '.receipts[0].contractAddress' "$FOUNDRY_BROADCAST/DeployChainlinkOracle.s.sol/1/run-latest.json"); export ORA; echo "ORA=$ORA"
 step "2c. RWAllyAgentRegistry at its CREATE2 record via the Arachnid proxy (Deploy.s.sol refuses without its code)"
-# Code only: the registry's own initialize (fee token, outside registry, import ceiling) is a separate
-# owner step and Deploy.s.sol needs only code at the address, so it is not called here.
-AR_CFG="$REPO/contracts/config/agent-registry-create2.json"; AR=$(jq -er .address "$AR_CFG")
+# Its code goes first (any key); its own one-shot initialize is step 2d.
+AR_CFG="$REPO/contracts/config/agent-registry-create2.json"; AR=$(jq -er .address "$AR_CFG"); export AR
 AR_INIT=$(jq -r .bytecode.object out/RWAllyAgentRegistry.sol/RWAllyAgentRegistry.json)
 echo "initcodeHash $(cast keccak "$AR_INIT") (record $(jq -r .initcodeHash "$AR_CFG"))"
 AR_GAS=$(cast send "$(jq -r .factory "$AR_CFG")" "$(jq -r .salt "$AR_CFG")${AR_INIT#0x}" --private-key $K0 -r $R --json | jq -r .gasUsed)
 echo "$( [ $((AR_GAS)) -le 16777216 ] && echo PASS || echo FAIL ) gasUsed=$((AR_GAS)) (EIP-7825 cap 16,777,216)  $AR code bytes $(( ($(cast code $AR -r $R | wc -c) - 3) / 2 ))"
+step "2d. RWAllyAgentRegistry.initialize as PROTOCOL_INITIALIZER (anvil impersonation, no key), then a repeat (must revert)"
+cast rpc anvil_impersonateAccount $PI -r $R >/dev/null; cast rpc anvil_setBalance $PI 0x8AC7230489E80000 -r $R >/dev/null
+# PLACEHOLDER owner (a dead-looking address), fee token USDC, the placeholder treasury, fee 0. The outside
+# ERC-8004 registry and import ceiling are the recorded Ethereum snapshot when it has code here (fork),
+# else none (plain anvil, where nothing is at that address).
+OUT_REG=$(jq -r '.importCeilings.chains["ethereum-mainnet"].outsideRegistry' "$AR_CFG"); CEIL=$(jq -r '.importCeilings.chains["ethereum-mainnet"].nextId' "$AR_CFG")
+[ "$(cast code $OUT_REG -r $R)" == "0x" ] && { OUT_REG=0x0000000000000000000000000000000000000000; CEIL=0; }
+AR_OWNER=0x000000000000000000000000000000000000A11C
+AR_ARGS=($AR_OWNER $USDC $FEE_TREASURY 0 $OUT_REG $CEIL)
+r=$(cast send $AR 'initialize(address,address,address,uint256,address,uint256)' "${AR_ARGS[@]}" --unlocked --from $PI -r $R --json 2>&1)
+echo "$r" | jq -e '.status == "0x1"' >/dev/null && echo "PASS  initialize: gasUsed $(( $(echo "$r" | jq -r .gasUsed) ))  outsideRegistry $OUT_REG  importIdCeiling $CEIL" || echo "FAIL  initialize: $(echo "$r" | head -c 300)"
+echo "owner $(cast call $AR 'owner()(address)' -r $R)  feeToken $(cast call $AR 'feeToken()(address)' -r $R)  treasury $(cast call $AR 'treasury()(address)' -r $R)  initialized $(cast call $AR 'initialized()(bool)' -r $R)"
+r=$(cast send $AR 'initialize(address,address,address,uint256,address,uint256)' "${AR_ARGS[@]}" --unlocked --from $PI -r $R --json 2>&1)
+echo "$r" | grep -qi "revert\|error" && echo "PASS  repeat initialize reverts ($(echo "$r" | grep -o 'custom error [^,]*\|0x[0-9a-f]\{8\}' | head -1))" || echo "FAIL  repeat initialize succeeded"
 step "3a. Deploy.s.sol with EMPTY BLESSED_ORACLES on chain 1 (must refuse)"
 forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --private-key $K0 --broadcast 2>&1 | grep -m1 "Error"
 step "3b. Deploy.s.sol signed by the throwaway key (must refuse: broadcast is pinned to PROTOCOL_INITIALIZER)"
 BLESSED_ORACLES=$ORA forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --private-key $K0 --broadcast 2>&1 | grep -m1 "Error"
 echo "block after refusals $(cast block-number -r $R)"
 step "3c. Deploy.s.sol as PROTOCOL_INITIALIZER (anvil impersonation, no key)"
-cast rpc anvil_impersonateAccount $PI -r $R >/dev/null; cast rpc anvil_setBalance $PI 0x8AC7230489E80000 -r $R >/dev/null
 BLESSED_ORACLES=$ORA FEE_TREASURY=$FEE_TREASURY forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --unlocked --sender $PI --broadcast 2>&1 | grep -E "^  [A-Z][A-Za-z]+ +0x|COMPLETE|Error"
 step "4. per-transaction gas (EIP-7825 cap 16,777,216; anvil does not enforce it, so it is checked here)"
 for f in DeployChainlinkOracle.s.sol Deploy.s.sol; do node -e '
@@ -100,7 +146,8 @@ step "5. read-back"
 "$HERE/readback.sh"
 for n in OperatorRegistry SubVaultRegistry Governance; do set $n $(jq -er ".contracts.$n.address" "$REPO/contracts/config/create2-manifest.json"); a=$(cast code $2 -r $R | tr A-F a-f); b=$(jq -r .deployedBytecode.object out/$1.sol/$1.json | tr A-F a-f); [ "$a" == "$b" ] && echo "PASS  runtime == local build: $1" || echo "FAIL  runtime differs: $1"; done
 step "6. initialisation preflight (repo script, two endpoints)"
-sed "s/ORACLE_ADDR/$ORA/; s/AGENT_REGISTRY/$AR/" "$HERE/plan.tmpl.json" > "$WORK/plan.json"; sed "s/ORACLE_ADDR/0x000000000000000000000000000000000000dEaD/; s/AGENT_REGISTRY/$AR/" "$HERE/plan.tmpl.json" > "$WORK/plan-wrong.json"
+FB=$(printf '0x%x' "$FROM_BLOCK")
+sed "s/ORACLE_ADDR/$ORA/; s/AGENT_REGISTRY/$AR/; s/FROM_BLOCK_HEX/$FB/" "$HERE/plan.tmpl.json" > "$WORK/plan.json"; sed "s/ORACLE_ADDR/0x000000000000000000000000000000000000dEaD/; s/AGENT_REGISTRY/$AR/; s/FROM_BLOCK_HEX/$FB/" "$HERE/plan.tmpl.json" > "$WORK/plan-wrong.json"
 node "$REPO/scripts/protocol-initialize-preflight.mjs" --plan "$WORK/plan.json"; echo "exit $?"
 echo "-- negative: plan names an oracle that was not blessed"
 node "$REPO/scripts/protocol-initialize-preflight.mjs" --plan "$WORK/plan-wrong.json" 2>&1 | head -2; echo "exit ${PIPESTATUS[0]}"
