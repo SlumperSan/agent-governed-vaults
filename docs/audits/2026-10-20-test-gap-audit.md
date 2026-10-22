@@ -894,7 +894,7 @@ VaultCore has exactly one auth pattern: `require(msg.sender == address(governanc
 |---|---|---|
 | `allocateToChild` | 821 | Yes: SubVaults:332 `test_childFlowsAreGovernanceOnly` (confirm it covers allocate AND redeem) |
 | `redeemFromChild` | 859 | Same test (SubVaults:332); not asserted separately |
-| `executeRebalance` | 935 | Yes: Execution.t.sol:364 `test_rebalanceOnlyThroughGovernance` |
+| `executeRebalance` | 935 | Yes: Execution.t.sol:365 `test_rebalanceOnlyThroughGovernance` |
 | `pullChildEscrow` | none | PERMISSIONLESS by design (903); no test of caller-independence or of non-registered child |
 | `activate`, `settleQueuedExit` | none | permissionless by design; no test that a third party cannot change the beneficiary (it pays `member`) |
 Missing: `executeRebalance` called by the CREATOR / a voting majority holder directly (expects OnlyGovernance).
@@ -930,7 +930,7 @@ Not found by grep:
 - `basisRemoved = costBasis * burn / memberShares` rounding to 0 on tiny burns, repeated tiny exits draining
   fee-free gain (floor division favors the exiter on basis). No fuzz of N small exits vs one big exit.
 - `_exitFeeBps`: boundaries tenure == period - 1, == period, and `lastDepositTime` reset on top-up deposit
-  (`test_exitFeeDecaysWithTenure`, VaultCore.t.sol:233, is a single decay check). Sole-holder waiver `memberShares == ts` (657) with queued shares.
+  (`test_exitFeeDecaysWithTenure`, VaultCore.t.sol:234, is a single decay check). Sole-holder waiver `memberShares == ts` (657) with queued shares.
 
 #### 6) Ranking by funds at risk
 
@@ -1829,8 +1829,8 @@ Only invariant suite touching adapters: UniswapV3AdapterInvariant (grep `functio
 #### 2. AggregationRouterAdapter.sol
 1) Uncovered
 - `RouterCallFailed` L124: `grep -rn RouterCallFailed test/` hits only UniswapV3Adapter.t.sol. Aggregation router revert path untested.
-- `BadOrder` L104 (tokenIn==tokenOut, amountIn==0): Execution.t.sol:294 covers only minOut==0.
-- `SelectorNotAllowed` with routeData.length < 4 (L106 short-circuit): only 0xdeadbeef tested (`test_adapterRejectsUnknownSelector`, Execution.t.sol:265).
+- `BadOrder` L104 (tokenIn==tokenOut, amountIn==0): `test_adapterRequiresMinOut` (Execution.t.sol:293) covers only minOut==0.
+- `SelectorNotAllowed` with routeData.length < 4 (L106 short-circuit): only 0xdeadbeef tested (`test_adapterRejectsUnknownSelector`, Execution.t.sol:266).
 - Constructor L93 (router==0, empty selectors, duplicates): `grep -rn "new AggregationRouterAdapter" test/` = 5 sites, all valid configs; no revert test.
 - `TransferFromFailed` on missing allowance: not at adapter level.
 2) Not fuzzed: no `testFuzz_` and no invariant for this adapter (`grep testFuzz` over AdapterReentrancy, Execution, AuditAdapterScopedSweep = 0). Refund/clamp are example-tested only (AuditAdapterScopedSweep:375-564, good depth, but fixed constants). Missing: for all (amountIn, pull, pushBack, preDonation): refund == clamp(delta); caller never loses > spent; adapter balance == donations only.
