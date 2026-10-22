@@ -1,15 +1,17 @@
 # Walkthrough — FeeEngine.sol
 
-**Risk: High.** ~130 LoC. `contracts/src/FeeEngine.sol`.
+**Risk: High.** ~220 LoC. `contracts/src/FeeEngine.sol`.
 
 ## Purpose
 
 The 10% performance fee on realized profit, netted against the cross-vault
-per-(member, operator) loss carryforward held by the OperatorRegistry (the portable HWM, §7).
+per-(member, operator) loss carryforward held by the OperatorRegistry (§7). It is not a high-water mark
+on vault NAV: the fee is per member, at exit, on realized gain after the carryforward.
 Crystallization happens **only at member redemption** (CM-3) — never on rebalance, so an
 operator cannot churn to crystallize early. Collected fees accumulate per (recipient, token) for
-pull-based claims, where the recipient is the vault creator (90% of each collected fee) or the
-RWAlly treasury (10%).
+pull-based claims (fee model A1): the RWAlly treasury is credited 10% of each collected fee
+(`TREASURY_SHARE_BPS`, rounded down; 1% of the net gain) and the vault creator the remainder, 90%
+(9% of the net gain). The operator is credited nothing unless it is also the creator.
 
 ## Trust position
 
@@ -26,7 +28,7 @@ instead, and `claimFees` pays only the caller's own credit.
 ## State
 
 - `registry` (immutable) — carry reads + operator identity + fee-stat recording.
-- `treasury` — set once by `initialize(treasury)` (`PROTOCOL_INITIALIZER` only); zero until then.
+- `treasury` — set once by `initialize(treasury)` (`PROTOCOL_INITIALIZER` only); zero until then. While it is zero `onRealize` returns 0 and `_credit` reverts `TreasuryNotSet`.
 - `claimableFees[recipient][token]` — collected fees awaiting claim by the vault creator or the
   treasury (USDC *and* in-kind asset legs; M-2 uniform withholding means fees arrive in every
   payout token).
@@ -36,9 +38,9 @@ instead, and `claimFees` pays only the caller's own credit.
 | Function | Caller | What it does |
 | --- | --- | --- |
 | `onRealize(member, gain, loss)` | attested vault (bounded call) | Gain path: once the treasury is set by `initialize`, `netGain = gain − carry` (floored at 0) and it returns `10% × netGain`; before that it returns 0. Loss path: no-op — losses reach the carry via the vault's own `recordRealization` call |
-| `onFeeCollected(member, amountUsdc)` | attested vault, **after** the USDC fee transfer | Splits the amount **actually sent** into `claimableFees[creator][usdc]` (90%) and `claimableFees[treasury][usdc]` (10%) (the vault's clamp may have reduced it) and reports it to registry stats |
-| `onFeeCollectedAsset(member, asset, amount)` | attested vault, after an in-kind fee transfer | Splits the asset-leg fee into `claimableFees[creator][asset]` (90%) and `claimableFees[treasury][asset]` (10%) at token amounts (USD-terms stats stay cash-leg-only; the indexer prices asset legs, S7) |
-| `pullEscrowed(vault, asset)` | anyone (crank) | Claims a fee slice the vault EE-6-escrowed for the engine (failed transfer path) and credits it, measured by balance delta |
+| `onFeeCollected(member, amountUsdc)` | attested vault, **after** the USDC fee transfer | Splits the amount **actually sent** (the vault's clamp may have reduced it) in `_credit`: the treasury gets the floored 10% into `claimableFees[treasury][usdc]`, the vault creator the remainder (90%) into `claimableFees[creator][usdc]`, so the two always sum to the amount and reports it to registry stats |
+| `onFeeCollectedAsset(member, asset, amount)` | attested vault, after an in-kind fee transfer | Splits the asset-leg fee through the same `_credit` (treasury floored 10%, creator the remainder) into `claimableFees[treasury][asset]` and `claimableFees[creator][asset]` at token amounts (USD-terms stats stay cash-leg-only; the indexer prices asset legs, S7) |
+| `pullEscrowed(vault, asset)` | anyone (crank) | Claims a fee slice the vault EE-6-escrowed for the engine (failed transfer path) and splits it through `_credit`, measured by balance delta; `nonReentrant` across the whole engine (M-3) |
 | `claimFees(token)` | any recipient (vault creator or treasury) | Pull-payment of the caller's own accumulated fees |
 
 ## Key sequencing invariant (the subtle one)

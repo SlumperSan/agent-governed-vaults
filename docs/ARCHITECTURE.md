@@ -191,7 +191,7 @@ redeemer carries their own execution cost.
 | Rule | Where enforced |
 | --- | --- |
 | Creator locks ≥5% stake | VaultCore: **withdrawal gate**, not top-up obligation. Creator redemptions revert if they would take creator share below 5% while ≥1 non-creator member remains. Passive dilution below 5% by others' deposits is allowed and simply freezes creator withdrawals until restored. |
-| Performance fee, 10% of realized profit | FeeEngine at redemption (crystallization on realization only). HWM per `(member, operator)`; see §7. |
+| Performance fee, 10% of realized profit | FeeEngine at redemption (crystallization on realization only). Loss carryforward per `(member, operator)`, not a NAV high-water mark; see §7. |
 | Proposal rights scale with stake | Governance, against the same voting-eligible stake measure as quorum. |
 | Quorum: participating stake, 25% protocol floor | Governance. Denominator = voting-eligible stake at the proposal snapshot (excludes pending deposits §5 and locked Mode-F shares §4.4). At five or more members, standing defaults never count in the quorum numerator (K-3 accepted); below five members an applied standing default counts toward the FOR-stake-majority branch of `finalize`. |
 | <5 members: signer count plus stake | Below the threshold `finalize` passes a non-RuleChange proposal when more than half of the members at creation revealed (for or against) and the self-directed FOR stake also clears the quorum, or when self-directed FOR stake is more than half of eligible stake; both branches weigh stake (H-8/CM-7 remediation). The 5-member boundary itself remains a manipulation surface; threat model CM-7. |
@@ -201,11 +201,11 @@ redeemer carries their own execution cost.
 ## 7. Fees and the operator registry (C-3)
 
 VaultCore takes an `IOperatorRegistry immutable` at construction; stubbed in Sprint 1,
-concrete in Sprint 3. The reference is load-bearing for three requirements at once: HWM
+concrete in Sprint 3. The reference is load-bearing for three requirements at once: loss-carryforward
 portability, leaderboard integrity, and anti-Sybil (a mintable fresh identity sheds bad history,
 defeating "no cherry-picking").
 
-**Cross-vault HWM semantics.** NAVps is not comparable across vaults, so the portable mark is a
+**Cross-vault carryforward semantics.** NAVps is not comparable across vaults, so there is no NAV high-water mark; the portable mark is a
 **USDC-denominated loss carryforward** per `(member, operator)`:
 
 ```

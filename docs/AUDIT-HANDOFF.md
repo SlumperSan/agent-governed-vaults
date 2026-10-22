@@ -121,7 +121,7 @@ was before relying on it.
 | --- | --- | --- | --- |
 | `VaultCore.sol` | ~750 | shares/NAV, deposits, two-mode exits, in-kind redemption, rebalance exec, sub-vault flows | **Critical**: holds all funds |
 | `Governance.sol` | ~450 | commit-reveal, quorum regimes, delegation, timelock, execute | **Critical**: authorizes fund movement |
-| `FeeEngine.sol` | ~110 | 10% perf fee, HWM netting, operator claims | High |
+| `FeeEngine.sol` | ~220 | 10% perf fee on realized gain net of the loss carryforward (no NAV high-water mark); 90% credited to the vault creator, 10% to the treasury, each claiming per token | High |
 | `OperatorRegistry.sol` | ~150 | identity, cross-vault carry, leaderboard | High |
 | `OracleAggregator.sol` | ~140 | median + staleness breaker | **Critical**: prices everything |
 | `oracle/UniswapV3TwapSource.sol` | ~370 | spot-TWAP `IPriceSource` (SF-1 mechanism class 2); one- or two-hop, USDC pinned to $1 | **Critical**: feeds the aggregator. Added POST-FREEZE (Sprint 11, PR #25): one internal adversarial review round, no prior external eyes; the least-scrutinized contracts here |
@@ -133,10 +133,7 @@ was before relying on it.
 | `VaultDeployer.sol` | ~60 | holds VaultCore's creation code (EIP-170 forced, #10); no authority | Medium |
 | `lib/` (SafeTransferLib, Checkpoints, BoundedCall) | ~150 | primitives | Medium |
 
-> Note (2026-10-21, `protocol/main` @ `1dfb3cda`): the `FeeEngine.sol` row is stale; the v2
-> FeeEngine takes 10% of realized gain net of the loss carryforward, has no NAV high-water mark,
-> and splits each fee 90% to the vault creator and 10% to the treasury, each claiming per token.
-> `OracleAggregator.sol`, `oracle/UniswapV3TwapSource.sol` and `oracle/PythSource.sol` are no
+> Note (2026-10-21, `protocol/main` @ `1dfb3cda`): `OracleAggregator.sol`, `oracle/UniswapV3TwapSource.sol` and `oracle/PythSource.sol` are no
 > longer in `contracts/src` (retired; the launch oracle is `oracle/ChainlinkOracle.sol`), so the
 > rows above and the two focus areas numbered 4 below that name them are history.
 
