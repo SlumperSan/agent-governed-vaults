@@ -114,7 +114,7 @@ contract CreateAgentVaultTest is Test {
             basketAssets: _basket(),
             oracle: IOracleAggregator(address(oracle)),
             capacityCapUsdc: 1_000_000 * USDC_1,
-            minDepositUsdc: 10 * USDC_1,
+            minDepositUsdc: 100 * USDC_1,
             exitFeeMaxBps: 0,
             exitFeeDecayPeriod: 0,
             allowedAdapters: new address[](0)
@@ -224,6 +224,22 @@ contract CreateAgentVaultTest is Test {
         vm.prank(agent);
         vm.expectRevert(VaultCore.BadConfig.selector);
         factory.createAgentVault(p);
+    }
+
+    /// The 100 USDC floor binds the agent path too (A8 B1): it builds its own constructor tuple and
+    /// never reaches `_deploy`, so it calls the floor itself.
+    function test_theAgentPathEnforcesTheMinDepositFloor() public {
+        VaultFactory.VaultParams memory p = _params();
+        p.minDepositUsdc = factory.MIN_DEPOSIT_FLOOR_USDC() - 1;
+        vm.prank(agent);
+        vm.expectRevert(VaultFactory.MinDepositBelowFloor.selector);
+        factory.createAgentVault(p);
+        assertEq(factory.vaultCount(), 0, "nothing was created");
+
+        p.minDepositUsdc = factory.MIN_DEPOSIT_FLOOR_USDC();
+        vm.prank(agent);
+        AgentVaultCore v = AgentVaultCore(factory.createAgentVault(p));
+        assertEq(v.minDepositUsdc(), 100 * USDC_1, "exactly the floor is accepted");
     }
 
     // ── event, list, attestation ─────────────────────────────────────────────

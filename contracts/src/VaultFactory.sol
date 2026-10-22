@@ -51,8 +51,8 @@ interface IVaultBasket {
 /// covers-basket probe, the same attestation of the creator in OperatorRegistry (so the creator earns
 /// the creator fee share exactly as a regular vault's creator does) and the same `allVaults` entry.
 /// The agent ID check is a provenance tag: the registry is permissive (an ID costs a fee and one
-/// address may hold many IDs), so holding an ID says that the creator registered one, and nothing
-/// about who or what the creator is.
+/// address may hold many IDs), so holding an ID says that the registry minted one to the creator, by
+/// registration, import or attested mirror, and nothing about who or what the creator is.
 ///
 /// Two-step bring-up (documented UX, not a trust gap): after creation the creator registers
 /// the vault's GovConfig with Governance in a second transaction; until then no proposals can
@@ -354,6 +354,9 @@ contract VaultFactory {
         require(agentPathInitialized, AgentPathNotInitialized());
         address registry_ = agentRegistry;
         require(IAgentIdentityBalance(registry_).balanceOf(msg.sender) > 0, NoAgentIdentity());
+        // This path builds its own constructor tuple and never reaches `_deploy`, so the floor is
+        // called here as well; a check added only to `_deploy` would skip agent vaults.
+        _requireMinDepositFloor(p.minDepositUsdc);
         _requireAllowedOracle(address(p.oracle)); // C-6: the same curated oracle gate as createVault
         vault = agentVaultDeployer.deploy(
             abi.encode(
