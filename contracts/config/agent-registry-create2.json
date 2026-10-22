@@ -15,7 +15,7 @@
   },
   "importCeilings": {
     "rule": "importIdCeiling for each chain is the nextId recorded here, snapshotted at the recorded block, not a fresh read at initialize time. Take the snapshot before that chain's deploy is announced or the registry address is published, record it here, and pass exactly this nextId to initialize. A chain with no recorded snapshot is initialized with no outside registry (zero ceiling, no import window). A placeholder entry (placeholder: true) blocks the deploy preflight: node scripts/registry-deploy-preflight.mjs.",
-    "source": "Obsidian Vault, Agent-Governed Vaults/Findings/2026-10-18 ERC-8004 import ceiling snapshot.md",
+    "source": "nextId of the ERC-8004 registry at 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432 on each chain, read from that chain's RPC at the block and time recorded per chain below, on 2026-10-18",
     "chains": {
       "arc-mainnet": {
         "chainId": 5042,
