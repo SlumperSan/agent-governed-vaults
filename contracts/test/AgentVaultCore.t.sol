@@ -16,6 +16,15 @@ import {MockERC20, MockOracle, StubGovernance, StubFeeEngine, StubRegistry} from
 import {ModeRegistry} from "./mocks/RegistryMocks.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
 
+/// A sub-vault edge table: `parentOf(child)`, as `VaultCore.allocateToChild` reads it.
+contract EdgesStub {
+    mapping(address => address) public parentOf;
+
+    function set(address c, address p) external {
+        parentOf[c] = p;
+    }
+}
+
 /// The deposit gate and the ungated exits of AgentVaultCore, against a registry whose answer the
 /// test controls. Every hostile answer must block a deposit and nothing else.
 contract AgentVaultCoreTest is Test {
@@ -213,6 +222,74 @@ contract AgentVaultCoreTest is Test {
         vm.prank(nobody);
         vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
         vault.deposit(100 * USDC_1);
+    }
+
+    /// A parent vault allocating into an AgentVaultCore child is the depositor the gate sees, so the
+    /// parent needs an identity of its own and a refusal rolls the whole allocation back, including the
+    /// child's `skipWindow` opt-in. On the real `RWAllyAgentRegistry` a VaultCore parent can never hold an
+    /// identity (nothing in VaultCore calls `register` or `importAgent`, and the registry is soulbound),
+    /// so an AgentVaultCore child cannot receive allocations; that is reachable only once `allowSubVaults`
+    /// is true.
+    function test_allocateToChild_parentWithoutIdentity_isRefused_andRollsBack() public {
+        EdgesStub edges = new EdgesStub();
+        VaultCore parent = new VaultCore(
+            address(usdc),
+            new address[](0),
+            creator,
+            opRegistry,
+            gov,
+            fees,
+            oracle,
+            0,
+            10 * USDC_1,
+            100,
+            30 days,
+            new address[](0),
+            address(edges)
+        );
+        AgentVaultCore child = new AgentVaultCore(
+            address(usdc),
+            new address[](0),
+            creator,
+            opRegistry,
+            gov,
+            fees,
+            oracle,
+            0,
+            10 * USDC_1,
+            100,
+            30 days,
+            new address[](0),
+            address(0),
+            address(idReg)
+        );
+        edges.set(address(child), address(parent));
+
+        vm.startPrank(alice);
+        usdc.approve(address(parent), type(uint256).max);
+        parent.deposit(1_000 * USDC_1);
+        parent.skipWindow();
+        vm.stopPrank();
+        uint256 idleBefore = parent.idleUsdc();
+        assertEq(idleBefore, 1_000 * USDC_1);
+
+        // tx.origin is alice, who holds an identity: the gate must read the parent, not the origin.
+        vm.prank(address(gov), alice);
+        vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
+        parent.allocateToChild(address(child), 100 * USDC_1);
+
+        assertEq(parent.idleUsdc(), idleBefore);
+        assertFalse(parent.isChildVault(address(child)));
+        assertFalse(child.skipOptIn(address(parent)));
+        assertFalse(child.windowCleared(address(parent)));
+        assertEq(usdc.balanceOf(address(child)), 0);
+
+        idReg.setHeld(address(parent), true);
+        vm.prank(address(gov));
+        parent.allocateToChild(address(child), 100 * USDC_1);
+        assertGt(child.sharesOf(address(parent)), 0);
+        assertTrue(parent.isChildVault(address(child)));
+        assertEq(parent.idleUsdc(), idleBefore - 100 * USDC_1);
     }
 
     function test_creatorHoldingNoIdentityCannotDeposit_noExemption() public {
