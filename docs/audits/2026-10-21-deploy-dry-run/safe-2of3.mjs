@@ -58,7 +58,8 @@ function exec(label, to, data, signerKeys, expectOk = true) {
   }
 }
 
-const vp = `(${USDC},[${WETH},${WBTC}],${ORA},50000000000,10000000,0,0,[])`;
+// minDepositUsdc is the factory's MIN_DEPOSIT_FLOOR_USDC (100 USDC); anything lower reverts MinDepositBelowFloor.
+const vp = `(${USDC},[${WETH},${WBTC}],${ORA},50000000000,100000000,0,0,[])`;
 const createData = cast(['calldata', 'createVault((address,address[],address,uint256,uint256,uint256,uint256,address[]))', vp]);
 exec('createVault with ONE owner signature (1 of 3, below threshold)', FAC, createData, [K[1]], false);
 exec('createVault with owners 1 and 3 (2 of 3)', FAC, createData, [K[1], K[3]]);
