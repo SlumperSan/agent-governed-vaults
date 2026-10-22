@@ -273,7 +273,8 @@ contract AgentVaultCoreTest is Test {
         uint256 idleBefore = parent.idleUsdc();
         assertEq(idleBefore, 1_000 * USDC_1);
 
-        vm.prank(address(gov));
+        // tx.origin is alice, who holds an identity: the gate must read the parent, not the origin.
+        vm.prank(address(gov), alice);
         vm.expectRevert(AgentVaultCore.NoAgentIdentity.selector);
         parent.allocateToChild(address(child), 100 * USDC_1);
 
