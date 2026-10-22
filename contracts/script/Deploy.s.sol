@@ -153,7 +153,8 @@ contract Deploy is Script {
         );
         require(subReg.factory() == address(factory), "Deploy: sub-vault registry wired to the wrong factory");
         require(
-            governance.subVaultRegistry() == address(subReg), "Deploy: governance wired to the wrong sub-vault registry"
+            governance.subVaultRegistry() == address(subReg),
+            "Deploy: governance wired to the wrong sub-vault registry"
         );
         require(feeEngine.treasury() == treasury, "Deploy: fee treasury not set");
 

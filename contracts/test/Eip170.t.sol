@@ -286,8 +286,8 @@ contract Eip170Test is Test {
             assertTrue(factory.allVaults(i) != bypass, "a direct deploy is listed in allVaults");
         }
         for (uint256 i; i < logs.length; ++i) {
-            assertTrue(logs[i].emitter != address(factory), "the factory emitted an event for a direct deploy");
-            assertTrue(logs[i].emitter != address(registry), "the registry emitted an event for a direct deploy");
+            assertTrue(logs[i].emitter != address(factory), "factory emitted an event for a direct deploy");
+            assertTrue(logs[i].emitter != address(registry), "registry emitted an event for a direct deploy");
         }
     }
 

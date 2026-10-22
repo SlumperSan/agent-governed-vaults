@@ -142,10 +142,11 @@ contract DeployTest is Create2ProxyFixture {
         uint256 treasurySet = type(uint256).max;
         uint256 factorySet = type(uint256).max;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].emitter == address(feeEngine) && logs[i].topics[0] == FeeEngine.Initialized.selector) {
+            Vm.Log memory l = logs[i];
+            if (l.emitter == address(feeEngine) && l.topics[0] == FeeEngine.Initialized.selector) {
                 treasurySet = i;
             }
-            if (logs[i].emitter == address(registry) && logs[i].topics[0] == OperatorRegistry.FactorySet.selector) {
+            if (l.emitter == address(registry) && l.topics[0] == OperatorRegistry.FactorySet.selector) {
                 factorySet = i;
             }
         }
