@@ -62,31 +62,44 @@ export const MIRROR_DAILY_CAP = 100;
 
 /**
  * Issuance limits (A13 finding A1, mirror cap griefing). The on-chain cap is one first-come counter per
- * destination per UTC day and accepts a 7-day expiry, so without these an attacker holding 100 real
- * origins can hoard attestations and fill every destination's cap in the first block of a day. Each
- * default can be overridden by the env var named beside it.
+ * destination per UTC day and accepts a 7-day expiry. What these limits do, with the registry's single
+ * attestor and this signer as its only issuer:
+ * - MIRROR_DAILY_CAP on chain still bounds what can mint on a destination in a day; nothing here
+ *   changes that bound.
+ * - The 1 hour expiry stops attestations being hoarded for days and spent in the first block of a day.
+ * - Origins younger than YOUNG_ORIGIN_AGE_SECONDS share a sub-budget below the cap, so taking a
+ *   destination's whole day needs origins older than that. This raises the cost of a full-day halt of
+ *   mirroring on a destination.
+ * - They do not prevent that halt. An attacker with enough aged origins can still take every slot left
+ *   in a day, and every honest request that day is then refused. The per-holder limit is friction
+ *   only: holders are free addresses.
+ * Each default can be overridden by the env var named beside it.
  */
 /** Refuse an `expiry` further out than this (NatSpec rule 5: about one hour). REGISTRY_ATTEST_MAX_EXPIRY_SECONDS */
 export const MAX_EXPIRY_SECONDS = 3600;
-/** Attestations per destination per UTC day; below MIRROR_DAILY_CAP so honest mirrors keep headroom. REGISTRY_ATTEST_DAILY_BUDGET */
-export const DAILY_ISSUANCE_BUDGET = 80;
 /** Attestations per holder per destination per UTC day. REGISTRY_ATTEST_PER_HOLDER_DAILY */
 export const PER_HOLDER_DAILY_LIMIT = 10;
-/** Minimum age of the origin identity at signing, raising the cost of fresh sybil origins. REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS */
-export const MIN_ORIGIN_AGE_SECONDS = 86400;
+/** Hard floor on origin age at signing: a finality buffer, not a sybil defense. REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS */
+export const MIN_ORIGIN_AGE_SECONDS = 3600;
+/** An origin younger than this at signing counts against the young-origin budget. REGISTRY_ATTEST_YOUNG_ORIGIN_AGE_SECONDS */
+export const YOUNG_ORIGIN_AGE_SECONDS = 7 * 86400;
+/** Attestations per destination per UTC day shared by all young origins; below MIRROR_DAILY_CAP. REGISTRY_ATTEST_YOUNG_ORIGIN_DAILY_BUDGET */
+export const YOUNG_ORIGIN_DAILY_BUDGET = 50;
 
 const LIMIT_ENV = {
   maxExpirySeconds: ['REGISTRY_ATTEST_MAX_EXPIRY_SECONDS', MAX_EXPIRY_SECONDS],
-  dailyBudget: ['REGISTRY_ATTEST_DAILY_BUDGET', DAILY_ISSUANCE_BUDGET],
   perHolderDaily: ['REGISTRY_ATTEST_PER_HOLDER_DAILY', PER_HOLDER_DAILY_LIMIT],
   minOriginAgeSeconds: ['REGISTRY_ATTEST_MIN_ORIGIN_AGE_SECONDS', MIN_ORIGIN_AGE_SECONDS],
+  youngOriginAgeSeconds: ['REGISTRY_ATTEST_YOUNG_ORIGIN_AGE_SECONDS', YOUNG_ORIGIN_AGE_SECONDS],
+  youngOriginDailyBudget: ['REGISTRY_ATTEST_YOUNG_ORIGIN_DAILY_BUDGET', YOUNG_ORIGIN_DAILY_BUDGET],
 };
 
 /**
  * The issuance limits with env overrides applied. A malformed override throws rather than falling back
- * to the default, and a daily budget at or above the on-chain cap throws: it would reserve no headroom.
+ * to the default, and a young-origin budget at or above the on-chain cap throws: young origins alone
+ * could then take a destination's whole day.
  * @param {Record<string, string | undefined>} [env]
- * @returns {{maxExpirySeconds: number, dailyBudget: number, perHolderDaily: number, minOriginAgeSeconds: number}}
+ * @returns {{maxExpirySeconds: number, perHolderDaily: number, minOriginAgeSeconds: number, youngOriginAgeSeconds: number, youngOriginDailyBudget: number}}
  */
 export function signerLimits(env = process.env) {
   /** @type {Record<string, number>} */
@@ -100,13 +113,19 @@ export function signerLimits(env = process.env) {
     if (!/^\d+$/.test(raw) || Number(raw) <= 0) throw new Error(`${name} must be a positive integer, got ${raw}`);
     out[key] = Number(raw);
   }
-  if (out.dailyBudget >= MIRROR_DAILY_CAP) {
-    throw new Error(`REGISTRY_ATTEST_DAILY_BUDGET must be below MIRROR_DAILY_CAP (${MIRROR_DAILY_CAP})`);
+  if (out.youngOriginDailyBudget >= MIRROR_DAILY_CAP) {
+    throw new Error(`REGISTRY_ATTEST_YOUNG_ORIGIN_DAILY_BUDGET must be below MIRROR_DAILY_CAP (${MIRROR_DAILY_CAP})`);
   }
   return /** @type {any} */ (out);
 }
 
 const sameAddress = (/** @type {string} */ a, /** @type {string} */ b) => a.toLowerCase() === b.toLowerCase();
+
+/** A caller-supplied count as a bigint, or null when it is missing or not a non-negative integer. */
+function readCount(/** @type {unknown} */ v) {
+  if (typeof v === 'bigint') return v >= 0n ? v : null;
+  return typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? BigInt(v) : null;
+}
 
 /**
  * The signer's refusal rules. Returns a reason string to refuse, or null to sign.
@@ -116,8 +135,19 @@ const sameAddress = (/** @type {string} */ a, /** @type {string} */ b) => a.toLo
  * and the attestation is refused. Nothing is signed on a value the caller supplied but the origin chain
  * did not confirm (A13 finding A4).
  *
+ * `ownerCodeHashOrigin` is required: `null` means the owner has no code on the origin chain (an EOA),
+ * and `undefined` (absent) means the code could not be read, which refuses.
+ *
  * `issuance` counts are this signer's own records for the destination in the current UTC day, plus
- * `mirrorsRemainingToday()` read on the destination registry.
+ * `mirrorsRemainingToday()` read on the destination registry. `issuedTodayToYoungOrigins` counts only
+ * attestations whose origin was younger than `youngOriginAgeSeconds` when signed. Every count must be
+ * a non-negative integer (number or bigint); a missing, null, NaN or fractional count refuses, so a
+ * counter store that cannot be read never signs. The counts only bound anything if every signing
+ * process reads them from one shared store.
+ *
+ * A throw is a refusal. Any field may be a getter and any value may be malformed; when evaluating one
+ * throws (a getter doing an RPC read that times out, a chain id that is not a number), this function
+ * throws instead of returning. The caller must treat any throw as a refusal and never sign.
  * @param {{
  *   destinationChainId: number|bigint,
  *   ourRegistry: string,
@@ -129,9 +159,9 @@ const sameAddress = (/** @type {string} */ a, /** @type {string} */ b) => a.toLo
  *     originOfRegistry: string|null,   // originOf(originAgentId).registry on the origin registry
  *     registeredAtSeconds: number|bigint|null, // timestamp of the block that minted the origin identity
  *   } | null,
- *   ownerCodeHashOrigin?: string | null, // keccak of the owner's code on the origin chain ('0x' + 64 hex), or null for no code
+ *   ownerCodeHashOrigin: string | null | undefined, // keccak of the owner's code on the origin chain ('0x' + 64 hex); null = no code; undefined = unreadable
  *   ownerCodeHashDestination?: string | null,
- *   issuance: {issuedToday: number, issuedTodayToHolder: number, outstanding: number, mirrorsRemainingToday: number|bigint},
+ *   issuance: {issuedTodayToHolder: number|bigint, issuedTodayToYoungOrigins: number|bigint, outstanding: number|bigint, mirrorsRemainingToday: number|bigint},
  * }} p
  * @param {ReturnType<typeof signerLimits>} [limits]
  * @returns {string | null}
@@ -163,8 +193,8 @@ export function signerRefusal(p, limits = signerLimits()) {
   if (sameAddress(r.originOfRegistry, p.ourRegistry)) {
     return 'origin identity is itself a mirror (originOf.registry is our registry): a mirror of a mirror would mint a second identity from one fee';
   }
-  const hadCode = p.ownerCodeHashOrigin != null;
-  if (hadCode && p.ownerCodeHashOrigin !== p.ownerCodeHashDestination) {
+  if (p.ownerCodeHashOrigin === undefined) return "owner's code on the origin chain could not be read back";
+  if (p.ownerCodeHashOrigin !== null && p.ownerCodeHashOrigin !== p.ownerCodeHashDestination) {
     return 'owner has code on the origin chain and the destination code hash differs or is absent: one party may not control the address on both chains';
   }
 
@@ -174,18 +204,26 @@ export function signerRefusal(p, limits = signerLimits()) {
   if (expiry > now + BigInt(limits.maxExpirySeconds)) {
     return `expiry is more than ${limits.maxExpirySeconds}s out: long-lived attestations can be hoarded and dumped at the start of a day`;
   }
-  if (now - BigInt(r.registeredAtSeconds) < BigInt(limits.minOriginAgeSeconds)) {
-    return `origin identity is younger than ${limits.minOriginAgeSeconds}s`;
+  const originAge = now - BigInt(r.registeredAtSeconds);
+  if (originAge < BigInt(limits.minOriginAgeSeconds)) {
+    return `origin identity is younger than ${limits.minOriginAgeSeconds}s (finality buffer)`;
   }
 
   const s = p.issuance;
-  if (s.issuedToday >= limits.dailyBudget) {
-    return `daily issuance budget for this destination (${limits.dailyBudget}) is spent`;
+  const toHolder = readCount(s?.issuedTodayToHolder);
+  const toYoung = readCount(s?.issuedTodayToYoungOrigins);
+  const outstanding = readCount(s?.outstanding);
+  const remaining = readCount(s?.mirrorsRemainingToday);
+  if (toHolder == null || toYoung == null || outstanding == null || remaining == null) {
+    return 'an issuance count is missing or not a non-negative integer: a counter that cannot be read never signs';
   }
-  if (s.issuedTodayToHolder >= limits.perHolderDaily) {
+  if (toHolder >= BigInt(limits.perHolderDaily)) {
     return `per-holder daily limit for this destination (${limits.perHolderDaily}) is spent`;
   }
-  if (BigInt(s.outstanding) >= BigInt(s.mirrorsRemainingToday)) {
+  if (originAge < BigInt(limits.youngOriginAgeSeconds) && toYoung >= BigInt(limits.youngOriginDailyBudget)) {
+    return `young-origin daily budget for this destination (${limits.youngOriginDailyBudget}) is spent: origins younger than ${limits.youngOriginAgeSeconds}s wait`;
+  }
+  if (outstanding >= remaining) {
     return 'unexpired unminted attestations already cover the destination capacity left today';
   }
   return null;
