@@ -259,6 +259,32 @@ The `20,481 B / 4,095 B` this line carried until now was measured before #98 and
 pair is still carried by `docs/LAUNCH-READINESS.md`, which was **not** this PR's to correct —
 flagged so it is not lost.
 
+## AgentVaultCore and RWAllyAgentRegistry (2026-10-18)
+
+Nine baseline rows changed (eight added, one count raised). None is a finding in `AgentVaultCore`'s own code: its gate is one bounded static call, and Slither raises nothing on it.
+
+| Detector | Disposition |
+| --- | --- |
+| `calls-loop` on `VaultCore.constructor` (count 1 to 2) | **Same reviewed code, reported twice.** `AgentVaultCore`'s constructor runs this constructor's body unchanged and adds one `require`, so the basket loop (decimals reads, capped at `MAX_BASKET_ASSETS`) is attributed to both contracts. |
+| `low-level-calls` on `RWAllyAgentRegistry._requireContractSignature` | **By design.** The ERC-1271 `staticcall` to the wallet being designated, as in the ERC-8004 reference registry, and the ERC-6492 factory call that deploys a counterfactual account first. The caller must already be the identity's holder; the factory may not be the registry or the fee token; the magic value and return length are checked; anything else reverts. |
+| `unchecked-lowlevel` on `RWAllyAgentRegistry._requireContractSignature` | **By design.** The factory call's result is ignored on purpose: the wallet having code and accepting the inner signature afterwards decides, and both revert otherwise. |
+| `reentrancy-benign`, `reentrancy-events` on `RWAllyAgentRegistry.setAgentWallet` | **Benign.** The calls are the ERC-6492 factory call and the ERC-1271 `staticcall`; the write after them sets the caller's own id's `agentWallet`, identities are soulbound so the holder cannot change mid-call, and a direct call could make the same write. |
+| `missing-inheritance` on `RWAllyAgentRegistry` | **False positive.** `balanceOf(address)` matches `IERC20Balance` by signature only. |
+| `missing-zero-check` on `RWAllyAgentRegistry.transferOwnership` | **By design.** Nominating address(0) clears a pending nomination; `acceptOwnership` cannot be called by address(0). `initialize` rejects a zero owner. |
+| `timestamp` on `RWAllyAgentRegistry.importAgent` | **By design.** The import window closes at `importEnd`, 30 days after `initialize`; `block.timestamp` is the only clock and the window is measured in days. After it closes the outside registry is never called. |
+| `timestamp` on `RWAllyAgentRegistry.setAgentWallet` | **By design.** The wallet signature's deadline, at most one hour out (long enough for a user operation to wait in a bundler mempool). |
+
+## Registry attestation (mintMirrored)
+
+Two new baseline rows, both `timestamp`, both by design.
+
+| Detector | Disposition |
+| --- | --- |
+| `timestamp` on `RWAllyAgentRegistry.mintMirrored` | **By design.** The attestation expiry (at most seven days out) and the per-UTC-day mint cap both read `block.timestamp`; they are measured in hours and days, far outside any miner tolerance. |
+| `timestamp` on `RWAllyAgentRegistry.mirrorsRemainingToday` | **By design.** A view comparing the current UTC day with the stored one. |
+
+The signature check uses `ecrecover` through the existing `_recover` (high `s` and bad `v` refused) and a gas- and returndata-bounded `staticcall` through `BoundedCall` for an ERC-1271 attestor; Slither raises nothing on either.
+
 ## Running it
 
 ```bash

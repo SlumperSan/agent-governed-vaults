@@ -26,8 +26,10 @@ interface IReputationRegistry {
 ///     other protocol module.
 ///   - Operatorship confers no authority to vote, execute, pause, reprice, or move member funds.
 ///   - Identity presence (hasIdentity) is a record check, not an access control gate
-///     on any vault function. Vaults are permissionless — identity is checked off-chain
-///     or in the UI, not enforced on-chain on deposit/exit paths.
+///     on any vault function. Vaults created through VaultFactory are permissionless —
+///     identity is checked off-chain or in the UI, not enforced on-chain on their deposit/exit
+///     paths. AgentVaultCore is the one VaultCore variant that differs: its deposit path reads an
+///     identity registry (and never its exit paths); see that contract's NatSpec.
 contract IdentityGate {
     /// @notice Pinned ERC-8004 identity registry (ERC-721 compatible).
     address public immutable identityRegistry;

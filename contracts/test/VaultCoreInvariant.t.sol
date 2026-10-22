@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {MockERC20, MockOracle, StubGovernance, StubFeeEngine, StubRegistry} from "./mocks/Mocks.sol";
+import {VaultHook} from "./mocks/VaultHook.sol";
 
 /// @notice Randomized action handler. Prices are held static so that the §4.6 invariant —
 /// NAVps non-decreasing for remaining members across every redemption — is directly assertable
@@ -161,7 +162,7 @@ contract Handler is Test {
     }
 }
 
-contract VaultCoreInvariantTest is Test {
+contract VaultCoreInvariantTest is Test, VaultHook {
     VaultCore vault;
     MockERC20 usdc;
     MockOracle oracle;
@@ -182,7 +183,7 @@ contract VaultCoreInvariantTest is Test {
         // invariants from price-path effects (which Sprint 6 fuzzes separately).
         address[] memory basket = new address[](0);
 
-        vault = new VaultCore(
+        vault = _newVault(
             address(usdc),
             basket,
             creator,
