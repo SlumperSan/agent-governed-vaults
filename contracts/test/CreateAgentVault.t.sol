@@ -45,6 +45,7 @@ contract CreateAgentVaultTest is Test {
 
     address multisig = makeAddr("multisig");
     address treasury = makeAddr("treasury");
+    address feeTreasury = makeAddr("feeTreasury"); // the FeeEngine's (fee model A1)
     address agent = makeAddr("agent"); // holds an ID
     address agent2 = makeAddr("agent2"); // holds an ID
     address human = makeAddr("human"); // holds no ID
@@ -101,6 +102,9 @@ contract CreateAgentVaultTest is Test {
         }
         vm.prank(PROTOCOL_INITIALIZER);
         r.wire(address(f), address(fe));
+        // Fee model A1: the engine takes no fee until its treasury is set.
+        vm.prank(PROTOCOL_INITIALIZER);
+        fe.initialize(feeTreasury);
     }
 
     function _basket() internal view returns (address[] memory b) {
@@ -491,11 +495,14 @@ contract CreateAgentVaultTest is Test {
         (uint256 gain,, uint256 collected,) = opReg.statsOf(opId);
         assertGt(gain, 0, "gain recorded");
         assertGt(collected, 0, "fee collected");
-        assertEq(fees.claimableFees(agent, address(usdc)), collected, "credited to the agent creator");
+        uint256 toTreasury = collected * fees.TREASURY_SHARE_BPS() / 10_000;
+        uint256 toCreator = collected - toTreasury;
+        assertEq(fees.claimableFees(agent, address(usdc)), toCreator, "credited to the agent creator");
+        assertEq(fees.claimableFees(feeTreasury, address(usdc)), toTreasury, "the treasury's slice");
         uint256 bal = usdc.balanceOf(agent);
         vm.prank(agent);
         fees.claimFees(address(usdc));
-        assertEq(usdc.balanceOf(agent) - bal, collected, "the creator claims it");
+        assertEq(usdc.balanceOf(agent) - bal, toCreator, "the creator claims it");
     }
 }
 
