@@ -106,7 +106,7 @@ contract AuditOracleCoversBasketTest is Test {
             basketAssets: basket,
             oracle: IOracleAggregator(oracle),
             capacityCapUsdc: 0,
-            minDepositUsdc: 10 * USDC_1,
+            minDepositUsdc: 100 * USDC_1,
             exitFeeMaxBps: 50,
             exitFeeDecayPeriod: 30 days,
             allowedAdapters: new address[](0)

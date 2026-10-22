@@ -70,7 +70,7 @@ contract FeesAndRegistryTest is Test {
                     basketAssets: basket,
                     oracle: IOracleAggregator(address(oracle)),
                     capacityCapUsdc: 1_000_000_000 * USDC_1,
-                    minDepositUsdc: 10 * USDC_1,
+                    minDepositUsdc: 100 * USDC_1,
                     exitFeeMaxBps: 0, // isolate performance-fee math from exit fees
                     exitFeeDecayPeriod: 0,
                     allowedAdapters: new address[](0)
@@ -277,7 +277,7 @@ contract FeesAndRegistryTest is Test {
                     basketAssets: basket,
                     oracle: IOracleAggregator(address(oracle)),
                     capacityCapUsdc: 1_000_000_000 * USDC_1,
-                    minDepositUsdc: 10 * USDC_1,
+                    minDepositUsdc: 100 * USDC_1,
                     exitFeeMaxBps: 0,
                     exitFeeDecayPeriod: 0,
                     allowedAdapters: new address[](0)

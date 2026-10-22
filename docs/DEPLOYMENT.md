@@ -276,12 +276,14 @@ factory.createVault(VaultFactory.VaultParams({
 > `<5`-member signer quorum regime counts any address with shares > 0 toward its head count, so a
 > cheap minimum deposit lets an attacker buy the regime flip (`minDepositUsdc` to reach 5 members
 > and pass a plurality alone). Dust seats can no longer lock out a member holding over half the
-> eligible stake (`Governance.finalize`, `forStakeMajority`). There is no safe
-> contract-level floor (a fraction-of-stake floor repeats M-6's liveness cliff). **Set
+> eligible stake (`Governance.finalize`, `forStakeMajority`). No contract floor scales with stake
+> or capacity (a fraction-of-stake floor repeats M-6's liveness cliff). The factory's one floor is
+> absolute: `createVault` and `createChildVault` revert `MinDepositBelowFloor` when `minDepositUsdc`
+> is below `MIN_DEPOSIT_FLOOR_USDC`, 100 USDC in 6-decimal base units. **Above that, set
 > `minDepositUsdc` to an economically meaningful value relative to `capacityCapUsdc`** so that
-> manufacturing ~4 dust members costs a materially non-trivial sum. 1 USDC (the testnet smoke value)
-> is NOT acceptable for a real vault; the mainnet reference template uses 100 USDC. See
-> AI-AUDIT-REPORT.md H-8 and THREAT-MODEL.md CM-7.
+> manufacturing ~4 dust members costs a materially non-trivial sum. The mainnet reference template
+> uses the floor itself, 100 USDC; the 1 USDC the deployed Base Sepolia smoke vault carries predates
+> the floor. See AI-AUDIT-REPORT.md H-8 and THREAT-MODEL.md CM-7.
 
 Then the creator registers governance config in a second tx:
 `governance.registerVault(vault, GovConfig{...})` (quorum ≥ 25% floor; a child's quorum must be

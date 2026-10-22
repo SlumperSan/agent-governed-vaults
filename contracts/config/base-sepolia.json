@@ -104,9 +104,9 @@
   },
   "smoke": {
     "capacityCapUsdc": "1000000000",
-    "minDepositUsdc": "1000000",
-    "minDepositNote": "1 USDC is a TESTNET SMOKE value, kept small so the smoke lifecycle stays cheap; the deployed Base Sepolia smoke vault already uses it. A PRODUCTION vault must set minDepositUsdc to an economically meaningful value (see base-mainnet.json minDepositNote and AI-AUDIT-REPORT.md H-8): the <5-member signer quorum regime is SELECTED BY HEAD COUNT (its two branches both weigh stake since H-8/CM-7, but which regime applies does not), so a 1-USDC seat lets an attacker buy the regime flip or grief a small vault into ungovernability. Documented listing constraint, not a contract floor (M-6 shape).",
-    "depositUsdc": "5000000",
+    "minDepositUsdc": "100000000",
+    "minDepositNote": "100 USDC, raised from the 1 USDC testnet smoke value on 2026-10-21 because VaultFactory now refuses any minDepositUsdc below MIN_DEPOSIT_FLOOR_USDC (100 USDC, owner decision 2026-10-21), and the fork tests deploy the current factory from source and create a vault from this block. depositUsdc rose with it, since a deposit below the vault minimum reverts BelowMinDeposit. The deployed Base Sepolia smoke vault predates the floor and still carries 1 USDC (read back in scripts/soak/soak-vaults.json smokeVault and docs/TESTNET-REPORT.md); that is a chain fact, not this block. Above the floor the H-8 reasoning still applies (see base-mainnet.json minDepositNote and AI-AUDIT-REPORT.md H-8): the <5-member signer quorum regime is SELECTED BY HEAD COUNT (its two branches both weigh stake since H-8/CM-7, but which regime applies does not), so a production vault should set minDepositUsdc high relative to its capacity.",
+    "depositUsdc": "100000000",
     "exitFeeMaxBps": 50,
     "exitFeeDecayPeriod": 604800,
     "gov": {

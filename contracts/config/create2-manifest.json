@@ -49,9 +49,9 @@
     "VaultFactory": {
       "salt": "0xe1f58806a42a380b2f3c321f838c429518693322bf2171d5c223b66eb7f97058",
       "saltPreimage": "rwally.protocol.v2.VaultFactory",
-      "initcodeBytes": 4473,
-      "initcodeHash": "0xcce83d7ba4d685c004fee026f74b3660a7d8265851f10b4a4e26a520c2083dbc",
-      "address": "0xC4a62CdaDDab141b4a69c00F447b00490c7aF81c"
+      "initcodeBytes": 4568,
+      "initcodeHash": "0xcf8cde4abc94a1e0e6f30ade1d62d7e163c3c676ca543c22ca55ecfbcd7bd37e",
+      "address": "0xd82a384A503B23395162E26d5a2F8DBbfA154CC7"
     }
   }
 }
