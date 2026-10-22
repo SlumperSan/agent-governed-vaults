@@ -67,6 +67,10 @@ Test names abbreviated to `File::test`; all files live in `contracts/test/`.
 
 ## Oracle (SF-1/2, E2/E6)
 
+Rows SF-1, E6, E2, the one-dead-source/below-quorum row and the Chainlink adapter row below exercise the retired `OracleAggregator`
+(`contracts/test/retired/`) as C-4/C-6 evidence; the launch oracle, `ChainlinkOracle`, is covered
+by the ChainlinkOracle test files listed in [walkthroughs/ChainlinkOracle.md](walkthroughs/ChainlinkOracle.md).
+
 | Row / mechanic | Tests |
 | --- | --- |
 | SF-1 median of ≥3, robustness to outliers | `Execution::test_medianOfThree`, `::test_manipulatedOutlierAbsorbedByMedian`, `OracleFuzz::testFuzz_lowerMedianOfFive`, `::testFuzz_medianWithinRange`, `::testFuzz_minorityOutliersCannotMoveMedian` |
