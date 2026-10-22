@@ -426,7 +426,7 @@ contract VaultCore {
         _deposit(amountUsdc, minSharesOut);
     }
 
-    function _deposit(uint256 amountUsdc, uint256 minSharesOut) internal {
+    function _deposit(uint256 amountUsdc, uint256 minSharesOut) internal virtual {
         require(amountUsdc > 0, ZeroAmount());
         require(amountUsdc >= minDepositUsdc, BelowMinDeposit());
 

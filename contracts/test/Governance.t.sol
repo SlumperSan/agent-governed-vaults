@@ -5,8 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {Governance} from "../src/Governance.sol";
 import {MockERC20, MockOracle, StubFeeEngine, StubRegistry} from "./mocks/Mocks.sol";
+import {VaultHook} from "./mocks/VaultHook.sol";
 
-contract GovernanceTest is Test {
+contract GovernanceTest is Test, VaultHook {
     uint256 constant USDC_1 = 1e6;
 
     MockERC20 usdc;
@@ -33,7 +34,7 @@ contract GovernanceTest is Test {
         gov = new Governance();
 
         address[] memory basket = new address[](0);
-        vault = new VaultCore(
+        vault = _newVault(
             address(usdc),
             basket,
             creator,
