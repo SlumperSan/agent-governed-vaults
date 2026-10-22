@@ -3,11 +3,13 @@
  * Signal (f) — FEE ROUTING. "Any USDC leaving a vault to an operator address outside the
  * FeeEngine claim flow."
  *
- * The invariant (EE-9 / MO-4): performance fees route to the operator ONLY through the FeeEngine —
- * the vault transfers to the engine, the engine credits `claimableFees[operator]`, and the
- * operator calls `claimFees`. Exit fees never route to the operator at all; they accrue to
- * remaining members through the share price. So a USDC transfer straight from a vault to a
- * registered operator address is the shape of a fee leak.
+ * The invariant (EE-9 / MO-4): performance fees leave the vault ONLY to the FeeEngine — the vault
+ * transfers to the engine, the engine credits it in `claimableFees` (on the v2 FeeEngine in the
+ * source, `_credit` splits it 10% to the treasury, rounded down, and the remainder to the vault
+ * creator; on the deployed Arc v1 FeeEngine, which this signal watches, it goes to the operator),
+ * and each recipient calls `claimFees`. Exit fees
+ * never route to the operator at all; they accrue to remaining members through the share price. So
+ * a USDC transfer straight from a vault to a registered operator address is the shape of a fee leak.
  *
  * WHY THIS IS THE NARROW CHECK. An inverse allowlist — alert on any destination that is not the
  * engine, a member, a child, or an adapter — would fire on ordinary exit payouts to members the
@@ -117,7 +119,7 @@ export async function checkFeeRouting({ reader, vault, usdc, operatorRegistry, e
   const first = leaks[0];
   return [alert({
     signal: SIGNAL, vault,
-    message: `FEE ROUTING VIOLATION on vault ${shortAddr(vault)}: ${leaks.length} USDC transfer(s) totalling ${total} base units went directly to operator address ${shortAddr(first.args?.to)} with no ExitSettled/PendingCancelled behind them (first at block ${Number(first.blockNumber)}, tx ${first.transactionHash ?? 'unknown'}) — fees must reach the operator only via FeeEngine.claimFees`,
+    message: `FEE ROUTING VIOLATION on vault ${shortAddr(vault)}: ${leaks.length} USDC transfer(s) totalling ${total} base units went directly to operator address ${shortAddr(first.args?.to)} with no ExitSettled/PendingCancelled behind them (first at block ${Number(first.blockNumber)}, tx ${first.transactionHash ?? 'unknown'}) — fees must leave the vault only to the FeeEngine and reach their recipients (on the deployed Arc v1 FeeEngine, the operator) only via FeeEngine.claimFees`,
     measured: `${leaks.length} transfer(s), ${total} USDC base units`, threshold: '0 direct operator transfers',
     detail: {
       ...window,
