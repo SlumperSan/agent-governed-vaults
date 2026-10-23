@@ -51,6 +51,10 @@ Before opening a PR for review, run the full gate locally:
 npm install && npm run gate
 ```
 
+Use npm 11 or later, which is what CI gets from Node 24. `package-lock.json` is written by npm 11, and
+npm 10 (Node 22) refuses it under `npm ci`; `npm install` there rewrites the lockfile, and that rewrite
+does not belong in a PR. `devEngines` in `package.json` prints a warning on npm 10 saying so.
+
 `npm run gate` mirrors [`.github/workflows/ci.yml`](.github/workflows/ci.yml) step for step:
 `forge fmt --check`, entrypoint syntax, `forge build`, the ops check, the backend suite,
 `forge test`, the gas snapshot, the EIP-170 runtime size check, and advisory slither. Run

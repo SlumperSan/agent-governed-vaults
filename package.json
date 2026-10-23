@@ -29,5 +29,12 @@
   "devDependencies": {
     "@babel/parser": "^7.29.9",
     "typescript": "~5.9.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11",
+      "onFail": "warn"
+    }
   }
 }
