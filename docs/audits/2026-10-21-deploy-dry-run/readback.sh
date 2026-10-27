@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # Read-back of a v2 deployment. Keyless and read-only: the replays are eth_call simulations sent
 # `--from` PROTOCOL_INITIALIZER, so this runs unchanged against a real RPC (set R and ORA).
-# The feedOf expectations are the dry run's stand-in inputs; edit them to the frozen config.
+# The feedOf expectations are the dry run's own oracle inputs (run-all.sh step 2b); edit them to the
+# frozen config.
+# FROM_BLOCK (default 0) bounds the event query: set it to the deploy block on a real RPC or a fork.
 R=${R:-http://127.0.0.1:8545}
+FROM_BLOCK=${FROM_BLOCK:-0}
 PI=0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35
 HERE=$(cd "$(dirname "$0")" && pwd); MANIFEST=$HERE/../../../contracts/config/create2-manifest.json
-# The six singleton addresses come from the manifest, never from literals here, so they cannot drift.
+# The seven singleton addresses come from the manifest, and the agent registry from its own record,
+# never from literals here, so they cannot drift.
 m() { jq -er ".contracts.$1.address" "$MANIFEST" || { echo "no $1 in $MANIFEST" >&2; exit 1; }; }
 REG=$(m OperatorRegistry) SUB=$(m SubVaultRegistry) FEE=$(m FeeEngine)
-GOV=$(m Governance) DEP=$(m VaultDeployer) FAC=$(m VaultFactory)
+GOV=$(m Governance) DEP=$(m VaultDeployer) AVD=$(m AgentVaultDeployer) FAC=$(m VaultFactory)
+AR=$(jq -er .address "$HERE/../../../contracts/config/agent-registry-create2.json")
 ORA=${ORA:?set ORA to the blessed oracle}
 WETH=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 WBTC=0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599 USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 pass=0 fail=0
@@ -16,7 +21,7 @@ lc() { echo "$1" | tr 'A-F' 'a-f'; }
 eq() { if [ "$(lc "$2")" == "$(lc "$3")" ]; then echo "PASS  $1 = $2"; pass=$((pass+1)); else echo "FAIL  $1: got $2 want $3"; fail=$((fail+1)); fi; }
 call() { cast call "$@" -r $R 2>&1 | awk '{print $1}'; }
 eq "chainId" "$(cast chain-id -r $R)" 1
-for p in "OperatorRegistry $REG" "SubVaultRegistry $SUB" "FeeEngine $FEE" "Governance $GOV" "VaultDeployer $DEP" "VaultFactory $FAC" "ChainlinkOracle $ORA"; do
+for p in "OperatorRegistry $REG" "SubVaultRegistry $SUB" "FeeEngine $FEE" "Governance $GOV" "VaultDeployer $DEP" "AgentVaultDeployer $AVD" "VaultFactory $FAC" "RWAllyAgentRegistry $AR" "ChainlinkOracle $ORA"; do
   set $p; n=$(( ($(cast code $2 -r $R | wc -c) - 3) / 2 )); [ $n -gt 0 ] && { echo "PASS  code at $1 $2 ($n bytes)"; pass=$((pass+1)); } || { echo "FAIL  no code at $1"; fail=$((fail+1)); }
 done
 echo "-- constructor arguments (immutables)"
@@ -41,7 +46,11 @@ eq "SubVaultRegistry.factory" "$(call $SUB 'factory()(address)')" $FAC
 eq "SubVaultRegistry.initialized" "$(call $SUB 'initialized()(bool)')" true
 eq "Governance.subVaultRegistry" "$(call $GOV 'subVaultRegistry()(address)')" $SUB
 eq "Governance.initialized" "$(call $GOV 'initialized()(bool)')" true
-ev=$(cast logs --from-block 0 --address $FAC 'Initialized(address[])' -r $R --json | jq length)
+eq "VaultFactory.agentPathInitialized" "$(call $FAC 'agentPathInitialized()(bool)')" true
+eq "VaultFactory.agentRegistry" "$(call $FAC 'agentRegistry()(address)')" $AR
+eq "VaultFactory.agentVaultDeployer" "$(call $FAC 'agentVaultDeployer()(address)')" $AVD
+eq "RWAllyAgentRegistry.initialized" "$(call $AR 'initialized()(bool)')" true
+ev=$(cast logs --from-block $FROM_BLOCK --address $FAC 'Initialized(address[])' -r $R --json | jq length)
 eq "VaultFactory Initialized events" "$ev" 1
 echo "-- ChainlinkOracle constructor arguments"
 eq "oracle.usdc" "$(call $ORA 'usdc()(address)')" $USDC
@@ -55,7 +64,11 @@ eq "OperatorRegistry.deployer" "$(call $REG 'deployer()(address)')" $PI
 eq "SubVaultRegistry.deployer" "$(call $SUB 'deployer()(address)')" $PI
 eq "Governance.deployer" "$(call $GOV 'deployer()(address)')" $PI
 rev() { out=$(cast call "$@" --from $PI -r $R 2>&1); if echo "$out" | grep -qi "revert\|error"; then echo "PASS  replay reverts: $2 ($(echo "$out" | grep -o 'custom error [^,]*\|0x[0-9a-f]\{8\}' | head -1))"; pass=$((pass+1)); else echo "FAIL  replay succeeded: $2"; fail=$((fail+1)); fi; }
+eq "RWAllyAgentRegistry.INITIALIZER" "$(call $AR 'INITIALIZER()(address)')" $PI
+# Every one-shot call, replayed from PROTOCOL_INITIALIZER itself with the arguments it would send.
 rev $FAC 'initialize(address[])' "[$ORA]"
+rev $FAC 'initializeAgentPath(address,address)' $AR $AVD
+rev $AR 'initialize(address,address,address,uint256,address,uint256)' 0x000000000000000000000000000000000000A11C $USDC 0x000000000000000000000000000000000000bEEF 0 0x0000000000000000000000000000000000000000 0
 rev $REG 'wire(address,address)' $FAC $FEE
 rev $SUB 'wire(address)' $FAC
 rev $GOV 'wireSubVaultRegistry(address)' $SUB
