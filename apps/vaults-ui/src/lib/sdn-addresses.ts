@@ -16,9 +16,9 @@
 export const SDN_ADDRESS_DATA = {
   sourceUrl: "https://www.treasury.gov/ofac/downloads/sdn.xml",
   sourceUrlNote: 'OFAC\'s own published redirect to the current SDN.XML export; resolves to the latest publication, never a dated snapshot.',
-  fetchedAt: "2026-10-03T13:00:26.165Z",
-  sdnPublishDate: "10/02/2026",
-  sdnRecordCount: "19488",
+  fetchedAt: "2026-10-27T14:01:35.172Z",
+  sdnPublishDate: "10/21/2026",
+  sdnRecordCount: "19471",
   digitalCurrencyIdTypesSeen: {
     "Digital Currency Address - TRX": 261,
     "Digital Currency Address - XMR": 11,
