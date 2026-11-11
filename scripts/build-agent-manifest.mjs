@@ -22,7 +22,7 @@ export const MANIFEST_PATH = 'apps/site/public/agent-manifest.json';
 export function generate() {
   return renderManifest(
     buildManifest({
-      record: readJson('contracts/config/deployments/arc-mainnet.json'),
+      record: readJson('contracts/config/deployments/arc-mainnet-v1.json'),
       config: readJson('contracts/config/arc-mainnet.json'),
       observationWindowSeconds: observationWindowFromSource(
         readFileSync(path.join(REPO, 'contracts/src/VaultCore.sol'), 'utf8'),

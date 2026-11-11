@@ -40,7 +40,7 @@ contract Create2ArcForkTest is Test {
         if (bytes(rpc).length == 0) return; // every test vm.skip()s; the fork is never created
         vm.createSelectFork(rpc);
         assertEq(block.chainid, ARC_CHAIN_ID, "ARC_MAINNET_RPC_URL is not Arc mainnet (5042)");
-        deployment = vm.readFile("config/deployments/arc-mainnet.json");
+        deployment = vm.readFile("config/deployments/arc-mainnet-v1.json");
         forked = true;
     }
 

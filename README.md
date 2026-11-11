@@ -23,7 +23,7 @@ chain-specific code, so the same immutable bytecode is deployable on any EVM cha
 exchanges anywhere in the design.
 
 **Deployed on Arc mainnet since 2026-09-24.** The address book is
-[`contracts/config/deployments/arc-mainnet.json`](contracts/config/deployments/arc-mainnet.json),
+[`contracts/config/deployments/arc-mainnet-v1.json`](contracts/config/deployments/arc-mainnet-v1.json),
 and the first vault exists there. Read [Status](#status) before anything else in this file: the
 deployment went ahead without a soak or canary re-run on the Arc source commit, and Status records
 what that leaves open.
@@ -93,7 +93,7 @@ exit fee.
 ## Status
 
 **Deployed on Arc mainnet (chain 5042), 2026-09-24.** The address book is
-[`contracts/config/deployments/arc-mainnet.json`](contracts/config/deployments/arc-mainnet.json):
+[`contracts/config/deployments/arc-mainnet-v1.json`](contracts/config/deployments/arc-mainnet-v1.json):
 every address in it was re-read independently from the chain and cross-checked on two RPC
 endpoints, rather than copied from documentation. The first vault exists there
 (`0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`), created and registered through the intended

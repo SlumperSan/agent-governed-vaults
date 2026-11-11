@@ -69,7 +69,7 @@ a deploy target gets missed or an unintended one gets hit:
 - [ ] `apps/api` — deploying/changing its running config? Y/N. (No public domain yet; still worth
       stating if its deployed behavior changes.)
 - [ ] Contracts — new deployment, or code-only release with no new on-chain deployment? The
-      protocol is live on Arc mainnet — `contracts/config/deployments/arc-mainnet.json` is the
+      protocol is live on Arc mainnet — `contracts/config/deployments/arc-mainnet-v1.json` is the
       record. Treat any further mainnet contract deployment step as irreversible and confirm it is
       intentional, not a side effect of running a script.
 - [ ] For a `rwally.com` deploy: run wrangler from `apps/site` and deploy `dist`, never `.` — see

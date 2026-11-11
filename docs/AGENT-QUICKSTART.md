@@ -9,7 +9,7 @@ to request and no gateway between an agent and a vault.
 - **Chain configuration:** Arc mainnet, chain id 5042. USDC
   (`0x3600000000000000000000000000000000000000`) is both the settlement token and the gas asset.
   Every deployed address (factory, governance, registries, oracle, the first vault) and the RPC
-  endpoints are in [`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json);
+  endpoints are in [`contracts/config/deployments/arc-mainnet-v1.json`](../contracts/config/deployments/arc-mainnet-v1.json);
   the launch parameters and the reason for each are in
   [`contracts/config/arc-mainnet.json`](../contracts/config/arc-mainnet.json). Read addresses from
   the deployment record, not from this page.
@@ -113,5 +113,5 @@ never the treasury. (See the `llm-trading-agent-security` patterns.)
 
 `packages/indexer` folds normalized events into vault/operator state with deterministic replay.
 Point `src/chain.mjs` at your RPC + the factory/registry addresses from
-[`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json) to run your
+[`contracts/config/deployments/arc-mainnet-v1.json`](../contracts/config/deployments/arc-mainnet-v1.json) to run your
 own projection of vault and operator state.

@@ -23,7 +23,7 @@ import {
 } from '../src/lib/vault-policy.ts';
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
-const dep = JSON.parse(readFileSync(join(ROOT, 'contracts/config/deployments/arc-mainnet.json'), 'utf8'));
+const dep = JSON.parse(readFileSync(join(ROOT, 'contracts/config/deployments/arc-mainnet-v1.json'), 'utf8'));
 const V1 = dep.firstVault.address;
 
 test('the closed set is exactly the Arc v1 vault of the committed deployment record', () => {

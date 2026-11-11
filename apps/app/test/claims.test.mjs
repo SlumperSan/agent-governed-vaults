@@ -94,12 +94,12 @@ const ADDRESS_RE = /0x[a-fA-F0-9]{40}/;
 const EMPTY_STATE = 'This table lists no vaults. The protocol is deployed on Arc, but this page has not been repointed at it, so there is nothing here to list.';
 
 // The deployment-status sentence, exactly as it must read. UPDATED 2026-09-24: the protocol IS
-// deployed on Arc mainnet (contracts/config/deployments/arc-mainnet.json), so the sentence this
+// deployed on Arc mainnet (contracts/config/deployments/arc-mainnet-v1.json), so the sentence this
 // card used to pin ("Not deployed...") went false that day. This is still the replacement for the
 // seven-address Contracts card this page used to render before the prior chain was abandoned: it
 // names no address of its own and points at the manifest instead, so a real deployed address
 // still never appears on this page (see the address-absence test below).
-const NOT_DEPLOYED = 'Deployed on Arc mainnet, chain 5042: contracts/config/deployments/arc-mainnet.json. This page does not read it, and nothing here implies any funds are safe to send.';
+const NOT_DEPLOYED = 'Deployed on Arc mainnet, chain 5042: contracts/config/deployments/arc-mainnet-v1.json. This page does not read it, and nothing here implies any funds are safe to send.';
 
 const flat = (s) => s.replace(/\s+/g, ' ');
 

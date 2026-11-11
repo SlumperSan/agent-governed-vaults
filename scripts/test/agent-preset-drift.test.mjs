@@ -5,7 +5,7 @@
  * The preset is a file inside the package because `Dockerfile` copies `packages` and an integrator
  * copies the agent out of the tree: neither carries `scripts/` or the deployment record. A second
  * copy of an address is a second place for it to be wrong, so this test regenerates the preset
- * from `contracts/config/deployments/arc-mainnet.json` with `scripts/build-agent-preset.mjs` and
+ * from `contracts/config/deployments/arc-mainnet-v1.json` with `scripts/build-agent-preset.mjs` and
  * demands the file on disk be byte-identical.
  *
  * What the generator cannot derive from the record is the USDC EIP-712 domain, so the test checks

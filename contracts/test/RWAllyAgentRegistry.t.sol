@@ -2209,7 +2209,7 @@ contract RWAllyAgentRegistryCreate2Test is RegistryTestBase {
     /// The initializer is the owner-held protocol deployer key, the same address the Arc deployment
     /// record names as `deployer`.
     function test_initializer_isTheProtocolDeployer() public view {
-        string memory deployment = vm.readFile("config/deployments/arc-mainnet.json");
+        string memory deployment = vm.readFile("config/deployments/arc-mainnet-v1.json");
         assertEq(vm.parseJsonAddress(cfg, ".initializer"), vm.parseJsonAddress(deployment, ".deployer"));
     }
 }

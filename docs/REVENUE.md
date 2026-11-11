@@ -45,7 +45,7 @@ settlement.
 > USDC on Base mainnet (8453) while the data it sells describes a different chain than the payment
 > settles on. `apps/api` is the one paid API going forward. See the Production Map in `README.md`
 > for what chain it currently serves — the protocol itself is now deployed on Arc mainnet (see
-> `contracts/config/deployments/arc-mainnet.json`), a different chain again from either of the two
+> `contracts/config/deployments/arc-mainnet-v1.json`), a different chain again from either of the two
 > named above, and `apps/api` has not been repointed at it.
 
 ---

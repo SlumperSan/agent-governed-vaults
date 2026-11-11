@@ -141,7 +141,7 @@ contract AgentVaultCoreForkTest is Test {
         forked = true;
 
         // Read the shipping record, not hardcoded copies.
-        string memory j = vm.readFile("config/deployments/arc-mainnet.json");
+        string memory j = vm.readFile("config/deployments/arc-mainnet-v1.json");
         usdc = vm.parseJsonAddress(j, ".infrastructure.usdc");
         cirBtc = vm.parseJsonAddress(j, ".oracle.assets.cirBTC.token");
         govAddr = vm.parseJsonAddress(j, ".singletons.Governance");

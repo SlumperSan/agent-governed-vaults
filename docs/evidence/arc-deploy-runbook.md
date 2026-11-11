@@ -157,7 +157,7 @@ with real USDC for mainnet; `faucet.circle.com` covers testnet only.
    the order `robinhood-mainnet.json` records.
 
 3. **Read every address back off chain 5042** and write
-   `contracts/config/deployments/arc-mainnet.json` from what the chain returned, never from the
+   `contracts/config/deployments/arc-mainnet-v1.json` from what the chain returned, never from the
    broadcast log. The broadcast JSON's `transactions[].hash` column has been label-scrambled on
    more than one run in this repository; its `receipts[]` array was correct each time. Establish
    contract identity from receipts, not labels.

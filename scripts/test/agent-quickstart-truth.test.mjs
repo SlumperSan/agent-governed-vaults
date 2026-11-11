@@ -3,7 +3,7 @@
  * `docs/AGENT-QUICKSTART.md` IS THE FIRST PAGE AN AGENT READS, AND IT SAID THE WRONG THINGS ABOUT ARC.
  *
  * Until this guard it carried two claims that stopped being true on 2026-09-24, when the Arc mainnet
- * deploy wrote `contracts/config/deployments/arc-mainnet.json`:
+ * deploy wrote the Arc deployment record (now `contracts/config/deployments/arc-mainnet-v1.json`):
  *
  *   1. "the protocol is built for Arc but has no live chain configuration yet". There is a live
  *      chain configuration: chain 5042, a deployment record, a first vault.
@@ -37,7 +37,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const PAGE_REL = 'docs/AGENT-QUICKSTART.md';
-const RECORD_REL = 'contracts/config/deployments/arc-mainnet.json';
+const RECORD_REL = 'contracts/config/deployments/arc-mainnet-v1.json';
 const CONFIG_REL = 'contracts/config/arc-mainnet.json';
 
 /**

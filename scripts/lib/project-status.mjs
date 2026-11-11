@@ -142,7 +142,19 @@ export function gateClass(status) {
 
 // ---------------------------------------------------------------- deployments
 
-function deployments() {
+/**
+ * The network a record file is shown under. A versioned record (`arc-mainnet-v1.json`, kept so a
+ * later `arc-mainnet-v2.json` can sit beside it) is the same network as the chain name it carries,
+ * so the `-vN` suffix is dropped; without that the board would list `arc-mainnet-v1` as a network
+ * and `contracts/config/arc-mainnet.json` (the launch config) would no longer be shadowed by the
+ * record that used to share its name.
+ * @param {string} file
+ */
+export function deploymentNetworkName(file) {
+  return file.replace(/\.json$/, '').replace(/-v\d+$/, '');
+}
+
+export function deployments() {
   const out = [];
   // Address books live in two places across generations -- read both rather than assuming one.
   for (const dir of [path.join(REPO, 'contracts/config/deployments'), path.join(REPO, 'contracts/config')]) {
@@ -158,7 +170,7 @@ function deployments() {
         }
       };
       walk(j);
-      const network = f.replace(/\.json$/, '');
+      const network = deploymentNetworkName(f);
       if (Object.keys(flat).length && !out.some((d) => d.network === network)) {
         out.push({ network, addresses: flat });
       }

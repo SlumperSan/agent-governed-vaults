@@ -7,7 +7,7 @@
   "initcodeHash": "0x45af2d1c7278a19c3ea32f0b32a8b356b258e8061713e7d2a19049cfeac38c61",
   "address": "0x1337f59A8c67471843496A4b0c3Ff64E557d3D2C",
   "initializer": "0x0f80606a2283fD9C67cE2eEC79B90E95907F9f35",
-  "initializerNote": "The owner-held protocol deployer key, used for initialize only through the owner's sign queue. It is the INITIALIZER constant in the contract; a unit test asserts the two are equal and equal to the deployer in deployments/arc-mainnet.json. If the key is lost, no new chain can be initialized at this address and chains already initialized are unaffected.",
+  "initializerNote": "The owner-held protocol deployer key, used for initialize only through the owner's sign queue. It is the INITIALIZER constant in the contract; a unit test asserts the two are equal and equal to the deployer in deployments/arc-mainnet-v1.json. If the key is lost, no new chain can be initialized at this address and chains already initialized are unaffected.",
   "maxFee": 100000000,
   "importWindowSeconds": 2592000,
   "outsideRegistry": {

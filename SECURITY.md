@@ -19,7 +19,7 @@ Include, as far as you can:
 - Steps to reproduce, or a proof-of-concept (a Foundry test, an HTTP request, a transcript).
 - The commit hash, contract address, or deployed chain the finding applies to. **The protocol is
   deployed on Arc mainnet (chain 5042) since 2026-09-24**
-  (`contracts/config/deployments/arc-mainnet.json`). The Base Sepolia testnet stack
+  (`contracts/config/deployments/arc-mainnet-v1.json`). The Base Sepolia testnet stack
   (`contracts/config/deployments/base-sepolia.json`) holds no member money; the contracts left on
   Robinhood Chain (chain 4663) are immutable and hold nothing, and that chain is no longer a target; `docs/INCIDENTS.md`
   §0 carries the readings.
@@ -32,7 +32,7 @@ In scope:
 - `contracts/` — `VaultCore`, `Governance`, `FeeEngine`, `OperatorRegistry`, `ChainlinkOracle`, the
   execution adapters, `SubVaultRegistry`, `VaultFactory`/`VaultDeployer`, and their deployed
   bytecode on Arc mainnet (chain 5042; the address book is
-  `contracts/config/deployments/arc-mainnet.json`), on Base Sepolia testnet and on chain 4663, where
+  `contracts/config/deployments/arc-mainnet-v1.json`), on Base Sepolia testnet and on chain 4663, where
   the contracts remain deployed and immutable although no vault there holds value.
 - `apps/api/` — the metered read API (x402 payment gate, facilitator integration, rate limiting).
   This is the one paid API surface going forward; a duplicate paid endpoint that previously lived

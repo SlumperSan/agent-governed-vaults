@@ -10,8 +10,8 @@
  *
  * `fetch` is stubbed per test — nothing here makes a real network call. `checkArcDeployment` reads
  * real files from the checked-out repo (no network, no injection point): it asserts against the
- * actual current state, `contracts/config/deployments/arc-mainnet.json` present since the Arc
- * mainnet deploy on 2026-09-24 — this row is green today, the opposite of the state this file
+ * actual current state, `contracts/config/deployments/arc-mainnet-v1.json` present (written by the Arc
+ * mainnet deploy on 2026-09-24 under its earlier name) — this row is green today, the opposite of the state this file
  * documented before that deploy.
  */
 import { test } from 'node:test';
@@ -414,7 +414,7 @@ test('Deployer balance: RPC error object on balanceOf — unknown', async () => 
 test('Arc deployment: green — the deployment record exists', () => {
   const r = checkArcDeployment();
   assert.equal(r.state, 'green');
-  assert.match(r.detail, /arc-mainnet\.json exists/);
+  assert.match(r.detail, /arc-mainnet-v1\.json exists/);
 });
 
 // ────────────────────────────── row 5 — member surface in production ─────────────────────────

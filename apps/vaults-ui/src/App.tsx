@@ -62,7 +62,7 @@ function AppShell() {
          * freshness, or any other read, because a read that can fail is a disclosure that can
          * vanish, and its absence here would read as an unqualified, unlabelled mainnet. Verbatim
          * text, do not paraphrase. Live on Arc mainnet since 2026-09-24 (chain 5042,
-         * firstVault.createdAt — contracts/config/deployments/arc-mainnet.json). AS READ
+         * firstVault.createdAt — contracts/config/deployments/arc-mainnet-v1.json). AS READ
          * 2026-09-23 the vault was empty (zero deposits, zero shares, a real chain read of a real
          * zero) — the SAME sentence stays true once a member deposits, because it says "real
          * funds", not "no funds yet"; read `vault.navWad`/`vault.holderCount` live for the current

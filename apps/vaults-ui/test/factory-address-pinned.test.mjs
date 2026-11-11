@@ -7,7 +7,7 @@
  * configured vault address (or, worse, silently proves nothing while looking like a real check).
  *
  * `.env.example`'s `VITE_FACTORY_ADDRESS` was set BY HAND from `contracts/config/deployments/
- * arc-mainnet.json`'s `singletons.VaultFactory` when A2 was built, the same way `VITE_RPC_URL`/
+ * arc-mainnet-v1.json`'s `singletons.VaultFactory` when A2 was built, the same way `VITE_RPC_URL`/
  * `VITE_CHAIN_ID`/`VITE_VAULT_ADDRESSES` were — nothing forces the two to stay equal. This pins
  * `.env.example`'s value to the COMMITTED deployment record with a test, the same convention
  * `test/vault-name.test.mjs` and `test/testnet-masthead.test.mjs` already use for the sibling
@@ -28,7 +28,7 @@ import assert from 'node:assert/strict';
 const APP = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const ENV_EXAMPLE = join(APP, '.env.example');
-const DEPLOYMENT_JSON = join(ROOT, 'contracts/config/deployments/arc-mainnet.json');
+const DEPLOYMENT_JSON = join(ROOT, 'contracts/config/deployments/arc-mainnet-v1.json');
 
 /** `VITE_FACTORY_ADDRESS=0x...` out of `.env.example`, exactly as `readLiveConfig` would read it
  * from a real build env (no quoting, no surrounding whitespace stripped beyond the trim Node's
@@ -46,7 +46,7 @@ function deployedFactoryAddress() {
   const addr = json?.singletons?.VaultFactory;
   assert.ok(
     typeof addr === 'string' && /^0x[0-9a-fA-F]{40}$/.test(addr),
-    'contracts/config/deployments/arc-mainnet.json has no well-formed singletons.VaultFactory',
+    'contracts/config/deployments/arc-mainnet-v1.json has no well-formed singletons.VaultFactory',
   );
   return addr;
 }
@@ -58,7 +58,7 @@ test('.env.example VITE_FACTORY_ADDRESS equals the committed VaultFactory deploy
     fromEnv.toLowerCase(),
     fromDeployment.toLowerCase(),
     `.env.example's VITE_FACTORY_ADDRESS (${fromEnv}) does not match contracts/config/deployments/` +
-      `arc-mainnet.json's singletons.VaultFactory (${fromDeployment}) — the manifest check would be ` +
+      `arc-mainnet-v1.json's singletons.VaultFactory (${fromDeployment}) — the manifest check would be ` +
       `pinned against the wrong factory`,
   );
 });

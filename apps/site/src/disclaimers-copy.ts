@@ -18,7 +18,7 @@
  * WHAT CHANGED IN THAT SECOND PASS: the settlement token is USDC; nothing was deployed then, so the
  * deployment paragraph, the vault capacity figures and the address ledger references said so (all
  * three were replaced again on 2026-09-24, when the first vault went live on Arc, from
- * contracts/config/deployments/arc-mainnet.json and a chain read of the live oracle); the
+ * contracts/config/deployments/arc-mainnet-v1.json and a chain read of the live oracle); the
  * sequencer-gate entry records the Arc exemption, granted for chain 5042 on 2026-09-19, and what it
  * costs at price time; and figures that came out of a configuration file which has since
  * been deleted were removed rather than carried forward as though still sourced.
@@ -82,7 +82,7 @@ export const HERO = {
     "Every warning, limit and unresolved question on this site is on this page. The rest of this site describes mechanism. This one describes what that mechanism costs you when it does not go your way.",
   bannerOffer: "Nothing on this site is an offer, a solicitation, or financial advice.",
   deploymentParagraph:
-    "Deployed on Arc mainnet. The first vault, the cirBTC Vault, is at <code>0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6</code>, and every protocol address is recorded in <code>contracts/config/deployments/arc-mainnet.json</code>. Every risk below describes code that is now running on Arc and can hold real USDC, and none of that code can be changed.",
+    "Deployed on Arc mainnet. The first vault, the cirBTC Vault, is at <code>0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6</code>, and every protocol address is recorded in <code>contracts/config/deployments/arc-mainnet-v1.json</code>. Every risk below describes code that is now running on Arc and can hold real USDC, and none of that code can be changed.",
   licence: "Open source under the MIT licence.",
   jurisdictionParagraph:
     "Interests in these vaults may be treated as securities or as collective investment scheme interests in some jurisdictions. Access from restricted jurisdictions is intended to be geofenced at the front end; that is a good-faith measure and not a guarantee, because the contracts are permissionless and can be called directly by anyone.",
@@ -690,7 +690,7 @@ export const REFERENCES: readonly Reference[] = [
   },
   {
     "key": "deployment-record",
-    "term": "<code>contracts/config/deployments/arc-mainnet.json</code>",
+    "term": "<code>contracts/config/deployments/arc-mainnet-v1.json</code>",
     "body": "The address ledger: every contract deployed on Arc mainnet, the transactions that created them, and the first vault's creation and registration. Check any address here against the chain before you send it anything."
   },
   {
@@ -702,7 +702,7 @@ export const REFERENCES: readonly Reference[] = [
 
 export const ACTIONS: readonly Action[] = [
   {
-    "href": "https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/arc-mainnet.json",
+    "href": "https://github.com/SlumperSan/agent-governed-vaults/blob/protocol/main/contracts/config/deployments/arc-mainnet-v1.json",
     "label": "The address ledger",
     "primary": true
   },
