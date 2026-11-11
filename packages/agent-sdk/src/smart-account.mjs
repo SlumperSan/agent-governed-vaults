@@ -122,7 +122,8 @@ function scrubbed(err) {
  *   ERC-20's 6, so never derive this from a USDC amount.
  * @param {{publicClient:{getCode:Function, call:Function}, registry:string}} [cfg.mintPreflight]  when given, a write to
  *   `registry` of register, importAgent or mintMirrored first static-calls onERC721Received on the smart account
- *   (see `assertCanReceiveErc721`) and throws `Erc721ReceiverError` before anything is prepared. Opt-in; leave it out
+ *   (see `assertCanReceiveErc721`) and throws `Erc721ReceiverError` before anything is prepared when the account reverts or returns other bytes (an RPC failure
+ *   propagates as an ordinary error, with URL paths stripped). Opt-in; leave it out
  *   and no check runs.
  * @param {boolean} [cfg.waitForReceipt]  default true: wait until the UserOp is mined and return
  *   the transaction hash; a reverted UserOp throws. Leave it on: the actor sends an approval and
@@ -157,8 +158,14 @@ export function createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePe
       if (typeof from !== 'string' || from.toLowerCase() !== smartAccount.address.toLowerCase())
         throw new Error(`refused: the write is for ${from ?? 'no account'} but this writer sends from ${smartAccount.address}`);
 
-      if (mintPreflight && address.toLowerCase() === mintPreflight.registry.toLowerCase() && REGISTRY_MINT_FUNCTIONS.includes(functionName))
-        await assertCanReceiveErc721(mintPreflight.publicClient, mintPreflight.registry, smartAccount.address);
+      if (mintPreflight && address.toLowerCase() === mintPreflight.registry.toLowerCase() && REGISTRY_MINT_FUNCTIONS.includes(functionName)) {
+        try {
+          await assertCanReceiveErc721(mintPreflight.publicClient, mintPreflight.registry, smartAccount.address);
+        } catch (err) {
+          // A typed receiver error is ours and carries no URL; anything else is an RPC error and is scrubbed like every other.
+          throw err instanceof Erc721ReceiverError ? err : scrubbed(err);
+        }
+      }
 
       const calls = [{ to: address, data: encodeFunctionData({ abi, functionName, args }) }];
       try {

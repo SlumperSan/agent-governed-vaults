@@ -157,6 +157,16 @@ test('preflight: a transport error propagates and is not mapped to Erc721Receive
   assert.equal(calls.prepare.length + calls.sign.length + calls.send.length, 0);
 });
 
+test('preflight: an RPC error from the probe has its URL path stripped and is not an Erc721ReceiverError', async () => {
+  for (const pubClient of [
+    pub({ call: async () => { throw new Error('fetch failed for https://rpc.example/v2/SECRETKEY'); } }),
+    { ...pub({ call: async () => ({}) }), getCode: async () => { throw new Error('fetch failed for https://rpc.example/v2/SECRETKEY'); } },
+  ]) {
+    const { w } = mintWriter(pubClient);
+    await assert.rejects(w.writeContract(mintReq()), (e) => e.name !== 'Erc721ReceiverError' && !/SECRETKEY/.test(e.message) && /rpc\.example/.test(e.message));
+  }
+});
+
 test('preflight: a reverting receiver throws the same typed error', async () => {
   const { calls, w } = mintWriter(pub({ call: async () => { throw new Error('execution reverted'); } }));
   await assert.rejects(w.writeContract(mintReq()), (e) => e.name === 'Erc721ReceiverError' && e.message.includes(SMART));

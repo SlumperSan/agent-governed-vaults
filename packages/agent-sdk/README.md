@@ -15,8 +15,9 @@ USDC domain. See [docs/AGENT-QUICKSTART.md](../../docs/AGENT-QUICKSTART.md).
   is never offered as an ERC-1271 signer; pay x402 from a separate EOA.
   With the optional `mintPreflight: { publicClient, registry }`, a `register`, `importAgent` or
   `mintMirrored` write to the registry first static-calls `onERC721Received` on the smart account
-  and throws `Erc721ReceiverError` before any UserOp is built or signed unless it returns
-  `0x150b7a02`. This is a gas and UX guard only: the registry already reverts with
+  and throws `Erc721ReceiverError` before any UserOp is built or signed if the call reverts or
+  does not return `0x150b7a02` (an RPC failure propagates as an ordinary error, URL paths
+  stripped). This is a gas and UX guard only: the registry already reverts with
   `ERC721InvalidReceiver` for such an account, so the check saves a reverted UserOp and names the
   cause. An account with no code skips the check. No account implementation or version is
   verified here: the SDK pins none (viem only), and the check reads the live account rather than
