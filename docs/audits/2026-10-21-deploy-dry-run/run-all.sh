@@ -38,6 +38,9 @@ if [ -n "$FORK_URL" ]; then
   anvil --fork-url "$FORK_URL" ${FORK_BLOCK:+--fork-block-number $FORK_BLOCK} --chain-id 1 --port 8545 --hardfork osaka > "$WORK/anvil.log" 2>&1 & echo $! > "$WORK/anvil.pid"
   sleep 8
   FROM_BLOCK=$(cast block-number -r $R); export FROM_BLOCK
+  # forge caches fork reads per chain id and block number. Step 3b clears the initializer's code at the
+  # SAME block, and a cached read would still show the old code, so the scripts run without that cache.
+  FORGE_ARGS+=(--no-storage-caching)
   echo "MODE fork of Ethereum mainnet at block $FROM_BLOCK (endpoint host: $(echo "$FORK_URL" | sed -E 's#^[a-z]+://([^/]+).*#\1#'))"
   # The anvil test keys are public, and on mainnet their addresses carry EIP-7702 delegations (all four
   # did on 2026-10-22). Clear that code locally so the throwaway sender and Safe owners are plain accounts.
@@ -137,7 +140,7 @@ forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --privat
 if [ -n "$FORK_URL" ]; then
 step "3b. Deploy.s.sol while PROTOCOL_INITIALIZER still has its real mainnet code (must refuse before sending anything)"
 echo "PROTOCOL_INITIALIZER code bytes $(( ($(cast code $PI -r $R | wc -c) - 3) / 2 ))  nonce $(cast nonce $PI -r $R)"
-BLESSED_ORACLES=$ORA FEE_TREASURY=$FEE_TREASURY forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --unlocked --sender $PI --broadcast 2>&1 | grep -m1 "Error"
+BLESSED_ORACLES=$ORA FEE_TREASURY=$FEE_TREASURY forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --unlocked --sender $PI --broadcast 2>&1 | grep -m1 "script failed"
 echo "block after the refusal $(cast block-number -r $R)"
 # Mirrors the planned step before deploy day: the account is switched back to a plain one, which clears the code.
 cast rpc anvil_setCode $PI 0x -r $R >/dev/null
