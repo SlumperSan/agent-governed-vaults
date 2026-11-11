@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {Create2ProxyFixture} from "./helpers/Create2ProxyFixture.sol";
 import {ProtocolCreate2} from "../script/lib/ProtocolCreate2.sol";
 import {PROTOCOL_INITIALIZER} from "../src/lib/ProtocolInitializer.sol";
@@ -131,6 +132,28 @@ contract DeployTest is Create2ProxyFixture {
         feeEngine.initialize(address(0xBEEF));
     }
 
+    /// @notice A15 A3: the treasury lands BEFORE `registry.wire`, so there is no block in which a vault
+    /// can be created while the engine takes no fee. Read from the emitted order, not the source.
+    function test_deploySetsTheTreasuryBeforeTheRegistryIsWired() public {
+        Deploy d = new Deploy();
+        vm.recordLogs();
+        (OperatorRegistry registry,, FeeEngine feeEngine,,,,) = d.run();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 treasurySet = type(uint256).max;
+        uint256 factorySet = type(uint256).max;
+        for (uint256 i; i < logs.length; ++i) {
+            Vm.Log memory l = logs[i];
+            if (l.emitter == address(feeEngine) && l.topics[0] == FeeEngine.Initialized.selector) {
+                treasurySet = i;
+            }
+            if (l.emitter == address(registry) && l.topics[0] == OperatorRegistry.FactorySet.selector) {
+                factorySet = i;
+            }
+        }
+        assertLt(factorySet, logs.length, "registry.wire emitted no FactorySet");
+        assertLt(treasurySet, factorySet, "feeEngine.initialize must land before registry.wire");
+    }
+
     /// @notice On any real chain the treasury must be supplied: with `FEE_TREASURY` unset the read
     /// refuses, so the deploy stops before anything is sent. (FEE_TREASURY is unset in CI.)
     function test_realChainRefusesAnUnsetFeeTreasury() public {
@@ -158,6 +181,26 @@ contract DeployTest is Create2ProxyFixture {
         );
         d.run();
         assertEq(ProtocolCreate2.predict().vaultFactory.code.length, 0, "nothing was deployed");
+    }
+
+    /// @notice PROTOCOL_INITIALIZER must have no code on the target chain: an EIP-7702 delegation reads
+    /// as the 23 byte designator `0xef0100` + a 20 byte address, and the script refuses before sending
+    /// anything while it is there. Clearing the code lets the same script run.
+    function test_deployRefusesWhileTheInitializerHasCode() public {
+        bytes memory designator = abi.encodePacked(hex"ef0100", hex"63c0c19a282a1b52b07dd5a65b58948a07dae32b");
+        assertEq(designator.length, 23, "a 7702 designator is 23 bytes");
+        vm.etch(PROTOCOL_INITIALIZER, designator);
+        Deploy d = new Deploy();
+        vm.expectRevert(
+            bytes(
+                "Deploy: PROTOCOL_INITIALIZER has code on this chain (an EIP-7702 delegation?); clear it before deploying"
+            )
+        );
+        d.run();
+        assertEq(ProtocolCreate2.predict().vaultFactory.code.length, 0, "nothing was deployed");
+        vm.etch(PROTOCOL_INITIALIZER, "");
+        d.run();
+        assertTrue(ProtocolCreate2.predict().vaultFactory.code.length > 0, "deploys once the code is cleared");
     }
 
     function test_proxyFixtureMatchesTheKnownCodehash() public view {

@@ -86,8 +86,8 @@ be noise.
 
 **"Reviewed at all" deliberately includes a *prose* verdict of either kind**, and that widening was
 forced by running the tool rather than reasoning about it. The first version gated on a verdict
-*token*, and against **#112** (an ACCEPTed PR **43 commits behind `main`**, sitting on the owner's
-desk to merge) it reported **CLEAR**, because #112's ACCEPT is prose and a token-only gate cannot
+*token*, and against **#112** (an ACCEPTed PR **43 commits behind `main`**, awaiting
+merge) it reported **CLEAR**, because #112's ACCEPT is prose and a token-only gate cannot
 see it. That is precisely the case Mode E exists for, missed by the rule written to catch it. Reading
 a prose ACCEPT to *raise* a blocker keeps the asymmetry intact: prose still never clears anything.
 
@@ -118,7 +118,7 @@ and `request-changes` on its own pull requests: `reviewDecision` is permanently 
 `CHANGES_REQUESTED` (the state branch protection natively blocks on) is unreachable. Verified on
 2026-09-01: `viewerDidAuthor: true` on every PR checked, and **zero** native reviews exist in this
 repository's history. A second machine account is the only path to natively-enforced reviewer
-independence, and it is the owner's call (§ Making this enforcement, step 4).
+independence, and adding one needs the repository owner (§ Making this enforcement, step 4).
 
 The same fact has a second consequence: a script cannot tell reviewer 1 from reviewer 2 by identity.
 "Two reviewers reported" is not computable from GitHub, only from a roster the orchestrator
@@ -245,7 +245,7 @@ exercise exists to prevent.
 - **A reviewer that posts ACCEPT without reviewing.** Nothing here reads the review's quality. The
   token records that a verdict was reached, never that it was earned.
 - **An agent that simply does not run it.** Everything above is convention until branch protection
-  lands. This is the largest hole by far, and it is the owner's to close.
+  lands. This is the largest hole by far, and only the repository owner can close it.
 - **A duplicated or invented reviewer name.** The roster is self-declared by the same identity that
   posts the verdicts, so one agent can satisfy a two-name roster. Under one GitHub account this is
   self-policing by construction; see step 4.
@@ -415,7 +415,7 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
       ],
       "title": "a verdict is only valid against the base it was computed on",
       "blocksWhen": "the branch is behind its base branch and the PR has been reviewed at all (a verdict token, or a prose verdict heading of either kind)",
-      "why": "Mode E, and Mode D's mirror: D is 'the content changed under the verdict', E is 'the world the content describes changed under it'. Seen live on 2026-09-01: #119 held a valid ACCEPT against d9293c23, then #121 merged and inverted the canary tier semantics in sinks.mjs, making two sentences #119 ADDS false against merged main -- while merge-tree stayed clean (they touch different files), CI stayed green on the reviewed head, and the verdict stayed untouched. The branch head never moved, so verdict-covers-head cannot see it and no rule keyed to the PR alone can. Read from the compare API's behind_by, because gh pr view's mergeStateStatus only reports BEHIND once the repository already requires up-to-date branches -- the very setting this argues for. It detects that a verdict was computed against a base that no longer exists; it cannot tell you WHETHER the moved base falsifies anything, which is a re-read. The enforcement half was GitHub's 'Require branches to be up to date before merging' (strict=true on required_status_checks), which makes every base advance force a re-integration and therefore a re-verdict. The owner set strict_required_status_checks_policy to false on the protocol-main ruleset on 2026-09-10, so a behind branch no longer blocks a merge and this rule is the only thing that reports the drift."
+      "why": "Mode E, and Mode D's mirror: D is 'the content changed under the verdict', E is 'the world the content describes changed under it'. Seen live on 2026-09-01: #119 held a valid ACCEPT against d9293c23, then #121 merged and inverted the canary tier semantics in sinks.mjs, making two sentences #119 ADDS false against merged main -- while merge-tree stayed clean (they touch different files), CI stayed green on the reviewed head, and the verdict stayed untouched. The branch head never moved, so verdict-covers-head cannot see it and no rule keyed to the PR alone can. Read from the compare API's behind_by, because gh pr view's mergeStateStatus only reports BEHIND once the repository already requires up-to-date branches -- the very setting this argues for. It detects that a verdict was computed against a base that no longer exists; it cannot tell you WHETHER the moved base falsifies anything, which is a re-read. The enforcement half was GitHub's 'Require branches to be up to date before merging' (strict=true on required_status_checks), which makes every base advance force a re-integration and therefore a re-verdict. strict_required_status_checks_policy has been false on the protocol-main ruleset since 2026-09-10, so a behind branch no longer blocks a merge and this rule is the only thing that reports the drift."
     },
     {
       "id": "buy-borrow-build-declared",
@@ -439,13 +439,13 @@ check could ever read. **A gate nobody can read from a fresh clone is not an int
   "enforcement": {
     "today": "convention. scripts/merge-preflight.mjs is a preflight an orchestrator runs; nothing compels it to.",
     "toBecomeEnforcement": "branch protection on protocol/main requiring the 'merge-preflight' status context, with enforce_admins true. That needs the repository owner; an agent cannot set it.",
-    "nativeReviewsUnavailable": "The whole swarm is one GitHub identity (SlumperSan) and every PR is authored by it, so GitHub refuses approve/request-changes on its own PRs: reviewDecision is permanently null and CHANGES_REQUESTED -- the state branch protection natively blocks on -- is unreachable. Zero native reviews exist in this repo's history. A second machine account is the only path to natively-enforced reviewer independence, and that is the owner's call.",
+    "nativeReviewsUnavailable": "The whole swarm is one GitHub identity (SlumperSan) and every PR is authored by it, so GitHub refuses approve/request-changes on its own PRs: reviewDecision is permanently null and CHANGES_REQUESTED -- the state branch protection natively blocks on -- is unreachable. Zero native reviews exist in this repo's history. A second machine account is the only path to natively-enforced reviewer independence, and adding one needs the repository owner.",
     "requiredStatusContext": "merge-preflight",
     "ghApi": [
       "gh api -X PUT repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/required_status_checks -f strict=true -f 'contexts[]=merge-preflight'",
       "gh api -X POST repos/SlumperSan/agent-governed-vaults/branches/protocol%2Fmain/protection/enforce_admins"
     ],
-    "requireUpToDateBranches": "The 'strict=true' in the gh api line below IS GitHub's 'Require branches to be up to date before merging', and it is the enforcement half of Mode E: it makes every advance of protocol/main force each open PR to re-integrate, which moves its head and therefore trips verdict-covers-head, forcing a re-verdict. It was on the protocol-main ruleset and the owner turned it off on 2026-09-10; its cost is a rebase treadmill proportional to how often the base moves, which in this swarm is often, so whether it is on is a deliberate owner decision either way. It is off as of that date, and without it base-current still reports the drift while nothing compels anyone to act on it."
+    "requireUpToDateBranches": "The 'strict=true' in the gh api line below IS GitHub's 'Require branches to be up to date before merging', and it is the enforcement half of Mode E: it makes every advance of protocol/main force each open PR to re-integrate, which moves its head and therefore trips verdict-covers-head, forcing a re-verdict. It was on the protocol-main ruleset and has been off since 2026-09-10; its cost is a rebase treadmill proportional to how often the base moves, which in this swarm is often, so turning it on or off trades re-verification cost against drift protection. It is off as of that date, and without it base-current still reports the drift while nothing compels anyone to act on it."
   },
   "conventions": {
     "statePerFileResolutions": "When a PR resolves a non-trivial conflict, the PR body should state, per conflicted file, WHICH SIDE was taken and WHY. This detects nothing by itself. It is the only thing that makes an otherwise invisible edit into a claim a reviewer can check, and it is a CONVENTION -- do not describe it as a gate. Note also that 'the conflict is only .gas-snapshot, so regenerate it' is not a general strategy: #115 and #117 conflicted on real content."
