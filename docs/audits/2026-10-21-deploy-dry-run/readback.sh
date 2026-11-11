@@ -63,14 +63,16 @@ echo "-- PROTOCOL_INITIALIZER: the constant each contract checks, and no residua
 eq "OperatorRegistry.deployer" "$(call $REG 'deployer()(address)')" $PI
 eq "SubVaultRegistry.deployer" "$(call $SUB 'deployer()(address)')" $PI
 eq "Governance.deployer" "$(call $GOV 'deployer()(address)')" $PI
-rev() { out=$(cast call "$@" --from $PI -r $R 2>&1); if echo "$out" | grep -qi "revert\|error"; then echo "PASS  replay reverts: $2 ($(echo "$out" | grep -o 'custom error [^,]*\|0x[0-9a-f]\{8\}' | head -1))"; pass=$((pass+1)); else echo "FAIL  replay succeeded: $2"; fail=$((fail+1)); fi; }
+# rev SELECTOR TARGET SIG ARGS...: PASS only when the replay reverts with exactly this custom error
+# selector, so a transport error or a wrong ABI string cannot read as a pass.
+rev() { want=$1; shift; out=$(cast call "$@" --from $PI -r $R 2>&1); got=$(echo "$out" | grep -o '0x[0-9a-f]\{8\}' | head -1); if echo "$out" | grep -qi "revert" && [ "$got" == "$want" ]; then echo "PASS  replay reverts: $2 (custom error $got)"; pass=$((pass+1)); else echo "FAIL  replay of $2 did not revert with $want: $(echo "$out" | head -c 160)"; fail=$((fail+1)); fi; }
 eq "RWAllyAgentRegistry.INITIALIZER" "$(call $AR 'INITIALIZER()(address)')" $PI
 # Every one-shot call, replayed from PROTOCOL_INITIALIZER itself with the arguments it would send.
-rev $FAC 'initialize(address[])' "[$ORA]"
-rev $FAC 'initializeAgentPath(address,address)' $AR $AVD
-rev $AR 'initialize(address,address,address,uint256,address,uint256)' 0x000000000000000000000000000000000000A11C $USDC 0x000000000000000000000000000000000000bEEF 0 0x0000000000000000000000000000000000000000 0
-rev $REG 'wire(address,address)' $FAC $FEE
-rev $SUB 'wire(address)' $FAC
-rev $GOV 'wireSubVaultRegistry(address)' $SUB
-rev $FEE 'initialize(address)' 0x000000000000000000000000000000000000bEEF
+rev 0x0dc149f0 $FAC 'initialize(address[])' "[$ORA]"
+rev 0xe255696b $FAC 'initializeAgentPath(address,address)' $AR $AVD
+rev 0x0dc149f0 $AR 'initialize(address,address,address,uint256,address,uint256)' 0x000000000000000000000000000000000000A11C $USDC 0x000000000000000000000000000000000000bEEF 0 0x0000000000000000000000000000000000000000 0
+rev 0xda7c0e55 $REG 'wire(address,address)' $FAC $FEE
+rev 0xda7c0e55 $SUB 'wire(address)' $FAC
+rev 0x828cea67 $GOV 'wireSubVaultRegistry(address)' $SUB
+rev 0x0dc149f0 $FEE 'initialize(address)' 0x000000000000000000000000000000000000bEEF
 echo "-- result: $pass pass, $fail fail"

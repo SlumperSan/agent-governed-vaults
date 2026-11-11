@@ -134,7 +134,16 @@ r=$(cast send $AR 'initialize(address,address,address,uint256,address,uint256)' 
 echo "$r" | grep -qi "revert\|error" && echo "PASS  repeat initialize reverts ($(echo "$r" | grep -o 'custom error [^,]*\|0x[0-9a-f]\{8\}' | head -1))" || echo "FAIL  repeat initialize succeeded"
 step "3a. Deploy.s.sol with EMPTY BLESSED_ORACLES on chain 1 (must refuse)"
 forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --private-key $K0 --broadcast 2>&1 | grep -m1 "Error"
-step "3b. Deploy.s.sol signed by the throwaway key (must refuse: broadcast is pinned to PROTOCOL_INITIALIZER)"
+if [ -n "$FORK_URL" ]; then
+step "3b. Deploy.s.sol while PROTOCOL_INITIALIZER still has its real mainnet code (must refuse before sending anything)"
+echo "PROTOCOL_INITIALIZER code bytes $(( ($(cast code $PI -r $R | wc -c) - 3) / 2 ))  nonce $(cast nonce $PI -r $R)"
+BLESSED_ORACLES=$ORA FEE_TREASURY=$FEE_TREASURY forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --unlocked --sender $PI --broadcast 2>&1 | grep -m1 "Error"
+echo "block after the refusal $(cast block-number -r $R)"
+# Mirrors the planned step before deploy day: the account is switched back to a plain one, which clears the code.
+cast rpc anvil_setCode $PI 0x -r $R >/dev/null
+echo "after anvil_setCode: PROTOCOL_INITIALIZER code bytes $(( ($(cast code $PI -r $R | wc -c) - 3) / 2 ))  nonce $(cast nonce $PI -r $R)"
+fi
+step "3b2. Deploy.s.sol signed by the throwaway key (must refuse: broadcast is pinned to PROTOCOL_INITIALIZER)"
 BLESSED_ORACLES=$ORA forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --private-key $K0 --broadcast 2>&1 | grep -m1 "Error"
 echo "block after refusals $(cast block-number -r $R)"
 step "3c. Deploy.s.sol as PROTOCOL_INITIALIZER (anvil impersonation, no key)"

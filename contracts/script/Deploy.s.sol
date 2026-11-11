@@ -47,10 +47,14 @@ import {TreasuryConfig} from "./lib/TreasuryConfig.sol";
 ///      `lib/TreasuryConfig.sol`).
 ///   9. THEN the wiring: registry.wire(factory, feeEngine); subReg.wire(factory);
 ///      gov.wireSubVaultRegistry(subReg).
+/// The script refuses before sending anything while PROTOCOL_INITIALIZER has code on the target chain
+/// (for example an EIP-7702 delegation): the delegation must be cleared first.
 /// All thirteen transactions go out in ONE broadcast. The initialisation preflight
 /// (`scripts/protocol-initialize-preflight.mjs`, `docs/DEPLOYMENT.md` section 10) runs after it, before
-/// any vault is created or the address is announced. After the broadcast the script reads back every
-/// wired value (each wire's target, the agent deployer, each blessed oracle), not only `initialized()`.
+/// any vault is created or the address is announced. Under `forge script` the code after the broadcast
+/// runs in forge's local simulation, before anything is sent, and reads back every wired value (each
+/// wire's target, the agent deployer, each blessed oracle), not only `initialized()`: it catches a
+/// defect in this script. `readback.sh` and the preflight are the on-chain reads.
 ///
 /// The agent ID registry is NOT deployed here. Its address is the `address` field of
 /// `contracts/config/agent-registry-create2.json` (the registry has its own vanity salt, mined at code
@@ -102,6 +106,14 @@ contract Deploy is Script {
         require(
             agentRegistry.code.length > 0,
             "Deploy: the agent registry at config/agent-registry-create2.json has no code on this chain; deploy it first"
+        );
+
+        // Read and refused BEFORE anything is sent: while PROTOCOL_INITIALIZER carries code on the target
+        // chain (an EIP-7702 delegation reads as a 23 byte `0xef0100` + delegate designator), some other
+        // code can act as that address, and every one-shot call below trusts only that address.
+        require(
+            PROTOCOL_INITIALIZER.code.length == 0,
+            "Deploy: PROTOCOL_INITIALIZER has code on this chain (an EIP-7702 delegation?); clear it before deploying"
         );
 
         vm.startBroadcast(PROTOCOL_INITIALIZER);

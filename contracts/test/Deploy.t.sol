@@ -183,6 +183,26 @@ contract DeployTest is Create2ProxyFixture {
         assertEq(ProtocolCreate2.predict().vaultFactory.code.length, 0, "nothing was deployed");
     }
 
+    /// @notice PROTOCOL_INITIALIZER must have no code on the target chain: an EIP-7702 delegation reads
+    /// as the 23 byte designator `0xef0100` + a 20 byte address, and the script refuses before sending
+    /// anything while it is there. Clearing the code lets the same script run.
+    function test_deployRefusesWhileTheInitializerHasCode() public {
+        bytes memory designator = abi.encodePacked(hex"ef0100", hex"63c0c19a282a1b52b07dd5a65b58948a07dae32b");
+        assertEq(designator.length, 23, "a 7702 designator is 23 bytes");
+        vm.etch(PROTOCOL_INITIALIZER, designator);
+        Deploy d = new Deploy();
+        vm.expectRevert(
+            bytes(
+                "Deploy: PROTOCOL_INITIALIZER has code on this chain (an EIP-7702 delegation?); clear it before deploying"
+            )
+        );
+        d.run();
+        assertEq(ProtocolCreate2.predict().vaultFactory.code.length, 0, "nothing was deployed");
+        vm.etch(PROTOCOL_INITIALIZER, "");
+        d.run();
+        assertTrue(ProtocolCreate2.predict().vaultFactory.code.length > 0, "deploys once the code is cleared");
+    }
+
     function test_proxyFixtureMatchesTheKnownCodehash() public view {
         assertEq(ProtocolCreate2.PROXY.codehash, PROXY_CODEHASH, "fixture is the real Arachnid runtime");
         assertEq(ProtocolCreate2.PROXY.code.length, 69, "69 bytes");
