@@ -506,9 +506,15 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   // list older than its freshness ceiling refuses every payment. This screens what this server
   // accepts; it cannot stop a transfer made directly against USDC or the Protocol's contracts.
   // SVM payers are not screened here: the vendored list is EVM-only.
+  // `from` is client-written JSON: a non-string (`12345`, an object, an array) would throw a
+  // TypeError inside the screen and surface as a 500, and must never read as "not sanctioned".
   if (!price.svm) {
+    const from = env.authorization?.from;
+    // shortcut: an absent `from` (undefined or null) still passes this guard, as before, because the
+    // fixtures omit it and the facilitator refuses it (`bad-from`); tighten once fixtures carry one.
+    if (from != null && (typeof from !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(from))) return require402('payment invalid: bad-payer');
     try {
-      assertNotSanctioned(env.authorization?.from, nowMs);
+      assertNotSanctioned(from, nowMs);
     } catch (err) {
       if (err instanceof SanctionsRefusalError || err instanceof SanctionsListStaleError)
         return require402('payment refused: payer screening');

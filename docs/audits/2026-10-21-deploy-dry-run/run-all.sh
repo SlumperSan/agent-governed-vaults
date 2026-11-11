@@ -58,7 +58,7 @@ step "0. chain and proxy"
 echo "chainId $(cast chain-id -r $R)  hardfork $(cast rpc anvil_nodeInfo -r $R | jq -r .hardFork)"
 echo "Arachnid proxy runtime $(cast code 0x4e59b44847b379578588920cA78FbF26c0B4956C -r $R)"
 echo "PROTOCOL_INITIALIZER code bytes $(( ($(cast code $PI -r $R | wc -c) - 3) / 2 ))  nonce $(cast nonce $PI -r $R)"
-for c in OperatorRegistry SubVaultRegistry FeeEngine Governance VaultDeployer VaultFactory; do a=$(jq -r ".contracts.$c.address" "$REPO/contracts/config/create2-manifest.json"); echo "predicted $c $a code bytes $(( ($(cast code $a -r $R | wc -c) - 3) / 2 ))"; done
+for c in OperatorRegistry SubVaultRegistry FeeEngine Governance VaultDeployer AgentVaultDeployer VaultFactory; do a=$(jq -r ".contracts.$c.address" "$REPO/contracts/config/create2-manifest.json"); echo "predicted $c $a code bytes $(( ($(cast code $a -r $R | wc -c) - 3) / 2 ))"; done
 
 step "1. stage stand-ins at mainnet feed and token addresses (no mainnet RPC was reachable)"
 FEED=$(jq -r .deployedBytecode.object "$WORK/standins/out/StandIns.sol/FeedStandIn.json"); TOK=$(jq -r .deployedBytecode.object "$WORK/standins/out/StandIns.sol/TokenStandIn.json")
@@ -77,6 +77,14 @@ step "2b. DeployChainlinkOracle, throwaway key, bands at ratio 200"
 export ORACLE_MIN_WAD=250000000000000000000,5000000000000000000000 ORACLE_MAX_WAD=50000000000000000000000,1000000000000000000000000
 forge script script/DeployChainlinkOracle.s.sol:DeployChainlinkOracle "${FORGE_ARGS[@]}" --rpc-url $R --private-key $K0 --broadcast 2>&1 | grep -E "feed OK|ChainlinkOracle |sequencer|COMPLETE|Error"
 ORA=$(jq -r '.receipts[0].contractAddress' "$FOUNDRY_BROADCAST/DeployChainlinkOracle.s.sol/1/run-latest.json"); export ORA; echo "ORA=$ORA"
+step "2c. RWAllyAgentRegistry at its CREATE2 record via the Arachnid proxy (Deploy.s.sol refuses without its code)"
+# Code only: the registry's own initialize (fee token, outside registry, import ceiling) is a separate
+# owner step and Deploy.s.sol needs only code at the address, so it is not called here.
+AR_CFG="$REPO/contracts/config/agent-registry-create2.json"; AR=$(jq -er .address "$AR_CFG")
+AR_INIT=$(jq -r .bytecode.object out/RWAllyAgentRegistry.sol/RWAllyAgentRegistry.json)
+echo "initcodeHash $(cast keccak "$AR_INIT") (record $(jq -r .initcodeHash "$AR_CFG"))"
+AR_GAS=$(cast send "$(jq -r .factory "$AR_CFG")" "$(jq -r .salt "$AR_CFG")${AR_INIT#0x}" --private-key $K0 -r $R --json | jq -r .gasUsed)
+echo "$( [ $((AR_GAS)) -le 16777216 ] && echo PASS || echo FAIL ) gasUsed=$((AR_GAS)) (EIP-7825 cap 16,777,216)  $AR code bytes $(( ($(cast code $AR -r $R | wc -c) - 3) / 2 ))"
 step "3a. Deploy.s.sol with EMPTY BLESSED_ORACLES on chain 1 (must refuse)"
 forge script script/Deploy.s.sol:Deploy "${FORGE_ARGS[@]}" --rpc-url $R --private-key $K0 --broadcast 2>&1 | grep -m1 "Error"
 step "3b. Deploy.s.sol signed by the throwaway key (must refuse: broadcast is pinned to PROTOCOL_INITIALIZER)"
@@ -92,7 +100,7 @@ step "5. read-back"
 "$HERE/readback.sh"
 for n in OperatorRegistry SubVaultRegistry Governance; do set $n $(jq -er ".contracts.$n.address" "$REPO/contracts/config/create2-manifest.json"); a=$(cast code $2 -r $R | tr A-F a-f); b=$(jq -r .deployedBytecode.object out/$1.sol/$1.json | tr A-F a-f); [ "$a" == "$b" ] && echo "PASS  runtime == local build: $1" || echo "FAIL  runtime differs: $1"; done
 step "6. initialisation preflight (repo script, two endpoints)"
-sed "s/ORACLE_ADDR/$ORA/" "$HERE/plan.tmpl.json" > "$WORK/plan.json"; sed "s/ORACLE_ADDR/0x000000000000000000000000000000000000dEaD/" "$HERE/plan.tmpl.json" > "$WORK/plan-wrong.json"
+sed "s/ORACLE_ADDR/$ORA/; s/AGENT_REGISTRY/$AR/" "$HERE/plan.tmpl.json" > "$WORK/plan.json"; sed "s/ORACLE_ADDR/0x000000000000000000000000000000000000dEaD/; s/AGENT_REGISTRY/$AR/" "$HERE/plan.tmpl.json" > "$WORK/plan-wrong.json"
 node "$REPO/scripts/protocol-initialize-preflight.mjs" --plan "$WORK/plan.json"; echo "exit $?"
 echo "-- negative: plan names an oracle that was not blessed"
 node "$REPO/scripts/protocol-initialize-preflight.mjs" --plan "$WORK/plan-wrong.json" 2>&1 | head -2; echo "exit ${PIPESTATUS[0]}"
