@@ -178,4 +178,4 @@ export { authorizeFromChallenge, buildTypedData, buildEnvelope } from './eip3009
 export { buildSvmEnvelope, createSvmPayer } from './svm-exact.mjs';
 // The smart-account writer: a `walletClient.writeContract` that sends UserOperations. Static too,
 // so this index loads viem's ABI encoder.
-export { createUserOpWalletClient, stripUrls } from './smart-account.mjs';
+export { createUserOpWalletClient, stripUrls, assertCanReceiveErc721, Erc721ReceiverError, ERC721_RECEIVED_SELECTOR, REGISTRY_MINT_FUNCTIONS } from './smart-account.mjs';

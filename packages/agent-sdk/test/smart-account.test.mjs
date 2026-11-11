@@ -103,3 +103,64 @@ test('construction refuses a missing ceiling, a missing entry point and a bad ac
   assert.throws(() => createUserOpWalletClient(/** @type {any} */ ({ bundlerClient, smartAccount: { ...smartAccount, entryPoint: undefined }, maxFeePerGasCeiling: CEILING })), /entry point/);
   assert.throws(() => createUserOpWalletClient(/** @type {any} */ ({ bundlerClient, smartAccount: { ...smartAccount, address: '0x12' }, maxFeePerGasCeiling: CEILING })), /address/);
 });
+
+// ---- ERC-721 receiver preflight (gas and UX guard; the registry reverts ERC721InvalidReceiver anyway)
+const REGISTRY = '0x' + '4'.repeat(40);
+const REG_ABI = parseAbi(['function register(string agentURI) returns (uint256)']);
+const SELECTOR_WORD = '0x150b7a02' + '0'.repeat(56);
+const mintReq = () => ({ address: REGISTRY, abi: REG_ABI, functionName: 'register', args: ['ipfs://x'], account: { address: SMART }, chain: null });
+
+/** A publicClient stub; `call` behaviour is injected. Records every call. */
+function pub({ code = '0x6080', call }) {
+  const seen = { getCode: [], call: [] };
+  return {
+    seen,
+    getCode: async (p) => { seen.getCode.push(p); return code; },
+    call: async (p) => { seen.call.push(p); return call(p); },
+  };
+}
+function mintWriter(publicClient) {
+  const s = stubs();
+  return { ...s, w: createUserOpWalletClient({ bundlerClient: s.bundlerClient, smartAccount: s.smartAccount, maxFeePerGasCeiling: CEILING, mintPreflight: { publicClient, registry: REGISTRY } }) };
+}
+
+test('preflight: a receiver that returns the selector passes and the mint is sent', async () => {
+  const publicClient = pub({ call: async () => ({ data: SELECTOR_WORD }) });
+  const { calls, w } = mintWriter(publicClient);
+  assert.equal(await w.writeContract(mintReq()), TX);
+  assert.equal(publicClient.seen.call[0].to, SMART);
+  assert.equal(publicClient.seen.call[0].account, REGISTRY, 'called as the registry, the operator the real callback sees');
+  assert.equal(calls.send.length, 1);
+});
+
+test('preflight: wrong return bytes throw a typed error naming the account, nothing prepared or signed', async () => {
+  const { calls, w } = mintWriter(pub({ call: async () => ({ data: '0xdeadbeef' + '0'.repeat(56) }) }));
+  await assert.rejects(w.writeContract(mintReq()), (e) => e.name === 'Erc721ReceiverError' && e.message.includes(SMART) && /cannot receive ERC-721/.test(e.message));
+  assert.equal(calls.prepare.length + calls.sign.length + calls.send.length, 0);
+});
+
+test('preflight: a reverting receiver throws the same typed error', async () => {
+  const { calls, w } = mintWriter(pub({ call: async () => { throw new Error('execution reverted'); } }));
+  await assert.rejects(w.writeContract(mintReq()), (e) => e.name === 'Erc721ReceiverError' && e.message.includes(SMART));
+  assert.equal(calls.prepare.length + calls.sign.length + calls.send.length, 0);
+});
+
+test('preflight: an account with no code skips the call', async () => {
+  const publicClient = pub({ code: '0x', call: async () => { throw new Error('must not be called'); } });
+  const { w } = mintWriter(publicClient);
+  assert.equal(await w.writeContract(mintReq()), TX);
+  assert.equal(publicClient.seen.call.length, 0);
+});
+
+test('preflight: a write that is not a registry mint is not checked', async () => {
+  const publicClient = pub({ call: async () => { throw new Error('must not be called'); } });
+  const { w } = mintWriter(publicClient);
+  assert.equal(await w.writeContract(req()), TX);
+  assert.equal(publicClient.seen.getCode.length, 0);
+});
+
+test('preflight: a malformed config throws at construction', () => {
+  const { bundlerClient, smartAccount } = stubs();
+  assert.throws(() => createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePerGasCeiling: CEILING, mintPreflight: { publicClient: {}, registry: REGISTRY } }), /getCode and call/);
+  assert.throws(() => createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePerGasCeiling: CEILING, mintPreflight: { publicClient: pub({ call: async () => ({}) }), registry: 'nope' } }), /not an address/);
+});
