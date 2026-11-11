@@ -26,7 +26,7 @@ function envelope({ value = '10000', to = PAYTO, asset = USDC, network = 'base',
     x402Version: 2,
     network,
     signature: '0xsig',
-    authorization: { asset, to, value, nonce, validBefore },
+    authorization: { from: '0x' + 'ab'.repeat(20), asset, to, value, nonce, validBefore },
   };
   return Buffer.from(JSON.stringify(env)).toString('base64');
 }
@@ -339,7 +339,7 @@ test('the EVM replay key is still the authorization nonce, not the price', async
   // `transaction` field on an EVM envelope must not become anybody's key.
   const seen = new Set();
   const ok = { async verifyAndSettle() { return { ok: true, receiptId: 'r' }; } };
-  const mk = (nonce) => b64({ x402Version: 2, network: 'base', signature: `0x${'1'.repeat(130)}`, transaction: 'AQAB', authorization: { asset: USDC, to: PAYTO, value: '10000', nonce } });
+  const mk = (nonce) => b64({ x402Version: 2, network: 'base', signature: `0x${'1'.repeat(130)}`, transaction: 'AQAB', authorization: { from: '0x' + 'ab'.repeat(20), asset: USDC, to: PAYTO, value: '10000', nonce } });
   assert.equal((await gate({ headers: { [HEADERS.SIGNATURE]: mk('0xaaa') }, price, facilitator: ok, nowMs: 1000, seenNonces: seen })).status, 200);
   assert.equal((await gate({ headers: { [HEADERS.SIGNATURE]: mk('0xaaa') }, price, facilitator: ok, nowMs: 1000, seenNonces: seen })).status, 402);
   // Same identical `transaction` string, a different authorization: a DIFFERENT payment on this path.

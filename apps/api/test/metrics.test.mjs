@@ -45,7 +45,7 @@ function paidHeader(nonce = '0x' + '7'.repeat(64)) {
   const c = buildChallenge(PRICE, { nowMs: Date.now() });
   const env = {
     x402Version: 2, network: PRICE.network, signature: '0xdead',
-    authorization: { asset: c.asset, to: c.payTo, value: c.amount, nonce, validBefore: Math.floor(Date.now() / 1000) + 600 },
+    authorization: { from: '0x' + 'ab'.repeat(20), asset: c.asset, to: c.payTo, value: c.amount, nonce, validBefore: Math.floor(Date.now() / 1000) + 600 },
   };
   return { 'payment-signature': Buffer.from(JSON.stringify(env), 'utf8').toString('base64') };
 }

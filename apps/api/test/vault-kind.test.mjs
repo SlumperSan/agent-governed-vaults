@@ -19,7 +19,7 @@ function envelope(nonce) {
     x402Version: 2,
     network: 'base',
     signature: '0xsig',
-    authorization: { asset: USDC, to: PAYTO, value: '10000', nonce, validBefore: 0 },
+    authorization: { from: '0x' + 'ab'.repeat(20), asset: USDC, to: PAYTO, value: '10000', nonce, validBefore: 0 },
   };
   return Buffer.from(JSON.stringify(env)).toString('base64');
 }
