@@ -145,17 +145,36 @@ safety guidance rather than speed guidance, so turning `strict` off does not ret
 this section deleted this paragraph without remarking on it. It exists in no other file: the JSON
 encodes the *rules*, not the order to apply them in.)
 
-### Tier 1 review commands: `/security-review` and `/code-review`
+### Review tier 1 commands: `/security-review` and `/code-review`
 
-`scripts/lib/merge-policy.json` does not encode this check, so it is written down here only.
+"Review tier" here is a property of the paths a PR touches. It is unrelated to the model tiers
+(Haiku, Sonnet, Fable, Opus) in `docs/SWARM.md`.
 
-- **Tier 1 PRs** (contracts, money, deploy, fee, cap and claim files) run `/security-review` and
-  `/code-review` over the full diff **in addition to** the fresh independent reviewer, never as a
-  replacement for it.
-- **Every tier 1 verdict records one line per command:** `security-review: N findings` and
-  `code-review: N findings`. A tier 1 merge whose verdict lacks either line is a gate miss.
-- **Tiers 2 and 3** keep the fresh reviewer alone, with `/code-review` added on the one-in-ten spot
-  check.
+**Review tier 1 is any PR whose diff touches one of these paths:**
+
+- `contracts/src/` and `contracts/script/` (contracts, including `FeeEngine.sol`, and the deploy
+  scripts), plus `contracts/config/` (deployment, fee and cap configuration).
+- The deploy and money tooling under `scripts/`: the `*-preflight.mjs` scripts,
+  `update-create2-manifest.mjs`, `verify-mainnet-config.mjs`, `build-safe-tx-builder.mjs`,
+  `build-rebalance-order.mjs`, `scripts/sign-queue/` and the `scripts/lib/` modules they use.
+- Claim files: `scripts/test/claims-*.test.mjs`, `scripts/lib/claims-shapes.mjs`, and the public
+  prose those guards walk (`README.md`, `llms.txt`, `docs/DISCLAIMERS.md` and the site and UI copy).
+
+If a path is not clearly listed, treat the PR as review tier 1 when it changes what the protocol
+does with funds, fees or caps, or what the repository claims about that.
+
+**How this is enforced, honestly:** `scripts/lib/merge-policy.json` and `scripts/merge-preflight.mjs`
+do not check for review tiers or for the two finding-count lines below. The reviewer who casts the
+verdict and whoever merges are the only checks, so a missing line is a convention miss that
+`merge-preflight` will not report.
+
+- **Review tier 1 PRs** run `/security-review` and `/code-review` over the full diff **in addition
+  to** the fresh independent reviewer, never as a replacement for it.
+- **Every review tier 1 verdict records one line per command:** `security-review: N findings` and
+  `code-review: N findings`. A review tier 1 merge whose verdict lacks either line has skipped this
+  convention.
+- **Every other PR** keeps the fresh reviewer alone. This file does not define further review
+  tiers.
 
 ### On making this faster — what was tried, and where the real lever is
 
