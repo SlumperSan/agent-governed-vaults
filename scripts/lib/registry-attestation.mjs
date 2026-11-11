@@ -89,10 +89,14 @@ export const MIRROR_DAILY_CAP = 100;
  * Known limitations, to be resolved or accepted before the signing Worker goes live:
  * - The young-origin budget counts ISSUED attestations, not mints. `signerRefusal` reads only the
  *   caller's `issuedToYoungOrigins` counts, and nothing here ties an attestation to a mint or limits
- *   attestations per origin. So roughly 50 reusable origins, each aged between `minOriginAgeSeconds`
- *   (1 hour) and `youngOriginAgeSeconds` (7 days) at signing, can spend a destination's whole young
- *   budget for that UTC day by requesting attestations and not minting. Young-origin mirroring on that
- *   destination is then refused for the rest of that day (griefing). Origins aged 7 days or more are
+ *   attestations per origin. The only per-party cap is `perHolderDaily` per holder per destination per
+ *   UTC day, and attestations for one origin are repeatable, so a destination's whole young budget for
+ *   a UTC day can be spent by as few as `youngOriginDailyBudget / perHolderDaily` holders (5 at the
+ *   defaults, 50 / 10), with one or more origins each aged between `minOriginAgeSeconds` (1 hour) and
+ *   `youngOriginAgeSeconds` (7 days) at signing, by requesting attestations and not minting. Each
+ *   attestation counts against every UTC day its validity window touches, so one signed just before
+ *   midnight spends budget on both days. Young-origin mirroring on that destination is then refused
+ *   for any request whose window touches a day whose budget is spent (griefing). Origins aged 7 days or more are
  *   unaffected. Possible mitigations, none of which exists in this module: count consumed (minted)
  *   attestations against the budget instead of issued ones, or add per-origin sub-limits.
  * - The check-then-record sequence is not atomic. `signerRefusal` reads the counts, and the caller
