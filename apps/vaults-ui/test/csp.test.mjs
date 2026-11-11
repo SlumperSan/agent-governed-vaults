@@ -20,7 +20,8 @@
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, sep } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -572,7 +573,7 @@ test('the deployed vault address and its display name (owner decision #353) reac
   const outDir = mkdtempSync(join(tmpdir(), 'vaults-ui-env-check-'));
   // Same .cmd-wrapper dodge as `before()` above and `ui-smoke.test.mjs`'s `buildHarnessOnce`: run
   // vite's own JS entrypoint through this process's node binary, so nothing here needs `shell: true`.
-  const viteJs = join(APP, 'node_modules', 'vite', 'bin', 'vite.js');
+  const viteJs = join(dirname(createRequire(join(APP, 'package.json')).resolve('vite/package.json')), 'bin', 'vite.js');
   if (!existsSync(viteJs)) {
     throw new Error(`csp.test.mjs: vite entrypoint not found at ${viteJs} — run npm ci first`);
   }

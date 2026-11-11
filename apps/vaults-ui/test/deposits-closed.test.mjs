@@ -19,7 +19,8 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEPOSITS_CLOSED_NOTICE, CONNECT_PROMPT_DEPOSITS_CLOSED } from '../src/lib/vault-policy.ts';
@@ -36,7 +37,7 @@ const outDir = join(APP, 'dist-ssr', `deposits-closed-${process.pid}`);
 let html;
 
 before(() => {
-  const viteJs = join(APP, 'node_modules', 'vite', 'bin', 'vite.js');
+  const viteJs = join(dirname(createRequire(join(APP, 'package.json')).resolve('vite/package.json')), 'bin', 'vite.js');
   assert.ok(existsSync(viteJs), `vite entrypoint not found at ${viteJs}: run npm ci first`);
   const b = spawnSync(process.execPath, [viteJs, 'build', '--ssr', 'ssr-deposits-closed.tsx', '--outDir', outDir], {
     cwd: APP, encoding: 'utf8', windowsHide: true,

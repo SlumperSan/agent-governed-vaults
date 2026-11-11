@@ -27,6 +27,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encodeFunctionData } from 'viem';
@@ -79,7 +80,7 @@ function buildHarnessOnce() {
   // without shell:true (CVE-2024-27980) — the exact trap scripts/gate.mjs's own "SHELL POLICY"
   // comment documents. Sidestepped entirely by running vite's real JS entrypoint through this
   // process's own node binary instead of through the OS-specific shim.
-  const viteJs = path.join(APP, 'node_modules', 'vite', 'bin', 'vite.js');
+  const viteJs = path.join(path.dirname(createRequire(path.join(APP, 'package.json')).resolve('vite/package.json')), 'bin', 'vite.js');
   if (!existsSync(viteJs)) {
     throw new Error(`ui-smoke.test.mjs: vite entrypoint not found at ${viteJs} — run npm ci first`);
   }

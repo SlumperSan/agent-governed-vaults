@@ -16,9 +16,9 @@
  * `VITE_TARGET_CHAIN=base-sepolia` — but it is no longer the default a production build connects
  * to.
  */
-import { defineChain } from 'viem';
+import { defineChain, type Chain } from 'viem';
 
-export const BASE_SEPOLIA = defineChain({
+export const BASE_SEPOLIA: Chain = defineChain({
   id: 84532,
   name: 'Base Sepolia',
   nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
@@ -35,7 +35,7 @@ export const BASE_SEPOLIA = defineChain({
  * (firstVault.createdAt, contracts/config/deployments/arc-mainnet-v1.json) — see `.env.example` for
  * the deployed addresses this app reads by default.
  */
-export const ARC_MAINNET = defineChain({
+export const ARC_MAINNET: Chain = defineChain({
   id: 5042,
   name: 'Arc',
   nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
