@@ -61,7 +61,7 @@
     "maxStalenessSeconds": 90000,
     "maxStalenessNote": "ChainlinkOracle exposes no `maxStalenessSeconds()` getter (same as the Base Sepolia and Robinhood Chain records); staleness is the per-asset heartbeat, and `feedOf(cirBTC).heartbeat` reads 90000 on chain on both endpoints, agreeing with the configured value in `contracts/config/arc-mainnet.json`.",
     "sequencerUptimeFeed": "0x0000000000000000000000000000000000000000",
-    "sequencerUptimeFeedNote": "address(0), read back from `oracle.sequencerUptimeFeed()` on both endpoints — an owner-approved exemption, not an omission: Arc is an L1 and Chainlink publishes no L2 Sequencer Uptime Feed for it (see `contracts/config/arc-mainnet.json`'s `chainlinkOracle.sequencerUptimeFeed` block and `scripts/test/verify-chainlink-oracle.test.mjs`'s sequencer-exempt-set test). `_requireSequencerUp` returns early on address(0), so this oracle serves prices straight through whatever Arc's equivalent of an outage would be and never reverts on that account — the same fail-open property every other deployment in this repository with this exemption carries.",
+    "sequencerUptimeFeedNote": "address(0), read back from `oracle.sequencerUptimeFeed()` on both endpoints — a deliberate exemption, not an omission: Arc is an L1 and Chainlink publishes no L2 Sequencer Uptime Feed for it (see `contracts/config/arc-mainnet.json`'s `chainlinkOracle.sequencerUptimeFeed` block and `scripts/test/verify-chainlink-oracle.test.mjs`'s sequencer-exempt-set test). `_requireSequencerUp` returns early on address(0), so this oracle serves prices straight through whatever Arc's equivalent of an outage would be and never reverts on that account — the same fail-open property every other deployment in this repository with this exemption carries.",
     "assets": {
       "cirBTC": {
         "token": "0x171a4217b86a807a64eb94757db6849fb4bdbaa0",
@@ -134,6 +134,6 @@
       "concentrationCapBps": 4000,
       "proposalCooldown": 3600
     },
-    "configOfNote": "`governance.configOf(vault)` reads back this exact 8-tuple on both endpoints, and every field is identical to `contracts/config/arc-mainnet.json`'s `smoke.gov` block — the ten launch parameters the owner and Engineering set for Arc on 2026-09-19 and 2026-09-22 (see that file's `smokeOpenNote`)."
+    "configOfNote": "`governance.configOf(vault)` reads back this exact 8-tuple on both endpoints, and every field is identical to `contracts/config/arc-mainnet.json`'s `smoke.gov` block — the ten launch parameters set for Arc on 2026-09-19 and 2026-09-22 (see that file's `smokeOpenNote`)."
   }
 }
