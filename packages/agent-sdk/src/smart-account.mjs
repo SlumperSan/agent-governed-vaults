@@ -24,16 +24,24 @@
 import { encodeFunctionData, decodeFunctionResult, parseAbi } from 'viem';
 
 const RECEIVER_ABI = parseAbi(['function onERC721Received(address operator, address from, uint256 tokenId, bytes data) returns (bytes4)']);
+const ZERO_ADDRESS = '0x' + '0'.repeat(40);
 /** `IERC721Receiver.onERC721Received.selector`. */
 export const ERC721_RECEIVED_SELECTOR = '0x150b7a02';
 /** The registry functions that mint an identity to `msg.sender` and then call `onERC721Received` on it. */
 export const REGISTRY_MINT_FUNCTIONS = Object.freeze(['register', 'importAgent', 'mintMirrored']);
 
+/** True when a viem call error is the contract reverting (a revert anywhere in the cause chain), not a transport failure. */
+function isRevert(err) {
+  for (let e = /** @type {any} */ (err), i = 0; e && i < 8; e = e.cause, i++)
+    if (/revert/i.test(`${e.name ?? ''} ${e.shortMessage ?? ''} ${e.message ?? ''}`)) return true;
+  return false;
+}
+
 /** Thrown before any UserOp is built or signed when the minting account cannot receive an ERC-721. */
 export class Erc721ReceiverError extends Error {
   /** @param {string} account @param {string} detail */
   constructor(account, detail) {
-    super(`${account} cannot receive ERC-721 tokens (${detail}). A smart account must answer onERC721Received with ${ERC721_RECEIVED_SELECTOR} to hold an agent identity; for example a Kernel v3.0 account, or a Safe without a fallback handler, does not. Nothing was built or signed.`);
+    super(`${account} cannot receive ERC-721 tokens (${detail}). A smart account must answer onERC721Received with ${ERC721_RECEIVED_SELECTOR} to hold an agent identity; this one did not. Nothing was built or signed.`);
     this.name = 'Erc721ReceiverError';
     this.account = account;
   }
@@ -44,23 +52,34 @@ export class Erc721ReceiverError extends Error {
  * the recipient is a contract that does not return the selector, so a bad account loses nothing
  * on-chain, it only pays for a UserOp that reverts. This fails fast with a readable error instead.
  * An account with no code (an EOA, or a counterfactual account) is skipped, as the registry does.
+ * The probe is a static call made as the registry, to `account`, with `operator` = `account` and `from` = the
+ * zero address. That mirrors a mint: the registry calls `onERC721Received(msg.sender, address(0), id, "")`
+ * on the recipient, and every mint entry point (`register`, `importAgent`, `mintMirrored`) mints to
+ * `msg.sender`, so for a UserOp both the operator and the recipient are the smart account itself. Only a
+ * revert or wrong return bytes become `Erc721ReceiverError`; transport errors propagate unchanged.
  * @param {{getCode:(p:{address:string}) => Promise<string|undefined>, call:(p:object) => Promise<{data?:string}>}} publicClient
- * @param {string} registry  the registry address; it is the `operator` the callback sees
- * @param {string} account
+ * @param {string} registry  the registry address; the probe's caller (`msg.sender` of the callback is the registry)
+ * @param {string} account  the smart account: the minting sender, the recipient, and the `operator` argument
  */
 export async function assertCanReceiveErc721(publicClient, registry, account) {
   const code = await publicClient.getCode({ address: account });
   if (!code || code === '0x') return;
-  let returned;
+  let result;
   try {
-    const { data } = await publicClient.call({
+    result = await publicClient.call({
       to: account,
       account: registry,
-      data: encodeFunctionData({ abi: RECEIVER_ABI, functionName: 'onERC721Received', args: [registry, '0x' + '0'.repeat(40), 0n, '0x'] }),
+      data: encodeFunctionData({ abi: RECEIVER_ABI, functionName: 'onERC721Received', args: [account, ZERO_ADDRESS, 0n, '0x'] }),
     });
-    returned = decodeFunctionResult({ abi: RECEIVER_ABI, functionName: 'onERC721Received', data: data ?? '0x' });
+  } catch (err) {
+    if (isRevert(err)) throw new Erc721ReceiverError(account, 'onERC721Received reverted');
+    throw err;
+  }
+  let returned;
+  try {
+    returned = decodeFunctionResult({ abi: RECEIVER_ABI, functionName: 'onERC721Received', data: result?.data ?? '0x' });
   } catch {
-    throw new Erc721ReceiverError(account, 'onERC721Received reverted or returned no bytes4');
+    throw new Erc721ReceiverError(account, 'onERC721Received returned no bytes4');
   }
   if (returned !== ERC721_RECEIVED_SELECTOR)
     throw new Erc721ReceiverError(account, `onERC721Received returned ${returned}`);
