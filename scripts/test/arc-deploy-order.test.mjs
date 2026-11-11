@@ -48,11 +48,11 @@ test('ProtocolCreate2.createAll deploys the seven in this EXACT order', () => {
   assert.deepEqual(order, ['OPERATOR_REGISTRY', 'SUB_VAULT_REGISTRY', 'FEE_ENGINE', 'GOVERNANCE', 'VAULT_DEPLOYER', 'AGENT_VAULT_DEPLOYER', 'VAULT_FACTORY']);
 });
 
-test("the factory is initialised (oracles, then the agent path) BEFORE the registry is wired to it, then the three wires run in order", () => {
+test("the factory is initialised (oracles, then the agent path) and the fee treasury set BEFORE the registry is wired, then the three wires run in order", () => {
   const body = deploySrc.slice(deploySrc.indexOf('function run()'));
-  const calls = [...body.matchAll(/(factory\.initialize|factory\.initializeAgentPath|registry\.wire|subReg\.wire|governance\.wireSubVaultRegistry)\(/g)].map((m) => m[1]);
-  assert.deepEqual(calls, ['factory.initialize', 'factory.initializeAgentPath', 'registry.wire', 'subReg.wire', 'governance.wireSubVaultRegistry'],
-    'an uninitialised factory (oracle allowlist off) must never be the one a registry is wired to');
+  const calls = [...body.matchAll(/(factory\.initialize|factory\.initializeAgentPath|feeEngine\.initialize|registry\.wire|subReg\.wire|governance\.wireSubVaultRegistry)\(/g)].map((m) => m[1]);
+  assert.deepEqual(calls, ['factory.initialize', 'factory.initializeAgentPath', 'feeEngine.initialize', 'registry.wire', 'subReg.wire', 'governance.wireSubVaultRegistry'],
+    'an uninitialised factory (oracle allowlist off) must never be the one a registry is wired to, and no vault may be creatable while the engine takes no fee (A15 A3)');
 });
 
 test('the CREATE2 factory is built root-only: ALLOW_SUB_VAULTS is false in the recipe, and the retired v1 builder still passes false', () => {

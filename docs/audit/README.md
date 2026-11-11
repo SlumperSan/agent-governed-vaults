@@ -223,7 +223,7 @@ Key boundary facts a reviewer should hold onto:
 
 ## 5. Deploy & wiring order
 
-From `script/Deploy.s.sol` (proven by `test/Deploy.t.sol`). Steps 1 to 6 are CREATE2 deploys and can land in any order, because every address is a function of salt and initcode alone; this is the order the script uses:
+From `script/Deploy.s.sol` (proven by `test/Deploy.t.sol`), all in one broadcast. Steps 1 to 7 are CREATE2 deploys and can land in any order, because every address is a function of salt and initcode alone; this is the order the script uses:
 
 ```
 1. OperatorRegistry()                      — no deps
@@ -231,13 +231,17 @@ From `script/Deploy.s.sol` (proven by `test/Deploy.t.sol`). Steps 1 to 6 are CRE
 3. FeeEngine(registry)                     — immutable registry ref
 4. Governance()                            — no ctor deps
 5. VaultDeployer()                         — no deps; the factory pins its address (#10)
-6. VaultFactory(registry, governance, feeEngine, subVaultRegistry, vaultDeployer, allowSubVaults)
-7. factory.initialize(BLESSED_ORACLES)     — one-shot, sets the oracle allowlist; creation reverts
+6. AgentVaultDeployer()                    — no deps; the factory learns it in step 9
+7. VaultFactory(registry, governance, feeEngine, subVaultRegistry, vaultDeployer, allowSubVaults)
+8. factory.initialize(BLESSED_ORACLES)     — one-shot, sets the oracle allowlist; creation reverts
                                              NotInitialized until it runs
-8. registry.wire(factory, feeEngine)       — one-shot, locks attestation + fee recording
-9. subVaultRegistry.wire(factory)          — one-shot, locks child registration
-10. governance.wireSubVaultRegistry(subReg) — one-shot, locks SV-6 floor inheritance
-11. feeEngine.initialize(FEE_TREASURY)     — one-shot, sets the treasury; no fee is taken before it
+9. factory.initializeAgentPath(agentRegistry, agentVaultDeployer)
+                                           — one-shot, pins the agent registry and agent deployer
+10. feeEngine.initialize(FEE_TREASURY)     — one-shot, sets the treasury; no fee is taken before it,
+                                             so it lands before any vault can be created (step 11)
+11. registry.wire(factory, feeEngine)      — one-shot, locks attestation + fee recording
+12. subVaultRegistry.wire(factory)         — one-shot, locks child registration
+13. governance.wireSubVaultRegistry(subReg) — one-shot, locks SV-6 floor inheritance
 ```
 
 Oracles and adapters are **not** singletons. A creator supplies adapters of their own choosing

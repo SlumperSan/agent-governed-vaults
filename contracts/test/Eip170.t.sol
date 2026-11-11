@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {VaultCore} from "../src/VaultCore.sol";
 import {VaultFactory, IVaultDeployer} from "../src/VaultFactory.sol";
 import {VaultDeployer} from "../src/VaultDeployer.sol";
@@ -262,18 +263,29 @@ contract Eip170Test is Test {
     }
 
     /// The same trust story for the agent path: an AgentVaultCore built by calling the agent deployer
-    /// directly is not attested, and its code equals the factory-created one byte for byte.
+    /// directly is not attested, and its code equals the factory-created one byte for byte. Nor is it
+    /// announced: it is absent from `allVaults` and the factory emits nothing for it (#483 A8 A3 gap 1),
+    /// so an indexer that follows the factory never lists it.
     function test_deployingDirectlyThroughTheAgentDeployerIsNeverAttested() public {
         vm.prank(stranger);
         address attested = factory.createAgentVault(_params());
+        uint256 countBefore = factory.vaultCount();
 
+        vm.recordLogs();
         vm.prank(stranger);
         address bypass = agentDeployer.deploy(_agentCtorArgs(stranger));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
 
         assertEq(bypass.code, attested.code, "bypass vault is not the same AgentVaultCore code");
         assertEq(AgentVaultCore(bypass).creator(), stranger, "bypass creator");
         assertGt(registry.operatorOf(attested), 0, "factory agent vault not attested");
         assertEq(registry.operatorOf(bypass), 0, "agent-deployer-created vault was attested");
+
+        assertEq(factory.vaultCount(), countBefore, "a direct deploy was appended to allVaults");
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].emitter != address(factory), "factory emitted an event for a direct deploy");
+            assertTrue(logs[i].emitter != address(registry), "registry emitted an event for a direct deploy");
+        }
     }
 
     /// The gate that makes the above true is on the registry, and the deployer never touches it.
