@@ -31,7 +31,7 @@ the allocator front end's OWN test fixtures and nothing in this workspace's `src
 them at runtime): `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_VAULT_ADDRESSES` (comma-separated). Unset,
 and the page renders an honest "not configured" state, never a bundled sample. `cp .env.example
 .env.development.local` sets all three against **Arc mainnet** (chain 5042), live since
-2026-09-24 (`firstVault.createdAt`, `contracts/config/deployments/arc-mainnet.json`): RWAlly's v1
+2026-09-24 (`firstVault.createdAt`, `contracts/config/deployments/arc-mainnet-v1.json`): RWAlly's v1
 vault, the cirBTC Vault at `0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`
 (nothing to fill in — see the template's own header), so `npm run dev` exercises real chain reads
 against the real vault. Vite never loads `.env.example` itself, same convention as the root

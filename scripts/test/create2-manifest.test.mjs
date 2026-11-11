@@ -84,7 +84,7 @@ test('no singleton creation code carries a metadata trailer', () => {
 test('the launch-chain deployment record for v1 is untouched by this manifest', () => {
   // The v1 Arc singletons were made by plain CREATE and cannot move; none of the v2 addresses may
   // equal one of them, or "v2 beside v1" would be a lie.
-  const v1 = JSON.parse(readFileSync(path.join(ROOT, 'contracts', 'config', 'deployments', 'arc-mainnet.json'), 'utf8')).singletons;
+  const v1 = JSON.parse(readFileSync(path.join(ROOT, 'contracts', 'config', 'deployments', 'arc-mainnet-v1.json'), 'utf8')).singletons;
   const v1Addresses = new Set(Object.values(v1).map((a) => String(a).toLowerCase()));
   for (const [name, c] of Object.entries(manifest.contracts)) {
     assert.ok(!v1Addresses.has(c.address.toLowerCase()), `${name} v2 address equals a v1 Arc singleton`);

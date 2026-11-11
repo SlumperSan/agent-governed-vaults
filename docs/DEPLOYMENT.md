@@ -2,7 +2,7 @@
 
 Sprint 9. Covers testnet bring-up (Base Sepolia) and the mandatory wiring order, post-deploy
 verification, and canary monitoring, written for the Arc (chain 5042) mainnet deploy that landed
-2026-09-24; see [`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
+2026-09-24; see [`contracts/config/deployments/arc-mainnet-v1.json`](../contracts/config/deployments/arc-mainnet-v1.json)
 for what actually shipped. Contracts are immutable, so there is no upgrade path and
 **getting the constructor args and wiring right is the whole game** (a bad `maxStaleness` or an
 unwired registry cannot be fixed after the fact).
@@ -46,7 +46,7 @@ unwired registry cannot be fixed after the fact).
 ### Arc is deployed (2026-09-24)
 
 **The protocol is deployed on Arc mainnet (chain 5042)**, so the address book for it is
-[`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
+[`contracts/config/deployments/arc-mainnet-v1.json`](../contracts/config/deployments/arc-mainnet-v1.json)
 in `contracts/config/deployments/`, alongside Base Sepolia's record. Every address in it was
 re-read independently from the chain and cross-checked on two RPC endpoints. Re-verify any address
 you act on directly against the chain before transacting; this file is not authorization on its
@@ -93,7 +93,7 @@ allowlist. So the oracle is deployed **before** the factory:
 4. **Export `BLESSED_ORACLES`** = the deployed oracle address (comma-separated for several). §2 below
    (deploy the factory) reads it into the factory's oracle allowlist.
 
-> A `Deploy.s.sol` run **reverts** on every chain except local 31337 if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist` pins the Base-mainnet case): an empty allowlist would ship the C-6 gate disabled. Only the local test chain may run empty. The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); on a factory brought up through `initialize`, `scripts/protocol-initialize-preflight.mjs` reads `initialized()`, `oracleAllowlistEnforced()` and `isAllowedOracle(...)` back on-chain from the deployed factory address (section 10). The live Arc deployment is recorded in `contracts/config/deployments/arc-mainnet.json`.
+> A `Deploy.s.sol` run **reverts** on every chain except local 31337 if `BLESSED_ORACLES` is empty (`test_baseMainnetDeployRefusesEmptyOracleAllowlist` pins the Base-mainnet case): an empty allowlist would ship the C-6 gate disabled. Only the local test chain may run empty. The named test pins Base mainnet specifically, so it says nothing about Arc (chain 5042); on a factory brought up through `initialize`, `scripts/protocol-initialize-preflight.mjs` reads `initialized()`, `oracleAllowlistEnforced()` and `isAllowedOracle(...)` back on-chain from the deployed factory address (section 10). The live Arc deployment is recorded in `contracts/config/deployments/arc-mainnet-v1.json`.
 
 ### Arc — the sequencer-uptime-feed exemption
 
@@ -336,7 +336,7 @@ Child vaults use `createChildVault(params, parent)` — basket must be a subset 
 > ([SOAK-REPORT.md](SOAK-REPORT.md) drill 2) stand as evidence, and re-running them against the
 > corrected contracts is step 3 of LAUNCH-READINESS §6's path to GO. Throwaway funds on a testnet
 > are exactly where this should be exercised. The constraint is on mainnet and on any deployment
-> holding members' money. On Arc (chain 5042) `contracts/config/deployments/arc-mainnet.json` records
+> holding members' money. On Arc (chain 5042) `contracts/config/deployments/arc-mainnet-v1.json` records
 > `factory.allowSubVaults()` as false, read on two endpoints at deploy time. On any other factory,
 > confirm `VaultFactory.allowSubVaults()` by reading it back on-chain rather than assuming a value
 > carried over from a prior deployment.
@@ -412,7 +412,7 @@ Run each check against the live addresses:
     `RATE_LIMIT_PER_SEC`/`RATE_LIMIT_BURST` apply to the free routes only here, as on any metering
     chain: x402 is the limiter on the paid ones.
     **No facilitator is deployed for chain 5042, and `apps/api` is not deployed anywhere** — the
-    protocol itself IS deployed on Arc (see `contracts/config/deployments/arc-mainnet.json`), but
+    protocol itself IS deployed on Arc (see `contracts/config/deployments/arc-mainnet-v1.json`), but
     that has no bearing on this bullet, which describes a facilitator/API configuration to
     complete before either of those exists, not a running service.
 
@@ -523,7 +523,7 @@ initial vaults.
 
 **A deployment now exists, and it does not by itself satisfy gates (a)–(d) above.** The protocol is
 deployed on Arc (chain 5042) since 2026-09-24 — a live factory and one live vault, see
-`contracts/config/deployments/arc-mainnet.json` — and `capacityCapUsdc` was set to 0 (uncapped) by
+`contracts/config/deployments/arc-mainnet-v1.json` — and `capacityCapUsdc` was set to 0 (uncapped) by
 owner decision, not "conservatively" in the sense (d) above means. A prior mainnet deployment on
 the chain this project has since moved away from was fully exited on 2026-09-18 and holds nothing.
 Gates (a)–(d) above were not run fresh against this Arc deployment before it shipped — none of them

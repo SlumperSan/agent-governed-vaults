@@ -10,7 +10,8 @@
  *
  * TWO DISTINCTIONS, BOTH MECHANICAL, because a missing record is not automatically an error.
  *
- * FIRST, deleted versus never written. `contracts/config/deployments/arc-mainnet.json` WAS the
+ * FIRST, deleted versus never written. `contracts/config/deployments/arc-mainnet-v1.json` (since
+ * renamed `arc-mainnet-v1.json`) WAS the
  * never-written example here — `docs/evidence/arc-deploy-runbook.md` named it as the file a future
  * deploy must WRITE, an instruction rather than a citation — until the Arc mainnet deploy wrote it
  * on 2026-09-24; the probe test below now uses `contracts/config/deployments/base-mainnet.json`
@@ -154,7 +155,7 @@ test('probe: the guard sees a dead citation, and lets a never-written target thr
   // Without this, the test above is green over a broken matcher and proves nothing. Both legs are
   // asserted because the two cases are the whole point of the guard.
   const dead = `${RECORD_DIR}/robinhood-mainnet.json`;
-  // arc-mainnet.json was this fixture until the Arc mainnet deploy wrote it on 2026-09-24;
+  // arc-mainnet.json (now arc-mainnet-v1.json) was this fixture until the Arc mainnet deploy wrote it on 2026-09-24;
   // base-mainnet.json is the next real never-written target (contracts/config/base-mainnet.json,
   // the launch-parameter config, already exists — this is the deployment record, a different file).
   const future = `${RECORD_DIR}/base-mainnet.json`;

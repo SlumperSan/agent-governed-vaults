@@ -61,7 +61,7 @@ after(() => { try { rmSync(TMP, { recursive: true, force: true }); } catch { /* 
 let n = 0;
 /** A throwaway root carrying only `contracts/config/arc-mainnet.json` (copied from the real repo,
  * so the smoke.minDepositUsdc/usdc figures this test relies on are the REAL ones, not invented) and
- * optionally `contracts/config/deployments/arc-mainnet.json`. */
+ * optionally `contracts/config/deployments/arc-mainnet-v1.json`. */
 function fixtureRoot({ withDeploymentRecord } = {}) {
   const root = path.join(TMP, `root${n++}`);
   mkdirSync(path.join(root, 'contracts', 'config'), { recursive: true });
@@ -69,19 +69,19 @@ function fixtureRoot({ withDeploymentRecord } = {}) {
   if (withDeploymentRecord) {
     mkdirSync(path.join(root, 'contracts', 'config', 'deployments'), { recursive: true });
     writeFileSync(
-      path.join(root, 'contracts', 'config', 'deployments', 'arc-mainnet.json'),
+      path.join(root, 'contracts', 'config', 'deployments', 'arc-mainnet-v1.json'),
       JSON.stringify({ firstVault: { address: withDeploymentRecord } }),
     );
   }
   return root;
 }
 
-test('resolveVaultAddress: falls back to the cited literal when contracts/config/deployments/arc-mainnet.json does not exist (PR #390 not merged)', () => {
+test('resolveVaultAddress: falls back to the cited literal when contracts/config/deployments/arc-mainnet-v1.json does not exist (PR #390 not merged)', () => {
   const root = fixtureRoot({});
   assert.equal(resolveVaultAddress(root), '0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6');
 });
 
-test('resolveVaultAddress: reads firstVault.address once contracts/config/deployments/arc-mainnet.json exists (PR #390 landed)', () => {
+test('resolveVaultAddress: reads firstVault.address once contracts/config/deployments/arc-mainnet-v1.json exists (PR #390 landed)', () => {
   const addr = `0x${'9'.repeat(39)}b`;
   const root = fixtureRoot({ withDeploymentRecord: addr });
   assert.equal(resolveVaultAddress(root), addr);

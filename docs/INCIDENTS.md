@@ -96,7 +96,7 @@ reader can run. Never state a recovery time you cannot evidence.
 > moved once already.
 >
 > **Arc (chain 5042) is where the protocol is deployed, since 2026-09-24**
-> ([`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)).
+> ([`contracts/config/deployments/arc-mainnet-v1.json`](../contracts/config/deployments/arc-mainnet-v1.json)).
 > Settlement there is USDC, which is also the native gas asset. The survey read off the chain before
 > the deploy is [`evidence/arc-mainnet-survey.json`](evidence/arc-mainnet-survey.json), and the
 > blockers that preceded it are in [`evidence/arc-deploy-runbook.md`](evidence/arc-deploy-runbook.md).

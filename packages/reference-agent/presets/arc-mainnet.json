@@ -1,7 +1,7 @@
 {
   "preset": "arc-mainnet",
   "generatedBy": "scripts/build-agent-preset.mjs",
-  "source": "contracts/config/deployments/arc-mainnet.json",
+  "source": "contracts/config/deployments/arc-mainnet-v1.json",
   "chainId": 5042,
   "chainName": "arc-mainnet",
   "nativeCurrency": {

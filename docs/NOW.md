@@ -20,7 +20,7 @@ work it describes.
 
 - **The protocol is DEPLOYED on Arc mainnet (chain 5042), 2026-09-24, and the first vault exists.**
   Every address was re-read from the chain and cross-checked on two RPC endpoints; see
-  [`contracts/config/deployments/arc-mainnet.json`](../contracts/config/deployments/arc-mainnet.json)
+  [`contracts/config/deployments/arc-mainnet-v1.json`](../contracts/config/deployments/arc-mainnet-v1.json)
   for the full record, including the first vault (`0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`,
   created and registered through the intended creator Safe). Settlement is USDC on Arc, where USDC
   is also the native gas asset.

@@ -13,7 +13,7 @@
  * asserts it equals what this script builds from the record, so the two cannot drift.
  *
  * Sources, and nothing else:
- *   - `contracts/config/deployments/arc-mainnet.json`  every address, the chain id and name
+ *   - `contracts/config/deployments/arc-mainnet-v1.json`  every address, the chain id and name
  *   - `contracts/config/arc-mainnet.json`              `smoke.minDepositUsdc` (base units)
  *   - the existing preset's `usdcDomain` block         written by `scripts/verify-arc-usdc-domain.mjs`
  *                                                      from the token itself, never typed by hand
@@ -27,7 +27,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-export const RECORD_PATH = path.join(REPO, 'contracts/config/deployments/arc-mainnet.json');
+export const RECORD_PATH = path.join(REPO, 'contracts/config/deployments/arc-mainnet-v1.json');
 export const CONFIG_PATH = path.join(REPO, 'contracts/config/arc-mainnet.json');
 export const PRESET_PATH = path.join(REPO, 'packages/reference-agent/presets/arc-mainnet.json');
 
@@ -61,7 +61,7 @@ export function buildPreset(record, config, usdcDomain) {
   return {
     preset: 'arc-mainnet',
     generatedBy: 'scripts/build-agent-preset.mjs',
-    source: 'contracts/config/deployments/arc-mainnet.json',
+    source: 'contracts/config/deployments/arc-mainnet-v1.json',
     chainId: record.chainId,
     chainName: record.chainName,
     nativeCurrency: { ...ARC_NATIVE_CURRENCY },

@@ -12,7 +12,7 @@
  * `steps.notice` below is the replacement. Until 2026-09-24 it said no vault was live and promised
  * to name one when there was; the first vault went live on Arc that day, so it now keeps that
  * promise. `apps/site/test/site.test.mjs` reads the vault's address out of
- * `contracts/config/deployments/arc-mainnet.json` and fails if the page does not print it.
+ * `contracts/config/deployments/arc-mainnet-v1.json` and fails if the page does not print it.
  *
  * REAL MONEY NOW. The app signs real deposits into that vault, so no sentence on these pages may
  * describe it as a demo or a walkthrough with sample data — a reader who believes that could

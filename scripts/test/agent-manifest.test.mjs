@@ -52,7 +52,7 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const read = (rel) => readFileSync(path.join(REPO, rel), 'utf8');
 const readJson = (rel) => JSON.parse(read(rel));
 
-const record = readJson('contracts/config/deployments/arc-mainnet.json');
+const record = readJson('contracts/config/deployments/arc-mainnet-v1.json');
 const config = readJson('contracts/config/arc-mainnet.json');
 const committed = read(MANIFEST_PATH);
 const manifest = JSON.parse(committed);
@@ -80,7 +80,7 @@ test('every address-shaped string in the manifest exists in the deployment recor
   })(manifest);
   assert.ok(found.length >= 12, `expected at least 12 addresses in the manifest, found ${found.length}`);
   const unknown = found.filter((a) => !inRecord.has(a.toLowerCase()));
-  assert.deepEqual(unknown, [], 'these manifest addresses are not in contracts/config/deployments/arc-mainnet.json');
+  assert.deepEqual(unknown, [], 'these manifest addresses are not in contracts/config/deployments/arc-mainnet-v1.json');
 });
 
 test('each manifest field equals the record field it is derived from', () => {
@@ -507,7 +507,7 @@ test('probe: the freeze checker reddens on the shipped wording and on a freeze n
 test('the trust text says eth_getCode proves code, not identity, and that a forged manifest passes the reads', () => {
   assert.match(manifest.trust, /non-empty result proves that code exists at the address, not whose code it is/);
   assert.match(manifest.trust, /forged manifest/);
-  assert.match(manifest.trust, /anchor is contracts\/config\/deployments\/arc-mainnet\.json/);
+  assert.match(manifest.trust, /anchor is contracts\/config\/deployments\/arc-mainnet-v1\.json/);
 });
 
 test('the functions note says the table is a selection and points at the ABIs', () => {

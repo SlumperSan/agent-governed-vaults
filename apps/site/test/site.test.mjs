@@ -120,7 +120,7 @@ t('every sentence in copy.ts reaches the built page', () => {
 
 /**
  * The deployment status the site states, derived from the deployment record rather than from this
- * test's author. `contracts/config/deployments/arc-mainnet.json` is written when Arc is broadcast
+ * test's author. `contracts/config/deployments/arc-mainnet-v1.json` is written when Arc is broadcast
  * and read back; its `firstVault.address` is the one fact every "is it live" sentence hangs on.
  *
  * BOTH BRANCHES ASSERT. Neither is a skip: with no record, the page must say it is not deployed;
@@ -130,7 +130,7 @@ t('every sentence in copy.ts reaches the built page', () => {
  * version of this test never read. A record that exists but lacks a well-formed address throws
  * rather than falling through to the not-deployed branch.
  */
-const ARC_RECORD = path.join(APP, '..', '..', 'contracts', 'config', 'deployments', 'arc-mainnet.json');
+const ARC_RECORD = path.join(APP, '..', '..', 'contracts', 'config', 'deployments', 'arc-mainnet-v1.json');
 const liveVaultAddress = () => {
   if (!existsSync(ARC_RECORD)) return null;
   const addr = JSON.parse(readFileSync(ARC_RECORD, 'utf8')).firstVault?.address;

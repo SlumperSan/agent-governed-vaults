@@ -32,7 +32,7 @@ export const BASE_SEPOLIA = defineChain({
  * over one pool of funds — VaultCore.usdc() is the ERC-20 view, and deposit/approve amounts this
  * app sends are always in that 6-decimal unit, never the native one). RWAlly's v1 vault (cirBTC
  * Vault, 0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6) has been live here since 2026-09-24
- * (firstVault.createdAt, contracts/config/deployments/arc-mainnet.json) — see `.env.example` for
+ * (firstVault.createdAt, contracts/config/deployments/arc-mainnet-v1.json) — see `.env.example` for
  * the deployed addresses this app reads by default.
  */
 export const ARC_MAINNET = defineChain({

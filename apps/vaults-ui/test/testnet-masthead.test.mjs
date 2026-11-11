@@ -4,7 +4,7 @@
  * of what chain it reads and whether real funds are at stake. On Base Sepolia that was, verbatim,
  * "Reading Base Sepolia testnet. No vault holds real funds yet." RWAlly's v1 vault (cirBTC Vault,
  * 0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6) went live on Arc mainnet (chain 5042) on 2026-09-24
- * (firstVault.createdAt, contracts/config/deployments/arc-mainnet.json),
+ * (firstVault.createdAt, contracts/config/deployments/arc-mainnet-v1.json),
  * so that sentence is now false — Base Sepolia is no longer what this app reads, and the vault
  * exists to hold real member funds the moment anyone deposits. The masthead was updated in the
  * same commit as the chain cutover (`.env.example`, `public/_headers`); its seeded clause was made

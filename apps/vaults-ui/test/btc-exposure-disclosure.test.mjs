@@ -72,7 +72,7 @@ test('"cirBTC" is literal only while this app serves one vault on a cirBTC-only 
   // reds and the name must come from the vault's basketAssets instead.
   const env = readFileSync(join(APP, '.env.example'), 'utf8');
   const vaults = (/^VITE_VAULT_ADDRESSES=(.*)$/m.exec(env)?.[1] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-  const dep = JSON.parse(readFileSync(join(ROOT, 'contracts/config/deployments/arc-mainnet.json'), 'utf8'));
+  const dep = JSON.parse(readFileSync(join(ROOT, 'contracts/config/deployments/arc-mainnet-v1.json'), 'utf8'));
   assert.deepEqual(vaults.map((v) => v.toLowerCase()), [dep.firstVault.address.toLowerCase()]);
   const cfg = JSON.parse(readFileSync(join(ROOT, 'contracts/config/arc-mainnet.json'), 'utf8'));
   assert.deepEqual(cfg.chainlinkOracle.assets.map((a) => a.symbol), ['cirBTC']);

@@ -48,7 +48,7 @@
  * only deposit/activate, so the approve item's recorded balance becomes the BASELINE the deposit
  * item's own post-check diffs against for `holderUsdcBalanceDelta`.
  *
- * Vault address: `contracts/config/deployments/arc-mainnet.json`'s `firstVault.address` if that
+ * Vault address: `contracts/config/deployments/arc-mainnet-v1.json`'s `firstVault.address` if that
  * file exists in this checkout (PR #390, open as of this writing); otherwise the cited literal
  * below, re-read independently on two RPC endpoints per PR #390's own record
  * (`factory.allVaults(0)` == `firstVault.address` == `0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`).
@@ -80,7 +80,7 @@ const CHAIN_NAME = 'Arc';
  * for a real listing, and this queue signs real transactions. */
 const PERSONAS = ['Ballast', 'Momentum'];
 /** `factory.allVaults(0)` on Arc mainnet, PR #390 (`docs/evidence`/`contracts/config/deployments/
- * arc-mainnet.json` once merged) — cross-checked on rpc.mainnet.arc.io and arc.gateway.tenderly.co.
+ * arc-mainnet-v1.json` once merged) — cross-checked on rpc.mainnet.arc.io and arc.gateway.tenderly.co.
  * TODO: once PR #390 lands on protocol/main, `resolveVaultAddress` below reads the deployment
  * record instead of this literal; delete the literal itself once that path is exercised for real. */
 const FALLBACK_VAULT_ADDR = '0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6';
@@ -133,16 +133,16 @@ export function requirePersona(persona) {
   return persona;
 }
 
-/** `contracts/config/deployments/arc-mainnet.json`'s `firstVault.address` if that file exists in
+/** `contracts/config/deployments/arc-mainnet-v1.json`'s `firstVault.address` if that file exists in
  * this checkout (PR #390), else the cited fallback literal above.
  * @param {string} [root] */
 export function resolveVaultAddress(root = ROOT) {
-  const depPath = path.join(root, 'contracts', 'config', 'deployments', 'arc-mainnet.json');
+  const depPath = path.join(root, 'contracts', 'config', 'deployments', 'arc-mainnet-v1.json');
   if (existsSync(depPath)) {
     const dep = JSON.parse(readFileSync(depPath, 'utf8'));
     const addr = dep?.firstVault?.address;
     if (typeof addr === 'string' && /^0x[0-9a-fA-F]{40}$/.test(addr)) return addr;
-    throw new Error('contracts/config/deployments/arc-mainnet.json exists but has no usable firstVault.address — PR #390 landed in an unexpected shape');
+    throw new Error('contracts/config/deployments/arc-mainnet-v1.json exists but has no usable firstVault.address — PR #390 landed in an unexpected shape');
   }
   return FALLBACK_VAULT_ADDR;
 }

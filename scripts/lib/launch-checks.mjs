@@ -30,7 +30,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 
 const BASE_SEPOLIA_DEPLOYMENT = path.join(ROOT, 'contracts/config/deployments/base-sepolia.json');
-const ARC_MAINNET_DEPLOYMENT = path.join(ROOT, 'contracts/config/deployments/arc-mainnet.json');
+const ARC_MAINNET_DEPLOYMENT = path.join(ROOT, 'contracts/config/deployments/arc-mainnet-v1.json');
 const ARC_MAINNET_CONFIG = path.join(ROOT, 'contracts/config/arc-mainnet.json');
 const SOAK_VAULTS = path.join(ROOT, 'scripts/soak/soak-vaults.json');
 
@@ -426,8 +426,8 @@ export async function checkDeployerBalance(fetchImpl) {
 
 /**
  * Whether this repository has anything deployed on Arc mainnet — a file read, no RPC. The
- * `arc-mainnet.json` this checks is the DEPLOYMENT RECORD path
- * (`contracts/config/deployments/`), which does not exist today; `contracts/config/arc-
+ * `arc-mainnet-v1.json` this checks is the DEPLOYMENT RECORD path
+ * (`contracts/config/deployments/`); `contracts/config/arc-
  * mainnet.json` is a DIFFERENT file — pre-deploy configuration evidence, not a record of
  * anything live — and its own `status` field is quoted here rather than paraphrased, so this row
  * cannot drift from what that file actually says.

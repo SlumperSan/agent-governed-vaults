@@ -45,7 +45,7 @@ function fixtureRoot({ entries = [ENTRY], recordVault = VAULT, chainId = 5042, u
     writeFileSync(p, JSON.stringify(doc));
   };
   put('docs/seeded-addresses.json', { readme: 'x', addresses: entries });
-  put('contracts/config/deployments/arc-mainnet.json', { chainId, firstVault: { address: recordVault } });
+  put('contracts/config/deployments/arc-mainnet-v1.json', { chainId, firstVault: { address: recordVault } });
   put('contracts/config/arc-mainnet.json', { usdc, smoke: { minDepositUsdc: '100000000' } });
   return root;
 }
@@ -122,7 +122,7 @@ const DECLARATION_REFUSALS = [
   ['the declared vault is not the deployment record\'s firstVault', { recordVault: OTHER }, /not the deployment record's firstVault/],
   ['the deployment record is not Arc', { chainId: 1 }, /chainId is 1/],
   ['the seeded list is missing', { omit: ['docs/seeded-addresses.json'] }, /seeded-addresses\.json not found/],
-  ['the deployment record is missing', { omit: ['contracts/config/deployments/arc-mainnet.json'] }, /deployments\/arc-mainnet\.json not found/],
+  ['the deployment record is missing', { omit: ['contracts/config/deployments/arc-mainnet-v1.json'] }, /deployments\/arc-mainnet-v1\.json not found/],
 ];
 for (const [name, opts, re] of DECLARATION_REFUSALS) {
   test(`refuses when ${name}`, () => {

@@ -412,7 +412,7 @@ export interface LiveConfig {
  *
  * `null` on anything unusable — NOT a default that points somewhere. Even though a real vault is
  * now deployed (Arc mainnet, chain 5042, since 2026-09-24 — firstVault.createdAt,
- * contracts/config/deployments/arc-mainnet.json), an env this repository did not
+ * contracts/config/deployments/arc-mainnet-v1.json), an env this repository did not
  * configure is not evidence of one, so a production build with no env configured must render "not
  * configured", never fall back to a guess. See `App.tsx` for how that state renders, and
  * `apps/vaults-ui/.env.example` for the configuration this app builds against by default.

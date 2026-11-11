@@ -82,7 +82,7 @@
 #   the reader's own browser, so a claim on the page was checkable by the reader rather than taken
 #   on the server's word. This site makes NO chain reads. That was because nothing was deployed; since
 #   2026-09-24 the first vault is live on Arc, and the site prints its address as static text, taken
-#   from contracts/config/deployments/arc-mainnet.json at build time, rather than reading it live.
+#   from contracts/config/deployments/arc-mainnet-v1.json at build time, rather than reading it live.
 #
 #   SO THE PERMISSION IS REMOVED RATHER THAN LEFT POINTING AT AN ENDPOINT NOTHING CALLS. A standing
 #   allowance for an origin the site does not contact is a permission the next person inherits

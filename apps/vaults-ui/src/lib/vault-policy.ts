@@ -8,7 +8,7 @@
  *
  * KEYED BY ADDRESS, LOWERCASE, in this one module, so no component names an address and a v2 vault
  * is open by default. `test/vault-policy.test.mjs` pins the v1 entry to `firstVault.address` in
- * `contracts/config/deployments/arc-mainnet.json`.
+ * `contracts/config/deployments/arc-mainnet-v1.json`.
  *
  * This file has no JSX and no alias imports, so plain `node --test` can import it (same shape as
  * `sanctions.ts`).
@@ -33,7 +33,7 @@ export const CONNECT_PROMPT_DEPOSITS_CLOSED = 'Connect a wallet to vote, exit or
 
 /** Lowercase address -> reason. Add a vault here to close deposits for it; absence means open. */
 export const DEPOSITS_CLOSED_VAULTS: Readonly<Record<string, DepositsClosedReason>> = {
-  // Arc v1 vault (cirBTC Vault), contracts/config/deployments/arc-mainnet.json firstVault.address.
+  // Arc v1 vault (cirBTC Vault), contracts/config/deployments/arc-mainnet-v1.json firstVault.address.
   '0x4eae5c6d753aac0b4825d41c12e71f0a8be579f6': 'v1-closed',
 };
 

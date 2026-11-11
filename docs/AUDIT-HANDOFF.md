@@ -99,7 +99,7 @@ adapter at `0xf3e08c8b…`, which predated both and carried a cross-order theft 
 
 **Deployed on Arc, not on Base mainnet.** The protocol is deployed on Arc
 (chain id 5042, where USDC is both the settlement token and the native gas asset) since 2026-09-24
-(`contracts/config/deployments/arc-mainnet.json`), with no deployment on Base mainnet. The contracts
+(`contracts/config/deployments/arc-mainnet-v1.json`), with no deployment on Base mainnet. The contracts
 left on Robinhood Chain (4663) are immutable and hold nothing, and that chain is no longer a target
 (`docs/INCIDENTS.md` §0). That record postdates the audit tag above: the audit surface is the source at the tag,
 not this deployment. `docs/evidence/arc-mainnet-survey.json` records what was read off Arc ahead

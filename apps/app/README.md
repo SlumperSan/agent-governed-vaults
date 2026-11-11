@@ -2,7 +2,7 @@
 
 The vault explorer, v1. It renders one thing and it renders it honestly: this static page has never
 been repointed at Arc (the protocol IS deployed there since 2026-09-24 —
-`contracts/config/deployments/arc-mainnet.json` — but nothing in this retiring surface reads it), so
+`contracts/config/deployments/arc-mainnet-v1.json` — but nothing in this retiring surface reads it), so
 the protocol card says so plainly instead of showing live reads it does not have, above a table of
 vaults with no rows.
 
@@ -14,7 +14,7 @@ It is deployed to the Cloudflare Pages project `rwally-app`, production branch `
 ## What is on the page, and where each fact comes from
 
 This retiring, unmaintained page reads no deployment record — nothing in `app.js` was ever pointed
-at `contracts/config/deployments/arc-mainnet.json` (the protocol's real deployment record, written
+at `contracts/config/deployments/arc-mainnet-v1.json` (the protocol's real deployment record, written
 2026-09-24) or at any chain. Every fact on the page follows from that:
 
 | Thing | Source |

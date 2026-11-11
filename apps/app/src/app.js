@@ -9,7 +9,7 @@
    WHY IT DOES NOTHING. This page's whole purpose was reading a deployed
    protocol's state live from chain in the reader's own browser. The
    page reads no deployment record. The protocol is deployed on Arc
-   mainnet (contracts/config/deployments/arc-mainnet.json), but this retired page has not been
+   mainnet (contracts/config/deployments/arc-mainnet-v1.json), but this retired page has not been
    pointed at it. The chain this file
    used to call is abandoned and its addresses are not live contracts any
    more; the two vaults that existed there were fully exited on 2026-09-18

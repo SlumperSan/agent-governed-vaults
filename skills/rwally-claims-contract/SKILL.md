@@ -70,7 +70,7 @@ write copy, tests or reviews on the strength of that older list.
   `apps/site/src`.
 - **deployed** may be stated positively about **Arc** and nothing else, and only where the reader
   can check it. Since 2026-09-24 the protocol is deployed on Arc mainnet (chain 5042) and its record
-  is `contracts/config/deployments/arc-mainnet.json`. A positive sentence names Arc, and its page
+  is `contracts/config/deployments/arc-mainnet-v1.json`. A positive sentence names Arc, and its page
   carries the anchor that makes it checkable: the first vault's address (`firstVault.address` in that
   record) or a link to the record itself. About any other chain, "deployed" is still negated or
   conditioned. This bullet is pinned in lockstep with the `apps/site/test/site.test.mjs` test "the
@@ -125,7 +125,7 @@ obligation was in the guards, never in the comments, and the maintainers decide 
   from the guard could not see it. Write a claim so that a reader can check it, not so that a string
   match passes.
 - **A bare answer to "is it deployed?"** Name the chain, and say what is deployed.
-  **The protocol is deployed on Arc mainnet (5042) since 2026-09-24** (`contracts/config/deployments/arc-mainnet.json`)
+  **The protocol is deployed on Arc mainnet (5042) since 2026-09-24** (`contracts/config/deployments/arc-mainnet-v1.json`)
   and is not a target on any other mainnet: the contracts left on Robinhood Chain (4663) are
   immutable, hold nothing, and that chain is abandoned (`docs/INCIDENTS.md` §0). Say with any "live" claim that the soak (gate 3) and canary (gate 6) were
   not re-run on the Arc source commit; `docs/LAUNCH-READINESS.md` has the wording. Base

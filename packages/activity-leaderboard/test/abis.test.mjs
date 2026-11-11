@@ -68,7 +68,7 @@ test('the read ABI names the public getters the head check relies on', () => {
 });
 
 test('chain records: ids and the deployer agree with the deployment records', () => {
-  const arc = JSON.parse(readFileSync(path.join(REPO, 'contracts', 'config', 'deployments', 'arc-mainnet.json'), 'utf8'));
+  const arc = JSON.parse(readFileSync(path.join(REPO, 'contracts', 'config', 'deployments', 'arc-mainnet-v1.json'), 'utf8'));
   assert.equal(CHAINS.arc.chainId, arc.chainId);
   assert.equal(CHAINS.arc.deployer, arc.deployer.toLowerCase());
   assert.deepEqual(CHAINS.arc.rpcs, [arc.rpc, arc.crossCheckedOn]);

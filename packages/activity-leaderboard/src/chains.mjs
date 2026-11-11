@@ -25,7 +25,7 @@ function deployerFrom(file) {
 
 /** @type {Record<string, {chainId:number, name:string, rpcs:string[], deployer:string|null, vaults:Array<{address:string, fromBlock:number}>}>} */
 export const CHAINS = Object.freeze({
-  arc: { chainId: 5042, name: 'arc', rpcs: ['https://rpc.mainnet.arc.io', 'https://arc.gateway.tenderly.co'], deployer: deployerFrom('arc-mainnet.json'), vaults: [] },
+  arc: { chainId: 5042, name: 'arc', rpcs: ['https://rpc.mainnet.arc.io', 'https://arc.gateway.tenderly.co'], deployer: deployerFrom('arc-mainnet-v1.json'), vaults: [] },
   base: { chainId: 8453, name: 'base', rpcs: [], deployer: null, vaults: [] },
   arbitrum: { chainId: 42161, name: 'arbitrum', rpcs: [], deployer: null, vaults: [] },
   ethereum: { chainId: 1, name: 'ethereum', rpcs: [], deployer: null, vaults: [] },

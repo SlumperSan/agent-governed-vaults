@@ -64,7 +64,7 @@
 #   `VITE_RPC_URL` resolves to as of the Arc mainnet cutover — `apps/vaults-ui/.env.example`,
 #   against the cirBTC Vault at `0x4EAE5C6D753AAC0b4825d41c12e71f0a8bE579f6`, RWAlly's v1 vault, live
 #   on Arc mainnet since 2026-09-24 (firstVault.createdAt,
-#   contracts/config/deployments/arc-mainnet.json). `test/csp.test.mjs`'s `'the policy names every
+#   contracts/config/deployments/arc-mainnet-v1.json). `test/csp.test.mjs`'s `'the policy names every
 #   directive...'`
 #   test pins this exact string; widening it to a second origin, a wildcard, or back to bare
 #   `'self'` must fail that test, not quietly pass it.

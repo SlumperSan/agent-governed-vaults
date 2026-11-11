@@ -366,7 +366,7 @@ const normIntentAddr = (a) => (typeof a === 'string' && ADDR_RE.test(a.trim()) ?
  * The declarations, none of which `persona-deposit.mjs` writes:
  * - `docs/seeded-addresses.json` entry for `item.from`: `persona` and `intendedDeposit`
  *   (`{vault, amountUsdcRaw}`) — reviewed in the PR that adds the funded address.
- * - `contracts/config/deployments/arc-mainnet.json`: `chainId` and `firstVault.address`.
+ * - `contracts/config/deployments/arc-mainnet-v1.json`: `chainId` and `firstVault.address`.
  * - `contracts/config/arc-mainnet.json`: `usdc`.
  *
  * The page sends `from`, `to`, `value` and `resolvedData || data` (scripts/dashboard.mjs's Sign
@@ -413,11 +413,11 @@ export function personaIntentRefusal(item, root = ROOT) {
   }
   const amount = BigInt(intent.amountUsdcRaw);
 
-  const dep = readJson('contracts/config/deployments/arc-mainnet.json');
+  const dep = readJson('contracts/config/deployments/arc-mainnet-v1.json');
   if (dep.err) return dep.err;
-  if (dep.doc?.chainId !== ARC_CHAIN_ID) return `deployments/arc-mainnet.json chainId is ${dep.doc?.chainId}, not ${ARC_CHAIN_ID} — refusing`;
+  if (dep.doc?.chainId !== ARC_CHAIN_ID) return `deployments/arc-mainnet-v1.json chainId is ${dep.doc?.chainId}, not ${ARC_CHAIN_ID} — refusing`;
   const recordVault = normIntentAddr(dep.doc?.firstVault?.address);
-  if (!recordVault) return 'deployments/arc-mainnet.json has no usable firstVault.address — refusing';
+  if (!recordVault) return 'deployments/arc-mainnet-v1.json has no usable firstVault.address — refusing';
   if (declaredVault !== recordVault) {
     return `${entry.persona}'s declared vault ${intent.vault} is not the deployment record's firstVault ${dep.doc.firstVault.address} — refusing`;
   }
