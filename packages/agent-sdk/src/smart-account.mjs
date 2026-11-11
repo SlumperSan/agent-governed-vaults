@@ -21,7 +21,69 @@
  *   const agent = createAgent({ account: { address: smartAccount.address, signMessage }, walletClient: writer, ... });
  */
 
-import { encodeFunctionData } from 'viem';
+import { encodeFunctionData, decodeFunctionResult, parseAbi } from 'viem';
+
+const RECEIVER_ABI = parseAbi(['function onERC721Received(address operator, address from, uint256 tokenId, bytes data) returns (bytes4)']);
+const ZERO_ADDRESS = '0x' + '0'.repeat(40);
+/** `IERC721Receiver.onERC721Received.selector`. */
+export const ERC721_RECEIVED_SELECTOR = '0x150b7a02';
+/** The registry functions that mint an identity to `msg.sender` and then call `onERC721Received` on it. */
+export const REGISTRY_MINT_FUNCTIONS = Object.freeze(['register', 'importAgent', 'mintMirrored']);
+
+/** True when a viem call error is the contract reverting (a revert anywhere in the cause chain), not a transport failure. */
+function isRevert(err) {
+  for (let e = /** @type {any} */ (err), i = 0; e && i < 8; e = e.cause, i++)
+    if (/revert/i.test(`${e.name ?? ''} ${e.shortMessage ?? ''} ${e.message ?? ''}`)) return true;
+  return false;
+}
+
+/** Thrown before any UserOp is built or signed when the minting account cannot receive an ERC-721. */
+export class Erc721ReceiverError extends Error {
+  /** @param {string} account @param {string} detail */
+  constructor(account, detail) {
+    super(`${account} cannot receive ERC-721 tokens (${detail}). A smart account must answer onERC721Received with ${ERC721_RECEIVED_SELECTOR} to hold an agent identity; this one did not. Nothing was built or signed.`);
+    this.name = 'Erc721ReceiverError';
+    this.account = account;
+  }
+}
+
+/**
+ * Gas and UX guard, not a safety check: the registry itself reverts with ERC721InvalidReceiver when
+ * the recipient is a contract that does not return the selector, so a bad account loses nothing
+ * on-chain, it only pays for a UserOp that reverts. This fails fast with a readable error instead.
+ * An account with no code (an EOA, or a counterfactual account) is skipped, as the registry does.
+ * The probe is a static call made as the registry, to `account`, with `operator` = `account` and `from` = the
+ * zero address. That mirrors a mint: the registry calls `onERC721Received(msg.sender, address(0), id, "")`
+ * on the recipient, and every mint entry point (`register`, `importAgent`, `mintMirrored`) mints to
+ * `msg.sender`, so for a UserOp both the operator and the recipient are the smart account itself. Only a
+ * revert or wrong return bytes become `Erc721ReceiverError`; transport errors propagate unchanged.
+ * @param {{getCode:(p:{address:string}) => Promise<string|undefined>, call:(p:object) => Promise<{data?:string}>}} publicClient
+ * @param {string} registry  the registry address; the probe's caller (`msg.sender` of the callback is the registry)
+ * @param {string} account  the smart account: the minting sender, the recipient, and the `operator` argument
+ */
+export async function assertCanReceiveErc721(publicClient, registry, account) {
+  const code = await publicClient.getCode({ address: account });
+  if (!code || code === '0x') return;
+  let result;
+  try {
+    result = await publicClient.call({
+      to: account,
+      account: registry,
+      data: encodeFunctionData({ abi: RECEIVER_ABI, functionName: 'onERC721Received', args: [account, ZERO_ADDRESS, 0n, '0x'] }),
+    });
+  } catch (err) {
+    if (isRevert(err)) throw new Erc721ReceiverError(account, 'onERC721Received reverted');
+    throw err;
+  }
+  let returned;
+  try {
+    returned = decodeFunctionResult({ abi: RECEIVER_ABI, functionName: 'onERC721Received', data: result?.data ?? '0x' });
+  } catch {
+    throw new Erc721ReceiverError(account, 'onERC721Received returned no bytes4');
+  }
+  if (returned !== ERC721_RECEIVED_SELECTOR)
+    throw new Erc721ReceiverError(account, `onERC721Received returned ${returned}`);
+}
 
 /**
  * Keep scheme and host of every http(s) URL in `text`; drop path, query and fragment. A bundler
@@ -58,11 +120,16 @@ function scrubbed(err) {
  * @param {bigint} cfg.maxFeePerGasCeiling  refuse any UserOp priced above this, in the chain's
  *   native gas unit per gas (wei). On Arc the native gas token is USDC at 18 decimals, not the
  *   ERC-20's 6, so never derive this from a USDC amount.
+ * @param {{publicClient:{getCode:Function, call:Function}, registry:string}} [cfg.mintPreflight]  when given, a write to
+ *   `registry` of register, importAgent or mintMirrored first static-calls onERC721Received on the smart account
+ *   (see `assertCanReceiveErc721`) and throws `Erc721ReceiverError` before anything is prepared when the account reverts or returns other bytes (an RPC failure
+ *   propagates as an ordinary error, with URL paths stripped). Opt-in; leave it out
+ *   and no check runs.
  * @param {boolean} [cfg.waitForReceipt]  default true: wait until the UserOp is mined and return
  *   the transaction hash; a reverted UserOp throws. Leave it on: the actor sends an approval and
  *   then the deposit that spends it, and the second must not race the first.
  */
-export function createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePerGasCeiling, waitForReceipt = true }) {
+export function createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePerGasCeiling, waitForReceipt = true, mintPreflight }) {
   for (const m of ['prepareUserOperation', 'sendUserOperation', 'waitForUserOperationReceipt'])
     if (typeof bundlerClient?.[m] !== 'function') throw new TypeError(`bundlerClient.${m} is not a function`);
   if (!/^0x[0-9a-fA-F]{40}$/.test(String(smartAccount?.address)))
@@ -74,6 +141,13 @@ export function createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePe
   if (typeof maxFeePerGasCeiling !== 'bigint' || maxFeePerGasCeiling <= 0n)
     throw new TypeError('maxFeePerGasCeiling must be a positive bigint (wei per gas); a UserOp is never sent unpriced');
 
+  if (mintPreflight !== undefined) {
+    if (typeof mintPreflight?.publicClient?.getCode !== 'function' || typeof mintPreflight.publicClient.call !== 'function')
+      throw new TypeError('mintPreflight.publicClient needs getCode and call');
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(mintPreflight.registry)))
+      throw new TypeError('mintPreflight.registry is not an address');
+  }
+
   return {
     /**
      * @param {{address:string, abi:readonly any[], functionName:string, args?:readonly any[], account?:{address?:string}|string, chain?:unknown}} req
@@ -83,6 +157,15 @@ export function createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePe
       const from = typeof account === 'string' ? account : account?.address;
       if (typeof from !== 'string' || from.toLowerCase() !== smartAccount.address.toLowerCase())
         throw new Error(`refused: the write is for ${from ?? 'no account'} but this writer sends from ${smartAccount.address}`);
+
+      if (mintPreflight && address.toLowerCase() === mintPreflight.registry.toLowerCase() && REGISTRY_MINT_FUNCTIONS.includes(functionName)) {
+        try {
+          await assertCanReceiveErc721(mintPreflight.publicClient, mintPreflight.registry, smartAccount.address);
+        } catch (err) {
+          // A typed receiver error is ours and carries no URL; anything else is an RPC error and is scrubbed like every other.
+          throw err instanceof Erc721ReceiverError ? err : scrubbed(err);
+        }
+      }
 
       const calls = [{ to: address, data: encodeFunctionData({ abi, functionName, args }) }];
       try {

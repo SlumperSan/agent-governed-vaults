@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeFunctionData, parseAbi } from 'viem';
+import { encodeFunctionData, decodeFunctionData, parseAbi } from 'viem';
 import { createUserOpWalletClient, stripUrls } from '../src/index.mjs';
 
 const SMART = '0x' + '5'.repeat(40);
@@ -102,4 +102,93 @@ test('construction refuses a missing ceiling, a missing entry point and a bad ac
   assert.throws(() => createUserOpWalletClient(/** @type {any} */ ({ bundlerClient, smartAccount, maxFeePerGasCeiling: 1 })), /maxFeePerGasCeiling/);
   assert.throws(() => createUserOpWalletClient(/** @type {any} */ ({ bundlerClient, smartAccount: { ...smartAccount, entryPoint: undefined }, maxFeePerGasCeiling: CEILING })), /entry point/);
   assert.throws(() => createUserOpWalletClient(/** @type {any} */ ({ bundlerClient, smartAccount: { ...smartAccount, address: '0x12' }, maxFeePerGasCeiling: CEILING })), /address/);
+});
+
+// ---- ERC-721 receiver preflight (gas and UX guard; the registry reverts ERC721InvalidReceiver anyway)
+const REGISTRY = '0x' + '4'.repeat(40);
+const RECEIVER_ABI = parseAbi(['function onERC721Received(address operator, address from, uint256 tokenId, bytes data) returns (bytes4)']);
+const REG_ABI = parseAbi(['function register(string agentURI) returns (uint256)']);
+const SELECTOR_WORD = '0x150b7a02' + '0'.repeat(56);
+const mintReq = () => ({ address: REGISTRY, abi: REG_ABI, functionName: 'register', args: ['ipfs://x'], account: { address: SMART }, chain: null });
+
+/** A publicClient stub; `call` behaviour is injected. Records every call. */
+function pub({ code = '0x6080', call }) {
+  const seen = { getCode: [], call: [] };
+  return {
+    seen,
+    getCode: async (p) => { seen.getCode.push(p); return code; },
+    call: async (p) => { seen.call.push(p); return call(p); },
+  };
+}
+function mintWriter(publicClient) {
+  const s = stubs();
+  return { ...s, w: createUserOpWalletClient({ bundlerClient: s.bundlerClient, smartAccount: s.smartAccount, maxFeePerGasCeiling: CEILING, mintPreflight: { publicClient, registry: REGISTRY } }) };
+}
+
+test('preflight: a receiver that returns the selector passes and the mint is sent', async () => {
+  const publicClient = pub({ call: async () => ({ data: SELECTOR_WORD }) });
+  const { calls, w } = mintWriter(publicClient);
+  assert.equal(await w.writeContract(mintReq()), TX);
+  assert.equal(publicClient.seen.call[0].to, SMART);
+  assert.equal(publicClient.seen.call[0].account, REGISTRY, 'the probe is simulated from the registry, the caller of the real callback');
+  const [op, from, id, data] = decodeFunctionData({ abi: RECEIVER_ABI, data: publicClient.seen.call[0].data }).args;
+  assert.equal(op.toLowerCase(), SMART.toLowerCase(), 'operator is the minting smart account (msg.sender of the registry call), not the registry');
+  assert.notEqual(op.toLowerCase(), REGISTRY.toLowerCase());
+  assert.equal(from, '0x' + '0'.repeat(40), 'from is the zero address on a mint');
+  assert.equal(id, 0n);
+  assert.equal(data, '0x');
+  assert.equal(calls.send.length, 1);
+});
+
+test('preflight: wrong return bytes throw a typed error naming the account, nothing prepared or signed', async () => {
+  const { calls, w } = mintWriter(pub({ call: async () => ({ data: '0xdeadbeef' + '0'.repeat(56) }) }));
+  await assert.rejects(w.writeContract(mintReq()), (e) => e.name === 'Erc721ReceiverError' && e.message.includes(SMART) && /cannot receive ERC-721/.test(e.message));
+  assert.equal(calls.prepare.length + calls.sign.length + calls.send.length, 0);
+});
+
+test('preflight: the Erc721ReceiverError message names no wallet implementation', async () => {
+  const { w } = mintWriter(pub({ call: async () => ({ data: '0xdeadbeef' + '0'.repeat(56) }) }));
+  await assert.rejects(w.writeContract(mintReq()), (e) => !/kernel|safe|zerodev/i.test(e.message));
+});
+
+test('preflight: a transport error propagates and is not mapped to Erc721ReceiverError', async () => {
+  const { calls, w } = mintWriter(pub({ call: async () => { throw new Error('HTTP request failed: 503'); } }));
+  await assert.rejects(w.writeContract(mintReq()), (e) => e.name !== 'Erc721ReceiverError' && /503/.test(e.message));
+  assert.equal(calls.prepare.length + calls.sign.length + calls.send.length, 0);
+});
+
+test('preflight: an RPC error from the probe has its URL path stripped and is not an Erc721ReceiverError', async () => {
+  for (const pubClient of [
+    pub({ call: async () => { throw new Error('fetch failed for https://rpc.example/v2/SECRETKEY'); } }),
+    { ...pub({ call: async () => ({}) }), getCode: async () => { throw new Error('fetch failed for https://rpc.example/v2/SECRETKEY'); } },
+  ]) {
+    const { w } = mintWriter(pubClient);
+    await assert.rejects(w.writeContract(mintReq()), (e) => e.name !== 'Erc721ReceiverError' && !/SECRETKEY/.test(e.message) && /rpc\.example/.test(e.message));
+  }
+});
+
+test('preflight: a reverting receiver throws the same typed error', async () => {
+  const { calls, w } = mintWriter(pub({ call: async () => { throw new Error('execution reverted'); } }));
+  await assert.rejects(w.writeContract(mintReq()), (e) => e.name === 'Erc721ReceiverError' && e.message.includes(SMART));
+  assert.equal(calls.prepare.length + calls.sign.length + calls.send.length, 0);
+});
+
+test('preflight: an account with no code skips the call', async () => {
+  const publicClient = pub({ code: '0x', call: async () => { throw new Error('must not be called'); } });
+  const { w } = mintWriter(publicClient);
+  assert.equal(await w.writeContract(mintReq()), TX);
+  assert.equal(publicClient.seen.call.length, 0);
+});
+
+test('preflight: a write that is not a registry mint is not checked', async () => {
+  const publicClient = pub({ call: async () => { throw new Error('must not be called'); } });
+  const { w } = mintWriter(publicClient);
+  assert.equal(await w.writeContract(req()), TX);
+  assert.equal(publicClient.seen.getCode.length, 0);
+});
+
+test('preflight: a malformed config throws at construction', () => {
+  const { bundlerClient, smartAccount } = stubs();
+  assert.throws(() => createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePerGasCeiling: CEILING, mintPreflight: { publicClient: {}, registry: REGISTRY } }), /getCode and call/);
+  assert.throws(() => createUserOpWalletClient({ bundlerClient, smartAccount, maxFeePerGasCeiling: CEILING, mintPreflight: { publicClient: pub({ call: async () => ({}) }), registry: 'nope' } }), /not an address/);
 });
