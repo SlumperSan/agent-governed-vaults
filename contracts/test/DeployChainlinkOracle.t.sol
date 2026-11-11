@@ -11,9 +11,9 @@ import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
 /// The rule under test (`DeployChainlinkOracle.requiresSequencerUptimeFeed`): the L2 sequencer uptime
 /// feed is mandatory on EVERY chain except an allowlist of ids known to have none — local 31337;
 /// Base Sepolia 84532, whose committed config leaves `sequencerUptimeFeed` empty by design; and
-/// Robinhood Chain 4663, for which Chainlink publishes no uptime feed (owner-approved 2026-09-04;
+/// Robinhood Chain 4663, for which Chainlink publishes no uptime feed (an exemption approved 2026-09-04;
 /// the doc comment on ROBINHOOD_CHAIN_ID in the script states what the exemption costs at price
-/// time); Arc 5042 (an L1); and, by owner decision 2026-10-18, Ethereum 1 (the L1 the rollups settle
+/// time); Arc 5042 (an L1); and, since 2026-10-18, Ethereum 1 (the L1 the rollups settle
 /// to) and Polygon 137 (a validator-set sidechain with no Chainlink sequencer feed). The allowlist replaces a DENYLIST of one id (`block.chainid != 8453`) under which a deploy to any other L2 — or
 /// to a mis-pointed RPC — silently produced an IMMUTABLE oracle with the sequencer guard off, free to
 /// serve prices computed while that chain's sequencer was down.
@@ -156,7 +156,7 @@ contract DeployChainlinkOracleTest is Test {
     /// @notice Robinhood Chain 4663 deploys with NO sequencer feed, and the oracle it produces
     /// prices anyway — the exemption's cost, pinned rather than described. Chainlink publishes no
     /// uptime feed for this chain, so the fail-closed default would refuse the deploy outright;
-    /// the owner approved the weakening on 2026-09-04. The second assertion is the point: with
+    /// the weakening was approved on 2026-09-04. The second assertion is the point: with
     /// `sequencerUptimeFeed` at address(0), `_requireSequencerUp` returns early and `priceWad`
     /// answers, so nothing here would revert during a sequencer outage on this chain.
     function test_robinhoodChainDeploysWithoutSequencerFeed() public {
@@ -167,7 +167,7 @@ contract DeployChainlinkOracleTest is Test {
         assertEq(oracle.priceWad(WETH), 1917e18, "prices with no sequencer gate at all");
     }
 
-    /// @notice Arc deploys with no uptime feed, which is the point of the owner's 2026-09-19
+    /// @notice Arc deploys with no uptime feed, which is the point of the 2026-09-19
     /// exemption: Arc is an L1, so there is no sequencer whose uptime could be reported and Chainlink
     /// publishes no feed to supply. Before this entry `forge script DeployChainlinkOracle` reverted on
     /// 5042 and the Arc deploy could not run at all.
@@ -208,7 +208,7 @@ contract DeployChainlinkOracleTest is Test {
         assertEq(address(feed), ETH_USD_FEED, "asset feed wired");
     }
 
-    // ───────────── Ethereum 1 and Polygon 137 (owner decision 2026-10-18) ─────────────
+    // ───────────── Ethereum 1 and Polygon 137 (exempt since 2026-10-18) ─────────────
 
     /// @notice Ethereum deploys with no uptime feed: it is an L1, so there is no sequencer. Pinned
     /// like Arc's: the oracle prices with no sequencer gate, which is the cost the entry records.

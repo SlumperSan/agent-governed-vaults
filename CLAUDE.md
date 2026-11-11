@@ -145,6 +145,18 @@ safety guidance rather than speed guidance, so turning `strict` off does not ret
 this section deleted this paragraph without remarking on it. It exists in no other file: the JSON
 encodes the *rules*, not the order to apply them in.)
 
+### Tier 1 review commands: `/security-review` and `/code-review`
+
+`scripts/lib/merge-policy.json` does not encode this check, so it is written down here only.
+
+- **Tier 1 PRs** (contracts, money, deploy, fee, cap and claim files) run `/security-review` and
+  `/code-review` over the full diff **in addition to** the fresh independent reviewer, never as a
+  replacement for it.
+- **Every tier 1 verdict records one line per command:** `security-review: N findings` and
+  `code-review: N findings`. A tier 1 merge whose verdict lacks either line is a gate miss.
+- **Tiers 2 and 3** keep the fresh reviewer alone, with `/code-review` added on the one-in-ten spot
+  check.
+
 ### On making this faster — what was tried, and where the real lever is
 
 Faster merging was requested on 2026-09-10. Two changes were drafted and an independent

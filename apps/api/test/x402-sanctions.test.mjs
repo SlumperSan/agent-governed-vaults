@@ -90,7 +90,12 @@ test('a refused payer leaves no replay reservation behind', async () => {
 
 test('a non-string or non-address `from` is a 402 and leaves no replay reservation', async () => {
   const seen = new Set();
-  for (const from of [12345, { toLowerCase: 1 }, [LISTED], 'not-an-address', '0x1234', '', 0, false, true]) {
+  for (const from of [
+    12345, { toLowerCase: 1 }, [LISTED], [CLEAN], 'not-an-address', '0x1234', '', 0, false, true,
+    undefined, null,
+    ' ' + CLEAN, CLEAN + ' ', CLEAN + '\n', '0X' + 'ab'.repeat(20),
+    '0x' + 'a'.repeat(39), '0x' + 'a'.repeat(41),
+  ]) {
     const fac = countingFacilitator();
     const v = await gate({ headers: evmHeader(/** @type {any} */ (from)), price, facilitator: fac, nowMs: FRESH, seenNonces: seen });
     assert.equal(v.status, 402, JSON.stringify(from));

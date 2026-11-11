@@ -110,7 +110,7 @@ export function verifyEnvelopeShape(envelope, nowMs) {
   const a = envelope.authorization;
   if (!a || typeof a !== 'object') return { ok: false, reason: 'no-authorization' };
   for (const f of ['from', 'to']) {
-    if (!ADDR_RE.test(a[f] ?? '')) return { ok: false, reason: `bad-${f}` };
+    if (typeof a[f] !== 'string' || !ADDR_RE.test(a[f])) return { ok: false, reason: `bad-${f}` };
   }
   if (typeof envelope.signature !== 'string' || !SMART_SIG_RE.test(envelope.signature))
     return { ok: false, reason: 'bad-signature-format' };
