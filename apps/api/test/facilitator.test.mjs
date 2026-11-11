@@ -60,6 +60,13 @@ test('verifyEnvelopeShape rejects malformations with a precise reason', () => {
   assert.equal(verifyEnvelopeShape(envelope({ authorization: { validBefore: '100' } }), 200_000).reason, 'authorization-expired');
 });
 
+test('verifyEnvelopeShape refuses a non-string from or to, including a one-element array that the regex would coerce', () => {
+  for (const f of ['from', 'to']) {
+    for (const v of [[USDC], [], { toString: () => USDC }, 12345, null, undefined])
+      assert.equal(verifyEnvelopeShape(envelope({ authorization: { [f]: v } }), 1000).reason, `bad-${f}`, f + ' ' + JSON.stringify(v));
+  }
+});
+
 // ── stub ──
 
 test('createStubFacilitator accepts and denies as configured', async () => {

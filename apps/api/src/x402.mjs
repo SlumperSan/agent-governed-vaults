@@ -510,9 +510,7 @@ export async function gate({ headers, price, facilitator, nowMs, seenNonces, res
   // TypeError inside the screen and surface as a 500, and must never read as "not sanctioned".
   if (!price.svm) {
     const from = env.authorization?.from;
-    // shortcut: an absent `from` (undefined or null) still passes this guard, as before, because the
-    // fixtures omit it and the facilitator refuses it (`bad-from`); tighten once fixtures carry one.
-    if (from != null && (typeof from !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(from))) return require402('payment invalid: bad-payer');
+    if (typeof from !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(from)) return require402('payment invalid: bad-payer');
     try {
       assertNotSanctioned(from, nowMs);
     } catch (err) {

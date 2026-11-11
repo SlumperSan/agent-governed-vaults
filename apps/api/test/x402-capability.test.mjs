@@ -57,7 +57,7 @@ const envelope = (nonce) =>
     x402Version: 2,
     network: 'base',
     signature: '0xsig',
-    authorization: { asset: USDC, to: PAYTO, value: '10000', nonce, validBefore: 0 },
+    authorization: { from: '0x' + 'ab'.repeat(20), asset: USDC, to: PAYTO, value: '10000', nonce, validBefore: 0 },
   })).toString('base64');
 
 function seededApi(overrides = {}) {
