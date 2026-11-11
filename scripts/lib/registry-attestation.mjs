@@ -86,6 +86,21 @@ export const MIRROR_DAILY_CAP = 100;
  *   honest traffic that day. The same origins can fill every other destination's day once as well.
  * - None of this prevents that halt. An attacker holding that stock of origins halts mirroring on a
  *   destination for the day, and every honest mint after the 100th that day reverts.
+ * Known limitations, to be resolved or accepted before the signing Worker goes live:
+ * - The young-origin budget counts ISSUED attestations, not mints. `signerRefusal` reads only the
+ *   caller's `issuedToYoungOrigins` counts, and nothing here ties an attestation to a mint or limits
+ *   attestations per origin. So roughly 50 reusable origins, each aged between `minOriginAgeSeconds`
+ *   (1 hour) and `youngOriginAgeSeconds` (7 days) at signing, can spend a destination's whole young
+ *   budget for that UTC day by requesting attestations and not minting. Young-origin mirroring on that
+ *   destination is then refused for the rest of that day (griefing). Origins aged 7 days or more are
+ *   unaffected. Possible mitigations, none of which exists in this module: count consumed (minted)
+ *   attestations against the budget instead of issued ones, or add per-origin sub-limits.
+ * - The check-then-record sequence is not atomic. `signerRefusal` reads the counts, and the caller
+ *   records the attestation only after signing, so two concurrent requests can both read room and both
+ *   pass. A production counter store must make the check and the increment one conditional write
+ *   (compare-and-increment: increment only if the count is still below the limit, else refuse) in a
+ *   single store shared by every signing process. Per-process counters are not sufficient once the
+ *   signer runs as more than one replica.
  * Each default can be overridden by the env var named beside it.
  */
 /** Refuse an `expiry` further out than this (NatSpec rule 5: about one hour). REGISTRY_ATTEST_MAX_EXPIRY_SECONDS */
