@@ -601,7 +601,7 @@ RWAllyAgentRegistryCreate2Test:test_deployThroughTheProxy_landsAtThePredictedAdd
 RWAllyAgentRegistryCreate2Test:test_initializeAfterDeploy_onlyTheInitializerCan_andAnyoneCanSendTheDeploy() (gas: 3642888)
 RWAllyAgentRegistryCreate2Test:test_initializerConstant_equalsTheRecordedInitializer() (gas: 3080207)
 RWAllyAgentRegistryCreate2Test:test_initializerConstant_isTheProtocolInitializer() (gas: 2796630)
-RWAllyAgentRegistryCreate2Test:test_initializer_isTheProtocolDeployer() (gas: 300989)
+RWAllyAgentRegistryCreate2Test:test_initializer_isTheProtocolDeployer() (gas: 300983)
 RWAllyAgentRegistryCreate2Test:test_predictedAddress_startsWith0x1337() (gas: 315926)
 RWAllyAgentRegistryCreate2Test:test_recordedAddress_isTheCreate2AddressOfTheRecordedInputs() (gas: 340220)
 RWAllyAgentRegistryCreate2Test:test_recordedInitcodeHash_matchesTheBuild() (gas: 290358)
