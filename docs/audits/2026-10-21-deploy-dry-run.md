@@ -23,24 +23,28 @@ current set, both in this folder and neither in `contracts/`:
 Before those changes the re-run at `627230b` failed at step 3c (`Deploy: the agent registry at
 config/agent-registry-create2.json has no code on this chain; deploy it first`) and at step 8.
 
-**Third run on 2026-10-22, both ways, on branch `fix/deploy-path-hardening` at `3041aa6`** (base
-`protocol/main` `07d1be0`), Foundry 1.7.1 with native solc 0.8.26. That branch changes
+**Third run, regenerated on 2026-11-10, both ways, on branch `fix/deploy-path-hardening` at `3554aa2`**
+(merged with `protocol/main` `074fc07`), Foundry 1.7.1 with native solc 0.8.26. That branch changes
 `Deploy.s.sol` without touching `contracts/src`, so every address is unchanged:
-`feeEngine.initialize` now goes before `registry.wire`, and the post-broadcast checks read each wired
-value. The harness gained a fork mode (`FORK_URL`), step 2d (the agent registry's own `initialize`,
-then a repeat that must revert), and read-back of the agent path plus a replay of every one-shot
-call. Every figure below from step 2c on is from this run unless it names another commit.
+`feeEngine.initialize` now goes before `registry.wire`, the checks after the broadcast (run in forge's local simulation) read each wired
+value, and the script refuses before sending anything while `PROTOCOL_INITIALIZER` has code on the
+target chain. The harness gained a fork mode (`FORK_URL`), step 2d (the agent registry's own
+`initialize`, then a repeat that must revert), a read-back of the agent path plus a replay of every
+one-shot call that asserts the expected revert selector, and, on the fork, step 3b (the refusal with the
+real code in place, then `anvil_setCode` to clear it). Every figure below from step 2c on is from this
+run unless it names another commit.
 
 - **Plain anvil** (the default, stand-ins as before): [`transcript.txt`](2026-10-21-deploy-dry-run/transcript.txt).
-- **Fork of Ethereum mainnet** at block 26246867 through `https://ethereum-rpc.publicnode.com`
+- **Fork of Ethereum mainnet** at block 26389682 through `https://ethereum-rpc.publicnode.com`
   (`FORK_URL`): [`transcript-fork.txt`](2026-10-21-deploy-dry-run/transcript-fork.txt). The real
   Arachnid proxy, Chainlink feeds, tokens and ERC-8004 registry were used; nothing was etched except
-  clearing any code at the four public anvil test accounts.
+  clearing any code at the four public anvil test accounts, and at `PROTOCOL_INITIALIZER` after step 3b
+  showed the script refusing while it was there.
 
 **Result on both runs: the run completes. 74 checks pass, 0 fail** (63 at `627230b`, 57 at
 `c3277fc`; the new ones are step 2d and the read-back of the agent path, the agent registry and two
 more replays). The fork found one thing the plain chain cannot show (finding 8:
-`PROTOCOL_INITIALIZER` carries an EIP-7702 delegation on Ethereum). The checklist at the end is for
+`PROTOCOL_INITIALIZER` carries an EIP-7702 delegation on Ethereum, and the script refuses while it does). The checklist at the end is for
 the freeze, after the harness is re-run on the frozen commit.
 
 - Harness, re-runnable: [`2026-10-21-deploy-dry-run/run-all.sh`](2026-10-21-deploy-dry-run/run-all.sh)
@@ -49,14 +53,15 @@ the freeze, after the harness is re-run on the frozen commit.
 
 ## Fork mode, and the first run's blocker
 
-The fork closes three of the four reads the first run could not make: on Ethereum at block 26246867
+The fork closes three of the four reads the first run could not make: on Ethereum at block 26389682
 each of the seven predicted addresses and the recorded agent registry address has no code; the
 proxy's runtime is the same 69 bytes; and the real ETH / USD and BTC / USD feeds pass
-`DeployChainlinkOracle`'s checks (`description()` ends in `/ USD`, `decimals()` 8, answers 2,424.39
-and 82,175.14, each updated within the hour). The fourth, whether `PROTOCOL_INITIALIZER` holds
-enough ETH, it answered no: it holds 34,654,906,438,668 wei (about 0.0000347 ETH) against a batch of
-16,495,241 gas (finding 8). The fork run impersonated it with its real code in place, and the
-broadcast still completed.
+`DeployChainlinkOracle`'s checks (`description()` ends in `/ USD`, `decimals()` 8, answers 2,064.25
+and 73,707.48, each updated within the hour, 3,144 s and 2,364 s before the block time). The fourth,
+whether `PROTOCOL_INITIALIZER` holds enough ETH, it answered no: it holds 34,654,906,438,668 wei (about
+0.0000347 ETH) against a batch of 16,495,241 gas (finding 8). The fork run showed `Deploy.s.sol`
+refusing before it sent anything while `PROTOCOL_INITIALIZER` had its real code (step 3b); only after
+`anvil_setCode` cleared that code locally did the broadcast run.
 
 The rest of this section describes the first run, which could not fork. The task asked for a fork
 of Ethereum mainnet. The first run's cloud egress policy refuses every
@@ -93,11 +98,12 @@ Outcomes are the same on both runs except where a cell says otherwise.
 | 0 | chain id, proxy runtime, predicted addresses | chain id 1, Osaka; proxy 69 bytes; all seven manifest addresses and the agent registry address empty. `PROTOCOL_INITIALIZER`: no code, nonce 0 on the plain chain; **23 bytes of code (an EIP-7702 delegation) and nonce 16 on the fork** (finding 8) |
 | 1 | mainnet feeds and tokens | plain: stand-ins etched at the real addresses. Fork: the real feeds and tokens, read back (decimals 8 / 8 and 18 / 8 / 6) |
 | 2a | `DeployChainlinkOracle` with no price band | **refused**: band required on every chain except 31337 and 84532 |
-| 2b | `DeployChainlinkOracle`, throwaway anvil key, bands at ratio 200 | both feeds `feed OK`; sequencer feed `address(0)`. Oracle at `0x5FC8…5707` (plain) or `0x0243…Be78` (fork; the throwaway key's mainnet nonce differs) |
+| 2b | `DeployChainlinkOracle`, throwaway anvil key, bands at ratio 200 | both feeds `feed OK`; sequencer feed `address(0)`. Oracle at `0x5FC8…5707` (plain) or `0x42eD…5ABB` (fork; the throwaway key's mainnet nonce differs) |
 | 2c | `RWAllyAgentRegistry` via the Arachnid proxy, throwaway key | initcode hash equals the record; code at `0x1337f59A…3D2C`, the recorded address; gas used 3,038,833, under the cap |
 | 2d | `RWAllyAgentRegistry.initialize` as `PROTOCOL_INITIALIZER`, then the same call again | first lands (owner, fee token USDC, treasury placeholders); the repeat **reverts** `AlreadyInitialized` (`0x0dc149f0`). Plain: no outside registry (nothing is at the ERC-8004 address). Fork: the real ERC-8004 registry with the recorded Ethereum import ceiling 54,274 |
 | 3a | `Deploy.s.sol` with empty `BLESSED_ORACLES` | **refused** before any send (C-6 guard) |
-| 3b | `Deploy.s.sol` signed by the throwaway key | **refused** before any send: the broadcast is pinned to `PROTOCOL_INITIALIZER` |
+| 3b | fork only: `Deploy.s.sol` as `PROTOCOL_INITIALIZER` while it still has its real mainnet code (23 bytes) | **refused** before any send (`Deploy: PROTOCOL_INITIALIZER has code on this chain`). The harness then clears the code with `anvil_setCode`, as the planned account switch would, and reads 0 bytes |
+| 3b2 | `Deploy.s.sol` signed by the throwaway key | **refused** before any send: the broadcast is pinned to `PROTOCOL_INITIALIZER` |
 | 3c | `Deploy.s.sol` as `PROTOCOL_INITIALIZER` (anvil impersonation, no key) | 13 transactions, all status 1, `feeEngine.initialize` before `registry.wire`; seven addresses equal the manifest; the script's new read-back of every wired value passed |
 | 4 | per-transaction gas against the EIP-7825 cap (16,777,216) | largest gas limit 7,314,100 (`AgentVaultDeployer`); all 14 under the cap (1 oracle + 13 deploy-script transactions) |
 | 5 | read-back: immutables, wires, agent path, oracle config, replays | 49 of 49 pass, including the agent registry and agent deployer the factory pinned, and a replay of all seven one-shot calls (`factory.initialize`, `initializeAgentPath`, the registry's `initialize`, the three wires, `feeEngine.initialize`), each reverting; three runtimes equal the local build |
@@ -115,10 +121,10 @@ this session), so the harness checks the cap itself in step 4.
 
 ### Gas, as measured
 
-All gas figures in this table are from the third run at `3041aa6`; re-measure at freeze if
+All gas figures in this table are from the third run at `3554aa2`; re-measure at freeze if
 `contracts/src` changes again. The `PROTOCOL_INITIALIZER` batch equals `627230b`'s to the unit: the
-reorder moved one transaction, and the new read-back runs after the broadcast, so it costs nothing on
-chain.
+reorder moved one transaction, and the new read-back runs in forge's local simulation, so it sends
+nothing.
 
 | Sender | Transactions | Gas used, plain anvil | Gas used, mainnet fork |
 |---|---|---|---|
@@ -126,7 +132,7 @@ chain.
 | any key (`RWAllyAgentRegistry` via the Arachnid proxy) | 1 | 3,038,833 | 3,038,833 |
 | `PROTOCOL_INITIALIZER` (`RWAllyAgentRegistry.initialize`) | 1 | 130,973 | 200,812 |
 | `PROTOCOL_INITIALIZER` (seven CREATE2, then six one-shot calls) | 13 | 16,495,241 | 16,495,241 |
-| creator Safe (`createVault`, `registerVault`, via `execTransaction`) | 2 | 4,826,534 | 4,859,098 |
+| creator Safe (`createVault`, `registerVault`, via `execTransaction`) | 2 | 4,826,534 | 4,859,086 |
 
 The fork's registry `initialize` writes three more non-zero slots (outside registry, import ceiling,
 import end). Its oracle deploy and `createVault` call into the real feeds and tokens instead of the
@@ -218,18 +224,23 @@ signed.
 7. **Tooling, not a protocol issue.** `npm ci` on npm 10.9.4 refuses the lockfile (`Missing:
    utf-8-validate@5.0.10 from lock file`). `npm install` works. Worth confirming the freeze machine
    uses the same npm as CI.
-8. **`PROTOCOL_INITIALIZER` carries an EIP-7702 delegation on Ethereum, and almost no ETH.** Read on
-   the fork at block 26246867 and again directly from `https://ethereum-rpc.publicnode.com` the same
-   day: its code is `0xef0100` followed by `0x63c0c19a282a1b52b07dd5a65b58948a07dae32b`, its nonce is
-   16 and its balance is 34,654,906,438,668 wei. The delegate reports `NAME()`
-   `EIP7702StatelessDeleGator`, `VERSION()` `1.3.0` and `entryPoint()` the ERC-4337 v0.7 EntryPoint
-   (`0x0000000071727De22E5E9d8BAf0edAc6f37da032`). The same address has no code and nonce 0 on Base,
-   Arbitrum One and Polygon (publicnode, same day). Every one-shot gate compares `msg.sender` with this
-   address, so on Ethereum any path the delegate offers for making calls *as* this address (its own
-   execute functions, user operations through the EntryPoint, and any delegation the key has signed)
-   is a path to the seven one-shot calls before the real deploy lands. Not changed here: it is key
-   custody, not code. The fork's broadcast completed with the delegation in place, so it does not block
-   the script itself. The checklist asks for a decision before anything is sent.
+8. **`PROTOCOL_INITIALIZER` carries an EIP-7702 delegation on Ethereum, and almost no ETH; the script
+   refuses while it has code.** Read on the fork at block 26389682, and directly from
+   `https://ethereum-rpc.publicnode.com` on 2026-11-10 (block 26389691; the same code, nonce and balance
+   were read there on 2026-10-22): its code is `0xef0100` followed by
+   `0x63c0c19a282a1b52b07dd5a65b58948a07dae32b`, its nonce is 16 and its balance is 34,654,906,438,668
+   wei. The delegate reports `NAME()` `EIP7702StatelessDeleGator`, `VERSION()` `1.3.0` and
+   `entryPoint()` the ERC-4337 v0.7 EntryPoint (`0x0000000071727De22E5E9d8BAf0edAc6f37da032`). The same
+   address has no code and nonce 0 on Base, Arbitrum One and Polygon (publicnode, 2026-10-22). Every
+   one-shot gate compares `msg.sender` with this address, so on Ethereum any path the delegate offers for
+   making calls *as* this address (its own execute functions, user operations through the EntryPoint,
+   and any delegation the key has signed) is a path to the seven one-shot calls before the real deploy
+   lands. `Deploy.s.sol` therefore refuses, before it sends anything, while `PROTOCOL_INITIALIZER` has
+   code on the target chain (`require(PROTOCOL_INITIALIZER.code.length == 0, ...)`, pinned by
+   `test_deployRefusesWhileTheInitializerHasCode`): the delegation must be cleared before the deploy,
+   on every chain where the address carries code. The fork shows both sides in step 3b: the script
+   refuses with the real code in place, then the harness clears it with `anvil_setCode` and the
+   broadcast completes. Clearing the delegation on chain is key custody, not code, and is not done here.
 
 ## Checklist for the real freeze
 
@@ -241,8 +252,8 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
       `contracts/config/ethereum-mainnet.json`; `CONFIG=contracts/config/ethereum-mainnet.json node scripts/verify-chainlink-oracle.mjs --strict` passes (finding 1).
 - [x] Preflight ordering decided (finding 2): one broadcast, preflight after it, recorded in
       `docs/DEPLOYMENT.md` §10.
-- [ ] `PROTOCOL_INITIALIZER`'s EIP-7702 delegation on Ethereum decided (finding 8): cleared, or kept
-      with every delegation the key has signed accounted for. Re-read its code on every target chain
+- [ ] `PROTOCOL_INITIALIZER`'s EIP-7702 delegation on Ethereum cleared (finding 8): `Deploy.s.sol`
+      refuses while the address has code on the target chain. Re-read its code on every target chain
       before sending.
 - [ ] Signing path decided (finding 3): `forge script` from the signing machine, or a v2 builder for
       the sign queue.
@@ -267,10 +278,10 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
       and is initialised for this chain; `Deploy.s.sol` refuses without the code.
 - [ ] `PROTOCOL_INITIALIZER` balance covers the 13-transaction batch plus the registry's
       `initialize` at the day's fee, with 30% headroom. Gas used: 16,495,241 and 200,812 on the fork at
-      `3041aa6`; re-measure if `contracts/src` changed since. On 2026-10-22 it held 34,654,906,438,668
+      `3554aa2`; re-measure if `contracts/src` changed since. On 2026-10-22 it held 34,654,906,438,668
       wei on Ethereum (finding 8), far short.
-- [ ] `PROTOCOL_INITIALIZER` code on this chain is what was decided under finding 8 (run-all.sh step 0
-      prints it).
+- [ ] `PROTOCOL_INITIALIZER` has no code on this chain (`eth_getCode` returns `0x`; run-all.sh step 0
+      prints it; the script refuses otherwise, finding 8).
 - [ ] `FEE_TREASURY` decided: the real per-chain treasury address, non-zero, set once and never
       changed. The harness uses a placeholder (`0x…fEE1`) that is not the real treasury.
 - [ ] Each feed proxy: code present, `description()` ends in `/ USD`, `decimals()` is 8, answer
@@ -282,8 +293,8 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
       Read `feedOf(asset)` back and compare with the config (finding 1).
 - [ ] `Deploy.s.sol` with `BLESSED_ORACLES=<that oracle>` and `FEE_TREASURY=<the treasury>`, signed as
       `PROTOCOL_INITIALIZER`. Expect 13 transactions (seven creates, then the six one-shot calls
-      listed under Gas), all under 16,777,216, and the script's post-broadcast read-back to pass. The
-      largest gas limit was 7,314,100 at `3041aa6` (`AgentVaultDeployer`).
+      listed under Gas), all under 16,777,216, and the script's post-broadcast read-back (forge's local simulation, before anything is sent) to pass. The
+      largest gas limit was 7,314,100 at `3554aa2` (`AgentVaultDeployer`).
 - [ ] `node scripts/protocol-initialize-preflight.mjs --plan <plan>` with two real endpoints: `preflight ok`.
 - [ ] `R=<rpc> ORA=<oracle> FEE_TREASURY=<the treasury> FROM_BLOCK=<deploy block> docs/audits/2026-10-21-deploy-dry-run/readback.sh`
       on each endpoint, with the `feedOf` expectations edited to the frozen config: 0 fail. It reads
@@ -305,8 +316,9 @@ Read every chain value on **two RPC endpoints** and treat a failed read as a fai
 
 - [ ] Deployment record `contracts/config/deployments/ethereum-mainnet.json` written from two-endpoint
       reads; `docs/NOW.md` updated in the same commit.
-- [ ] `PROTOCOL_INITIALIZER` key back in cold storage. It has spent its six one-shot calls on Ethereum, but
-      it still makes the six one-shot calls on every chain where the v2 set is not yet initialised.
+- [ ] `PROTOCOL_INITIALIZER` key back in cold storage. It has spent its seven one-shot calls on Ethereum (the six on the
+      singletons and the registry's `initialize`), but it still makes them on every chain where the v2
+      set is not yet initialised.
 
 ## Re-running this
 

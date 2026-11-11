@@ -42,7 +42,7 @@ PASS  repeat initialize reverts (custom error 0x0dc149f0)
 ######## 3a. Deploy.s.sol with EMPTY BLESSED_ORACLES on chain 1 (must refuse)
 Error: Failed to decode return value: 0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000006b432d363a2061207265616c2d636861696e206465706c6f792072657175697265732061206e6f6e2d656d70747920424c45535345445f4f5241434c455320616c6c6f776c6973742028656d70747920616c6c6f776564206f6e6c79206f6e206c6f63616c20333133333729000000000000000000000000000000000000000000
 
-######## 3b. Deploy.s.sol signed by the throwaway key (must refuse: broadcast is pinned to PROTOCOL_INITIALIZER)
+######## 3b2. Deploy.s.sol signed by the throwaway key (must refuse: broadcast is pinned to PROTOCOL_INITIALIZER)
 Error: No associated wallet for addresses: [0x0f80606a2283fd9c67ce2eec79b90e95907f9f35]. Unlocked wallets: [0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266]
 block after refusals 8
 
@@ -150,13 +150,13 @@ Safe 0x759d5344Ef0A932B12F4017De6372DeFB76c7baB (SafeL2 1.4.1 singleton 0xa513e6
   PROTOCOL_INITIALIZER is an owner: false
 Error: Failed to estimate gas: server returned an error response: error code 3: execution reverted: GS020, data: "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000054753303230000000000000000000000000000000000000000000000000000000": Error("GS020")
 PASS  createVault with ONE owner signature (1 of 3, below threshold): reverted GS020
-PASS  createVault with owners 1 and 3 (2 of 3): status 0x1 gasUsed 4692899 safeTxHash 0xb14fbf2c7be4d11c141417b46ab859c14cf1bf191be73418f4f3ad2c16edcc65 tx 0x10bffd76d7b3e502198a5ad68f9240dd862b76dadd3b845c20aa5b331ed88254
+PASS  createVault with owners 1 and 3 (2 of 3): status 0x1 gasUsed 4692899 safeTxHash 0xb14fbf2c7be4d11c141417b46ab859c14cf1bf191be73418f4f3ad2c16edcc65 tx 0x394c4cf586675a91978ff0ed2d819808c999998a6152f42f5be5191feee5e1cb
   vault 0xb061EB493f30043437DF9E800BE0Cc2727eACFb1  creator 0x759d5344Ef0A932B12F4017De6372DeFB76c7baB  operator #1 0x759d5344Ef0A932B12F4017De6372DeFB76c7baB
 Error: server returned an error response: error code 3: execution reverted: custom error 0x9db30794, data: "0x9db30794"
 PASS  registerVault from PROTOCOL_INITIALIZER reverts: custom error 0x9db30794
 Error: server returned an error response: error code 3: execution reverted: custom error 0x9db30794, data: "0x9db30794"
 PASS  registerVault from the throwaway deployer key reverts: custom error 0x9db30794
-PASS  registerVault with owners 2 and 3 (2 of 3): status 0x1 gasUsed 133635 safeTxHash 0x15ecadb8af544705e30e34186bf5c26fe1f0f832a31d277027609c9cb9c0ff3e tx 0x8401b4b367b8274d90ed02a114641a0be2f502b17cb37bd74eec160276c9ecbe
+PASS  registerVault with owners 2 and 3 (2 of 3): status 0x1 gasUsed 133635 safeTxHash 0x15ecadb8af544705e30e34186bf5c26fe1f0f832a31d277027609c9cb9c0ff3e tx 0xd891f4fffa97512f9e8718fec22b0549dff70c14d32dae8093c80da79bf39bf7
   vaultRegistered true  configOf 86400,86400,0,86400,2500,500,4000,3600
 
 ######## done
