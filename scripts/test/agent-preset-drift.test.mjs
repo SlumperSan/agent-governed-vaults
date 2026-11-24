@@ -59,6 +59,23 @@ test("the recorded USDC domain reproduces the recorded DOMAIN_SEPARATOR, and nam
   assert.equal(separatorOf(d), d.separator);
 });
 
+// Not read from the preset: a second copy, taken from the token itself (name(), version() and
+// DOMAIN_SEPARATOR() via eth_call on rpc.mainnet.arc.io, read again 2026-11-24). The test above
+// hashes the preset's own fields against the preset's own separator, so a change that edits both
+// together (or regenerates them from a wrong read) still passes it. This one needs the edit to
+// be made here too, which is a deliberate act with the token read in hand.
+const TOKEN_SEPARATOR = '0x940506929bba468048a19b567f4f0d534714bc06604b5c3017e5d16785ccdf84';
+test('the preset USDC domain equals the value read from the token, held independently of the preset file', () => {
+  const d = onDisk.usdcDomain;
+  assert.equal(d.name, 'USDC');
+  assert.equal(d.version, '2');
+  assert.equal(d.separator, TOKEN_SEPARATOR);
+  assert.equal(
+    separatorOf({ name: 'USDC', version: '2', chainId: 5042, verifyingContract: '0x3600000000000000000000000000000000000000' }),
+    TOKEN_SEPARATOR,
+  );
+});
+
 test('the generator refuses a record whose addresses are missing or whose chain is not 5042', () => {
   const d = onDisk.usdcDomain;
   const dropped = structuredClone(record);
