@@ -21,7 +21,7 @@ UI change closes with this loop, and the report includes the artifacts, not a de
 | console / network | `read_console_messages`, `read_network_requests` | **zero** external hosts is a hard requirement — any non-`self` request is a failure |
 | performance | Chrome DevTools MCP (`chrome-devtools`, user scope) | trace the scroll path; 60fps or it is not done |
 | library docs | Context7 MCP | `motion`, `gsap`, `@react-three/fiber` current APIs — do not guess from training data |
-| wording | `rwally-claims-contract` skill + the guard suites | they read the built pages in `apps/site/dist/`; run `npm run build --workspace apps/site` first |
+| wording | `rwally-claims-contract` skill + the guard suites | `claims-lede-truth` and `site.test.mjs` read the built pages in `apps/site/dist/` (run `npm run build --workspace apps/site` first); `claims-site-ts-truth` reads the string literals of `apps/site/src/*.ts` |
 
 The built-in Browser pane already covers what Playwright MCP would add; do not install a second
 browser automation layer.
@@ -38,11 +38,12 @@ browser automation layer.
    hit is a rejection.
 6. **Console**: no errors, no CSP violations.
 7. **Measure** motion: DevTools trace over the scroll path. Report frame time, not "smooth".
-8. **Guards**: `node --test apps/site/test/site.test.mjs`, plus `claims-lede-truth` and
-   `config-doc-truth`. THE PRERENDER STEP NOW EXISTS (`apps/site/scripts/prerender.mjs`), so the
-   guards read `apps/site/dist/`, not the source `.html` files — an earlier version of this line
-   said the opposite and told you step 4 was the only wording check. It is not: `claims-lede-truth`
-   asserts the built pages are inside its walk and throws if they are missing.
+8. **Guards**: `node --test apps/site/test/site.test.mjs`, plus `claims-lede-truth`,
+   `claims-site-ts-truth` and `config-doc-truth`. The site is prerendered
+   (`apps/site/scripts/prerender.mjs`), so `site.test.mjs` and `claims-lede-truth` read the built
+   pages in `apps/site/dist/`; `claims-lede-truth` throws if they are missing, and `site.test.mjs`
+   skips its tests. `claims-site-ts-truth` reads the `.ts` copy modules in `apps/site/src`. Step 4
+   is not the only wording check.
 9. **Report** with the screenshots attached (`SendUserFile`), the network summary, the trace
    numbers, and the guard counts. A report without artifacts is a claim.
 

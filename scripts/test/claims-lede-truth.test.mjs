@@ -55,14 +55,10 @@
  * exact defects fixed here plus a §4-forbidden exit claim — in the document that seeds the
  * securities memo. Two peers found it by hand. This file structurally could not have.
  *
- * The two names above are a CITATION AND AN INVENTORY, not a live process, and after 2026-09-04
- * they are the only reason the word survives in this file. On that date the review-marker
- * workflow was removed outright, because the markers were repetitive and slowed work, so the eighty `apps/site`
- * markers are gone, and no test reds if one returns: that rule is held by review. Neither line here was a
- * rule: nothing in this file has ever exempted a marked block from a guard, and there is nothing
- * to delete. They were left standing deliberately, because renaming a document that exists and a
- * historical sweep that happened would make this comment point at nothing, which is a worse
- * outcome than a stale-looking word.
+ * The per-claim review markers that `apps/site` once carried were removed on 2026-09-04, because
+ * they were repetitive and slowed work. No marker exists in the tree and nothing in this file
+ * exempts a marked block from a guard. No test reds if a marker returns: that rule is held by
+ * review, not by a guard here.
  *
  * DO NOT "FIX" THIS BY POINTING THE WALK AT THE VAULT. That was tried: an Ops5 sweep of the vault's
  * claim-bearing stores returned **181 hits**, and the large majority were not defects at all — they
