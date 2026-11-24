@@ -27,7 +27,7 @@ read with `read_page`.
 1. Read `scripts/test/claims-lede-truth.test.mjs`: it documents each banned shape, why it is
    false, and the approved replacement wording.
 2. Read `apps/site/test/site.test.mjs`: it pins that the prerender ran, that every single-quoted
-   string literal of `copy.ts` of 25 or more characters (a URL excluded) appears in some built page,
+   string literal of `copy.ts` of 25 or more characters (a literal containing `://` excluded) appears in some built page,
    the deployment status the deployment record gives, and the product phrase unbroken in the
    rendered HTML. It does not check where a string lands, that a sentence is true, or any `.tsx`
    text; shorter literals and double-quoted or template literals are not read at all.
@@ -113,7 +113,7 @@ obligation was in the guards, never in the comments, and the maintainers decide 
   (`contracts/script/lib/ProtocolCreate2.sol`); the Base Sepolia
   factory reads `true` and the Arc mainnet factory reads `false`
   (`verifiedWiring["factory.allowSubVaults()"]` in `contracts/config/deployments/base-sepolia.json`
-  and `arc-mainnet.json`). Scope a sentence to one named factory or script, never to "the
+  and `arc-mainnet-v1.json`). Scope a sentence to one named factory or script, never to "the
   mainnet factory" or "every factory"; best of all, write the instruction: read
   `VaultFactory.allowSubVaults()` on the factory you integrate against.
 - **"Stake-weighted"** is true only at five or more members. Qualify it or do not use it. A vault
@@ -125,43 +125,34 @@ obligation was in the guards, never in the comments, and the maintainers decide 
   from the guard could not see it. Write a claim so that a reader can check it, not so that a string
   match passes.
 - **A bare answer to "is it deployed?"** Name the chain, and say what is deployed.
-  **The protocol is deployed on Arc mainnet (5042) since 2026-09-24** (`contracts/config/deployments/arc-mainnet-v1.json`)
-  and is not a target on any other mainnet: the contracts left on Robinhood Chain (4663) are
-  immutable, hold nothing, and that chain is abandoned (`docs/INCIDENTS.md` §0). Say with any "live" claim that the soak (gate 3) and canary (gate 6) were
-  not re-run on the Arc source commit; `docs/LAUNCH-READINESS.md` has the wording. Base
-  is paused. Base Sepolia (84532): a testnet trial with no value at stake.
+  **The protocol is deployed on Arc mainnet (5042) since 2026-09-24** (`contracts/config/deployments/arc-mainnet-v1.json`).
+  The chain set the v2 deployment tooling covers is Arc, Base, Arbitrum, Ethereum and Polygon
+  (`contracts/config/agent-registry-create2.json`, `docs/DEPLOYMENT.md`); Arc is the only one with a
+  deployment record. Say with any "live" claim that the soak (gate 3) and canary (gate 6) were
+  not re-run on the Arc source commit; `docs/LAUNCH-READINESS.md` has the wording. Base Sepolia
+  (84532): a testnet trial with no value at stake.
 
-  **Robinhood Chain (4663) is abandoned** — owner decision 2026-09-18. The seven contracts remain
-  deployed and immutable there and cannot be removed, but **no vault holds value**: both read zero
-  across `totalShares`, `navWad`, `holderCount` and `idleUsdc`, and zero of every basket token,
-  re-read on-chain at block 66,743,764 (Engineering, PR 316). The chain's config and both deployment
-  records are out of this repository.
+  **Robinhood Chain (4663) is not in that chain set and no copy may present it as a target.** Its
+  contracts remain deployed and immutable, and its config and deployment records are not in this
+  repository. `docs/INCIDENTS.md` (section 0) records what the chain returned for the two vaults
+  there: zero shares, zero NAV, zero holders and zero idle USDC. State at most that end state; how
+  the vaults came to be empty is not something this contract has verified.
 
   **Two sentences that are NOT the same, and copy must not merge them:** "no funds are at stake" is
-  true; "nothing exists there" is false. Nothing prevents a deposit into either vault, and the first
-  one would make the first sentence false. Say the end state, never the mechanism — how the vaults
-  came to be empty is not something this contract has verified.
-
-  *Corrected 2026-09-19. This bullet instructed copy to say "two vaults exist there and both hold
-  real funds, so 'deployed' there now DOES mean member funds are at stake". That was the same false
-  claim Engineering removed from `docs/INCIDENTS.md`, `SECURITY.md` and `LAUNCH-READINESS.md` §0 —
-  sitting in the document that governs what public copy may assert. A claims contract that has gone
-  stale does not merely fail to catch a falsehood; it licenses one.*
+  true of that reading; "nothing exists there" is false. Nothing prevents a deposit into either
+  vault, and the first one would make the first sentence false.
 - **"Guarantee"**: only inside the permitted fragments `no guarantee of any outcome` and
   `a good-faith measure and not a guarantee`.
 - **'Reverts without a sequencer feed.'** `ChainlinkOracle._requireSequencerUp` returns early on
-  `address(0)`. It fails OPEN at price time; enforcement is at deploy time: **on the chains
+  `address(0)`. It fails OPEN at price time; enforcement is at deploy time, and only on the chains
   `DeployChainlinkOracle.requiresSequencerUptimeFeed` covers, which is an enumeration and not all of
-  them.** A local node, Base Sepolia and Robinhood Chain 4663 are exempt, so on chain
-  4663 there is no deploy-time refusal either and nothing enforces the feed at all. "Mandatory,
-  enforced at deploy time" unqualified is a false claim about any exempt chain — and **Arc is
-  exempt in substance for a different reason: Chainlink publishes no L2 Sequencer Uptime Feed for
-  Arc at all, because Arc is an L1.** So on Arc the gate never runs at price time and only the
-  heartbeat and the sane-price band carry that risk,
-  and `config-doc-truth`'s deploy-time exemption will wave it straight through. That exemption
-  named `scripts/test/claims-robinhood-deployment.test.mjs` as the guard that closes it; the file
-  is not in the tree, so no test does, and a sentence crediting deploy-time enforcement needs a
-  human read for the exempt chains.
+  them. The script exempts exactly six ids: local 31337, Base Sepolia 84532, Robinhood Chain 4663,
+  Arc 5042, Ethereum 1 and Polygon 137. Base and Arbitrum One are required. "Mandatory, enforced at
+  deploy time" unqualified is a false claim about every exempt chain. Arc, Ethereum and Polygon have
+  no feed to supply (Arc and Ethereum are L1s and Polygon PoS is not on Chainlink's list), so on
+  them only the per-asset heartbeat and the sane-price band carry that risk. A sentence crediting
+  deploy-time enforcement needs a human read for the exempt chains, because
+  `config-doc-truth`'s deploy-time exemption waves it through and no test closes that gap.
 - **Uniqueness → existence.** "The one thing that stays reclaimable during a freeze" is a
   contract property (`cancelPending` reads no oracle). Do not weaken it to "one thing".
 
