@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint src",
+    "test": "node --test test/*.test.mjs",
     "typecheck": "tsc -b --force",
     "preview": "vite preview",
     "smoke": "vite build --ssr ssr-smoke.tsx --outDir dist-ssr && node dist-ssr/ssr-smoke.js"
