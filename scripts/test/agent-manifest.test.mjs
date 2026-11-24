@@ -15,20 +15,16 @@
  *      in either operand order or through a local, tx.origin, a role helper, a modifier, or an
  *      access-shaped custom error. The checker is itself probed on fixtures, so a checker that stops
  *      checking goes red.
- *      KNOWN BLIND SPOTS of the row checker (PR 455 review round 2, advisory A). It does NOT detect
- *      these gate forms, so a row tagged `anyone` that hides one stays green. Read the Solidity when
- *      you add or change a row; do not take a green checker as proof of "anyone".
- *        - a mapping lookup on the caller:      require(isKeeper[msg.sender], Unlisted());
- *        - a boolean helper fed the caller:     require(_ok(msg.sender), Blocked());
- *        - a mapping compared to false:         require(banned[msg.sender] == false, Banned());
- *        - the caller passed to a helper that compares its own parameters:
- *                                               _chk(msg.sender, keeper);   // require(a == b, Denied())
- *      The last is the shape of `_checkCreatorGate`, which is caught only because CreatorStakeGate
- *      is registered in GATES. Detection was not built: a rule broad enough to catch these (any
- *      require or if-revert in the reach that touches msg.sender or a parameter fed from it) also
- *      fires on legitimate caller-keyed state checks (`!skipOptIn[msg.sender]`,
- *      `queuedExitShares[msg.sender] == 0`, `sharesOf[msg.sender] >= shares`) and needs an
- *      allowlist of those, which is more than a small change and is its own reviewed work.
+ *      The four gate forms that once slipped through are now detected, in `callerKeyedGates`: a bare
+ *      or negated mapping lookup on the caller (`require(isKeeper[msg.sender], Unlisted())`), a
+ *      mapping compared to a boolean literal (`banned[msg.sender] == false`), a boolean helper fed
+ *      the caller (`require(_ok(msg.sender), Blocked())`), and the caller passed to a helper that
+ *      compares its own parameter (`_chk(msg.sender, keeper)` where `_chk` holds
+ *      `require(a == b, Denied())`). Legitimate caller-keyed state checks in the shipped contracts
+ *      (`!skipOptIn[msg.sender]`, `!revealedOf[pid][msg.sender]`) are named in CALLER_STATE_OK, so a
+ *      new one has to be reviewed and added rather than passing silently. Numeric comparisons on
+ *      caller-keyed state (`queuedExitShares[msg.sender] == 0`, `sharesOf[msg.sender] >= shares`)
+ *      are not flagged: they compare state to an amount, not to a list of who is allowed.
  *   4. POINTERS. Both `llms.txt` copies point at the manifest and name a file that exists.
  *
  * The prose in the manifest is walked by `claims-lede-truth` (it takes every `.json`), so wording
@@ -198,7 +194,7 @@ const fnsWithModifiers = (src) => {
       else if (clean[i] === '}') { depth--; if (depth === 0) break; }
     }
     const mods = m[3].replace(/returns\s*\([^)]*\)/g, ' ').replace(/override\s*\([^)]*\)/g, ' ').match(/[A-Za-z_]\w*/g) ?? [];
-    out.push({ name: m[1], mods: mods.filter((w) => !KEYWORDS.has(w)), body: clean.slice(start, i + 1) });
+    out.push({ name: m[1], src: m[0], mods: mods.filter((w) => !KEYWORDS.has(w)), body: clean.slice(start, i + 1) });
   }
   return out;
 };
@@ -225,12 +221,92 @@ const reach = (name, fns) => {
   return { text, mods };
 };
 
+/** Caller-keyed state checks in the shipped contracts that are not access gates, by exact statement. */
+const CALLER_STATE_OK = new Set([
+  'require(!skipOptIn[msg.sender], AlreadyOptedIn())',
+  'require(!revealedOf[pid][msg.sender], AlreadyRevealed())',
+]);
+
+/** The condition of every `require(...)` and `if (...)` in `text`, with its whole statement. */
+const conditions = (text) => {
+  const out = [];
+  for (const m of text.matchAll(/\b(require|if)\s*\(/g)) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    const start = i;
+    let firstComma = -1;
+    for (; i < text.length && depth > 0; i++) {
+      const ch = text[i];
+      if (ch === '(' || ch === '[') depth++;
+      else if (ch === ')' || ch === ']') depth--;
+      else if (ch === ',' && depth === 1 && firstComma === -1) firstComma = i;
+    }
+    const end = m[1] === 'require' && firstComma !== -1 ? firstComma : i - 1;
+    // An `if` is a gate only when its branch reverts; `if (windowCleared[msg.sender] || ...)` that
+    // picks a code path is state, not access.
+    let reverts = m[1] === 'require';
+    if (!reverts) {
+      const rest = text.slice(i).trimStart();
+      let stop = rest.indexOf(';');
+      if (rest.startsWith('{')) {
+        let d = 0;
+        for (stop = 0; stop < rest.length; stop++) {
+          if (rest[stop] === '{') d++;
+          else if (rest[stop] === '}' && --d === 0) break;
+        }
+      }
+      reverts = /\brevert\b/.test(rest.slice(0, stop === -1 ? undefined : stop));
+    }
+    out.push({ cond: text.slice(start, end), reverts, stmt: text.slice(m.index, i).replace(/\s+/g, ' ') });
+  }
+  return out;
+};
+
+/**
+ * Caller-keyed gates with no `msg.sender ==` in them: a bare or negated mapping lookup on the caller,
+ * a mapping compared to a boolean literal, a boolean helper fed the caller, and the caller handed to
+ * a function that compares its own parameter. `fns` is the file's functions, for the helper forms.
+ */
+const callerKeyedGates = (text, fns) => {
+  const found = [];
+  const known = Object.values(GATES).map((g) => g.evidence);
+  const aliases = [...text.matchAll(/\b(\w+)\s*=\s*msg\.sender\s*;/g)].map((m) => m[1]);
+  const who = [String.raw`msg\.sender`, ...aliases].join('|');
+  const lookup = String.raw`\w+(?:\[[^\]]*\])*\[\s*(?:${who})\s*\]`;
+  for (const { cond, stmt, reverts } of conditions(text)) {
+    if (!reverts) continue;
+    if (CALLER_STATE_OK.has(stmt.replace(/\s*,\s*/g, ', ').replace(/ ,/g, ','))) continue;
+    if (known.some((e) => e.test(stmt))) continue;
+    const c = cond.trim();
+    for (const operand of c.split(/&&|\|\|/).map((x) => x.trim().replace(/^\((.*)\)$/, '$1'))) {
+      if (new RegExp(String.raw`^!?\s*${lookup}$`).test(operand)) found.push(`mapping lookup on the caller: ${stmt}`);
+      else if (new RegExp(String.raw`${lookup}\s*[!=]=\s*(?:true|false)\b|\b(?:true|false)\s*[!=]=\s*${lookup}`).test(operand)) found.push(`mapping compared to a boolean for the caller: ${stmt}`);
+      else if (new RegExp(String.raw`^!?\s*(?:\w+\.)?\w+\s*\([^()]*\b(?:${who})\b[^()]*\)$`).test(operand)) found.push(`boolean helper fed the caller: ${stmt}`);
+    }
+  }
+  // The caller passed to a function whose own body compares or requires on that parameter.
+  for (const m of text.matchAll(new RegExp(String.raw`(?<![.\w])(\w+)\s*\(([^()]*\b(?:${who})\b[^()]*)\)`, 'g'))) {
+    const callee = fns.find((f) => f.name === m[1]);
+    if (!callee) continue;
+    const sig = new RegExp(String.raw`function\s+${m[1]}\s*\(([^)]*)\)`).exec(callee.src ?? '');
+    const params = (sig?.[1] ?? '').split(',').map((p) => p.trim().split(/\s+/).pop());
+    const args = m[2].split(',').map((a) => a.trim());
+    args.forEach((a, k) => {
+      if (!new RegExp(String.raw`^(?:${who})$`).test(a) || !params[k]) return;
+      if (known.some((e) => e.test(callee.body))) return;
+      const cmp = new RegExp(String.raw`\b${params[k]}\s*[!=]=|[!=]=\s*${params[k]}\b`);
+      if (conditions(callee.body).some((x) => x.reverts && cmp.test(x.cond))) found.push(`caller passed to ${m[1]}, which compares its parameter ${params[k]}`);
+    });
+  }
+  return found;
+};
+
 /**
  * Gates in `text` that GATES does not know: a comparison with msg.sender (either operand order, or
  * through a local it was copied to) in a statement that names no registered gate, tx.origin, a
  * role helper, or an access-shaped custom error that is not registered.
  */
-const unclassifiedGates = (text) => {
+const unclassifiedGates = (text, fns = []) => {
   const found = [];
   const known = Object.values(GATES).map((g) => g.evidence);
   const aliases = [...text.matchAll(/\b(\w+)\s*=\s*msg\.sender\s*;/g)].map((m) => m[1]);
@@ -242,6 +318,7 @@ const unclassifiedGates = (text) => {
     const stmt = text.slice(from, to === -1 ? undefined : to);
     if (!known.some((e) => e.test(stmt))) found.push(`comparison with the caller: ${stmt.trim().replace(/\s+/g, ' ')}`);
   }
+  found.push(...callerKeyedGates(text, fns));
   if (/tx\.origin/.test(text)) found.push('tx.origin');
   if (/\b(hasRole|_checkRole|_checkOwner|_onlyOwner)\s*\(/.test(text)) found.push('role helper');
   for (const m of text.matchAll(ACCESS_ERROR)) {
@@ -295,7 +372,7 @@ export const rowProblems = (row, src) => {
     if (row.whoMayCall !== undefined && !GATES[t].text.test(row.whoMayCall)) problems.push(`${row.contract}.${name}: whoMayCall does not name gate "${t}"`);
   }
   for (const mod of mods) problems.push(`${row.contract}.${name}: modifier ${mod} is a gate the table does not classify`);
-  for (const u of unclassifiedGates(text)) problems.push(`${row.contract}.${name}: unclassified gate in the source (${u})`);
+  for (const u of unclassifiedGates(text, fns)) problems.push(`${row.contract}.${name}: unclassified gate in the source (${u})`);
   return problems;
 };
 
@@ -423,6 +500,37 @@ test('probe: the row checker sees gates that are not "msg.sender ==": helpers, r
   assert.ok(rowProblems(row('plain', { gate: 'CreatorStakeGate', whoMayCall: 'CreatorStakeGate 5%' }), src).some((p) => /no matching requirement/.test(p)));
   // skipsGates must quote a line that exists.
   assert.ok(rowProblems(row('viaHelper', { skipsGates: { CreatorStakeGate: 'if (!nothing) _gate' } }), src).some((p) => /not in the source/.test(p)));
+});
+
+test('probe: the row checker sees the four caller-keyed forms it once missed, and leaves state checks alone', () => {
+  const src = `
+    contract C {
+      mapping(address => bool) isKeeper; mapping(address => bool) banned; mapping(address => bool) skipOptIn;
+      mapping(address => uint256) sharesOf; address keeper;
+      error Unlisted(); error Blocked(); error Banned(); error Denied(); error AlreadyOptedIn();
+      function lookup(uint256 a) external { require(isKeeper[msg.sender], Unlisted()); }
+      function lookupNeg(uint256 a) external { require(!banned[msg.sender], Banned()); }
+      function helper(uint256 a) external { require(_ok(msg.sender), Blocked()); }
+      function compared(uint256 a) external { require(banned[msg.sender] == false, Banned()); }
+      function passed(uint256 a) external { _chk(msg.sender, keeper); }
+      function _ok(address who) internal view returns (bool) { return isKeeper[who]; }
+      function _chk(address a, address b) internal pure { require(a == b, Denied()); }
+      function optIn(uint256 a) external { require(!skipOptIn[msg.sender], AlreadyOptedIn()); }
+      function amounts(uint256 a) external { require(sharesOf[msg.sender] >= a, Unlisted2()); require(sharesOf[msg.sender] == 0, Unlisted2()); }
+      function _fill(address who, uint256 n) internal { sharesOf[who] = n; }
+      function fills(uint256 a) external { _fill(msg.sender, a); }
+      function branches(uint256 a) external { if (isKeeper[msg.sender]) { sharesOf[msg.sender] = a; } }
+      function revertsIf(uint256 a) external { if (isKeeper[msg.sender]) revert Unlisted(); }
+    }`;
+  const row = (fn) => ({ contract: 'C', function: `${fn}(uint256)`, gate: 'anyone' });
+  const red = (fn, re) => assert.ok(rowProblems(row(fn), src).some((p) => re.test(p)), `${fn}: ${JSON.stringify(rowProblems(row(fn), src))}`);
+  red('lookup', /mapping lookup on the caller/);
+  red('lookupNeg', /mapping lookup on the caller/);
+  red('helper', /boolean helper fed the caller/);
+  red('compared', /mapping compared to a boolean/);
+  red('revertsIf', /mapping lookup on the caller/);
+  red('passed', /caller passed to _chk, which compares its parameter a/);
+  for (const fn of ['optIn', 'amounts', 'fills', 'branches']) assert.deepEqual(rowProblems(row(fn), src), [], `${fn} is open: it keys or compares state, it does not list who may call`);
 });
 
 test('the observation-window note says shares come from activate(member) or skipWindow(), not from the window ending', () => {
